@@ -43,17 +43,6 @@ export const menuData: MenuCategory[] = [
         ],
       },
       {
-        id: 'cold-brew-kem-muoi',
-        name: 'Cold Brew Kem Muối',
-        category: 'Cold Brew',
-        categorySlug: 'cold-brew',
-        tag: 'Mới · Béo Mịn',
-        sizes: [
-          { label: 'M', price: 29000 },
-          { label: 'L', price: 34000 },
-        ],
-      },
-      {
         id: 'cold-brew-cam-sa',
         name: 'Cold Brew Cam Sả',
         category: 'Cold Brew',
@@ -114,6 +103,28 @@ export const menuData: MenuCategory[] = [
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
+        ],
+      },
+      {
+        id: 'matcha-kem-muoi',
+        name: 'Matcha Kem Muối',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Mới · Béo Mịn',
+        sizes: [
+          { label: 'M', price: 39000 },
+          { label: 'L', price: 44000 },
+        ],
+      },
+      {
+        id: 'strawberry-matcha',
+        name: 'Strawberry Matcha',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Mới · Dâu Tươi',
+        sizes: [
+          { label: 'M', price: 42000 },
+          { label: 'L', price: 46000 },
         ],
       },
       {

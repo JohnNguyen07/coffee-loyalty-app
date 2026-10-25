@@ -86,6 +86,8 @@ export function DrinkIllustration({
     const isColdWhisk = itemId.includes('cold-whisk');
     const isCoco = itemId.includes('coco');
     const isOat = itemId.includes('oat');
+    const isKemMuoi = itemId.includes('kem-muoi');
+    const isStrawberry = itemId.includes('strawber') || itemId.includes('dau');
 
     return (
       <svg
@@ -95,15 +97,26 @@ export function DrinkIllustration({
         className={className}
         aria-hidden="true"
       >
-        {/* Soft mint halo */}
-        <circle cx="70" cy="74" r="50" fill="rgba(0, 117, 74, 0.11)" />
+        {/* Soft mint / strawberry / gold halo */}
+        <circle
+          cx="70"
+          cy="74"
+          r="50"
+          fill={
+            isStrawberry
+              ? 'rgba(244, 63, 94, 0.16)'
+              : isKemMuoi
+                ? 'rgba(203, 162, 88, 0.16)'
+                : 'rgba(0, 117, 74, 0.11)'
+          }
+        />
         {/* Drop shadow */}
         <ellipse cx="70" cy="124" rx="30" ry="5" fill="rgba(0,0,0,0.10)" />
 
         {/* Straw */}
         <path
           d="M84 14L73 108"
-          stroke="#006241"
+          stroke={isStrawberry ? '#BE123C' : '#006241'}
           strokeWidth="5"
           strokeLinecap="round"
         />
@@ -122,23 +135,60 @@ export function DrinkIllustration({
           strokeWidth="2"
         />
 
-        {/* Bottom milk / coconut layer */}
+        {/* Bottom milk / coconut / strawberry puree layer */}
         <path
           d="M44.5 74H95.5L92 113C91.5 117.5 87.7 121 83 121H57C52.3 121 48.5 117.5 48 113L44.5 74Z"
-          fill={isOat ? '#EFE6D5' : isCoco ? '#F7F9F7' : '#F6F4EE'}
+          fill={
+            isStrawberry
+              ? 'url(#strawberryPureeGrad)'
+              : isOat
+                ? '#EFE6D5'
+                : isCoco
+                  ? '#F7F9F7'
+                  : '#F6F4EE'
+          }
         />
 
-        {/* Swirl transition wave between matcha and milk/coconut */}
+        {/* Strawberry seed details */}
+        {isStrawberry && (
+          <g opacity="0.65">
+            <circle cx="58" cy="98" r="1" fill="#FFF1F2" />
+            <circle cx="70" cy="106" r="1.1" fill="#FFF1F2" />
+            <circle cx="82" cy="100" r="0.9" fill="#FFF1F2" />
+            <circle cx="64" cy="114" r="0.8" fill="#FFF1F2" />
+            <circle cx="76" cy="115" r="1" fill="#FFF1F2" />
+          </g>
+        )}
+
+        {/* Swirl transition wave between matcha and milk/strawberry */}
         <path
           d="M42 42H98L95.5 78C86 84 78 71 70 77C62 83 54 72 44.5 78L42 42Z"
           fill="url(#matchaLayerGrad)"
         />
 
-        {/* Rich ceremonial micro-foam top */}
-        <path
-          d="M41.5 36H98.5L98 44H42L41.5 36Z"
-          fill={isColdWhisk ? '#568E43' : '#6BA353'}
-        />
+        {/* Top layer: Rich velvet cream for Kem Muối or ceremonial foam */}
+        {isKemMuoi ? (
+          <g>
+            <path
+              d="M41.8 34H98.2L96.5 54C89.5 56 83.5 52 78 54C72.5 56 67 52 61 54C55 55 49 52 43.5 54L41.8 34Z"
+              fill="#FFFDF7"
+            />
+            <path
+              d="M43.5 53C48.5 51 54.5 54 60.5 53C66.5 51 71.5 55 77.5 53C82.5 51 88.5 55 95.5 53"
+              stroke="#EAE4D5"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
+            <circle cx="58" cy="42" r="1" fill="#CBA258" opacity="0.7" />
+            <circle cx="73" cy="45" r="1.2" fill="#CBA258" opacity="0.8" />
+            <circle cx="84" cy="41" r="0.8" fill="#CBA258" opacity="0.6" />
+          </g>
+        ) : (
+          <path
+            d="M41.5 36H98.5L98 44H42L41.5 36Z"
+            fill={isColdWhisk ? '#568E43' : '#6BA353'}
+          />
+        )}
 
         {/* Ice cubes */}
         <rect x="51" y="54" width="14" height="14" rx="3.5" transform="rotate(-8 51 54)" fill="rgba(255,255,255,0.55)" stroke="rgba(255,255,255,0.85)" strokeWidth="1" />
@@ -160,6 +210,11 @@ export function DrinkIllustration({
             <stop offset="0%" stopColor="#1E5E3A" />
             <stop offset="55%" stopColor="#3B7A47" />
             <stop offset="100%" stopColor="#76A865" />
+          </linearGradient>
+          <linearGradient id="strawberryPureeGrad" x1="70" y1="74" x2="70" y2="121" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FB7185" />
+            <stop offset="55%" stopColor="#E11D48" />
+            <stop offset="100%" stopColor="#9F1239" />
           </linearGradient>
         </defs>
       </svg>
