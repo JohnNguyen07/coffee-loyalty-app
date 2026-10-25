@@ -1,0 +1,75 @@
+.wrapper {
+  position: relative;
+  margin: var(--space-4) 0;
+}
+
+.scroll {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: 0 var(--space-4);
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+
+.scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-muted);
+  background: var(--surface-card);
+  border: 1.5px solid var(--surface-dim);
+  transition: all var(--duration-fast) var(--ease-out);
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+.tab:hover {
+  color: var(--ink);
+  border-color: var(--ink-light);
+}
+
+.tab.active {
+  color: var(--ink-inverse);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.tabIcon {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.tabLabel {
+  line-height: 1;
+}
+
+.fadeLeft,
+.fadeRight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fadeLeft {
+  left: 0;
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+
+.fadeRight {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
