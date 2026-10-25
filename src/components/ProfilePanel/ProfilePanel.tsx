@@ -270,7 +270,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
               <div className={styles.guestWelcomeCard}>
                 <div className={styles.guestLogoCircle}>
                   <Image
-                    src="/logo.png"
+                    src="/logo-mark.png"
                     alt="Ủ LAB Logo"
                     width={48}
                     height={48}

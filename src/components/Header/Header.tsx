@@ -75,7 +75,7 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
             <Link href="/" className={styles.logo}>
               <div className={styles.logoWrap}>
                 <Image
-                  src="/logo.png"
+                  src="/logo-mark.png"
                   alt="Ủ LAB Logo"
                   width={40}
                   height={40}

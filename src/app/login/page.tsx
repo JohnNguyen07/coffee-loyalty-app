@@ -59,7 +59,7 @@ function LoginContent() {
           <div className={styles.cardHeader}>
             <div className={styles.logoWrap}>
               <Image
-                src="/logo.png"
+                src="/logo-mark.png"
                 alt="Ủ LAB Logo"
                 width={56}
                 height={56}

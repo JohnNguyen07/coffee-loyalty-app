@@ -36,7 +36,7 @@ export default function AdminSidebar({
       <div className={styles.logo}>
         <div className={styles.logoWrap}>
           <Image
-            src="/logo.png"
+            src="/logo-mark.png"
             alt="Ủ LAB"
             width={34}
             height={34}

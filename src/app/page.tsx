@@ -392,7 +392,7 @@ export default function Home() {
               <div className={styles.footerBrand}>
                 <div className={styles.footerLogoWrap}>
                   <Image
-                    src="/logo.png"
+                    src="/logo-mark.png"
                     alt="Ủ LAB Logo"
                     width={44}
                     height={44}
