@@ -7,7 +7,7 @@ import { verifyAdmin } from '@/lib/auth-utils';
 let inventoryItems = [
   {
     id: 'inv-1',
-    name: 'Bột Matcha Uji Shizuoka (Hạng A)',
+    name: 'Bột Matcha Fuji MK4',
     sku: 'MAT-UJI-01',
     category: 'Nguyên liệu pha chế',
     unit: 'Gói 500g',

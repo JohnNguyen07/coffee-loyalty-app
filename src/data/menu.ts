@@ -110,7 +110,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Latte',
         category: 'Matcha',
         categorySlug: 'matcha',
-        tag: 'Uji Ceremonial',
+        tag: 'Fuji MK4',
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },

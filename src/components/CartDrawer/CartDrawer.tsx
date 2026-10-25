@@ -318,7 +318,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             </div>
             <p className={styles.emptyText}>Chưa có món nào trong giỏ</p>
             <p className={styles.emptySubtext}>
-              Khám phá thực đơn Matcha Uji và Cold Brew ủ lạnh 18 giờ để bắt đầu đặt món.
+              Khám phá thực đơn Matcha Fuji MK4 và Cold Brew ủ lạnh 18 giờ để bắt đầu đặt món.
             </p>
             <button type="button" className={styles.emptyBrowseBtn} onClick={onClose}>
               Xem thực đơn ngay

@@ -83,14 +83,14 @@ export default function Home() {
       />
 
       <main className={styles.main}>
-        {/* ── ZONE 1: STARBUCKS ASYMMETRIC SPLIT HERO (60/40) ── */}
+        {/* ── ZONE 1: ASYMMETRIC SPLIT HERO (60/40) ── */}
         <section className={styles.heroSection}>
           <div className={styles.heroContainer}>
             {/* 60% Editorial Content Crate */}
             <div className={styles.heroContent}>
               <div className={styles.heroEyebrow}>
                 <StarSolidIcon size={13} className={styles.eyebrowStar} />
-                <span>Ủ LAB CRAFT · UJI MATCHA &amp; 18H COLD BREW</span>
+                <span>Ủ LAB CRAFT · MATCHA FUJI MK4 &amp; 18H COLD BREW</span>
               </div>
 
               <h1 className={styles.heroTitle}>
@@ -98,7 +98,7 @@ export default function Home() {
               </h1>
 
               <p className={styles.heroSubtitle}>
-                Chiết xuất chuẩn xác trong từng mẻ nhỏ. Giữ trọn vị êm mượt tự nhiên từ hạt Arabica Cầu Đất tuyển chọn cùng nốt hương umami thuần khiết của trà xanh Uji Nhật Bản.
+                Chiết xuất chuẩn xác trong từng mẻ nhỏ. Giữ trọn vị êm mượt tự nhiên từ hạt Arabica Cầu Đất tuyển chọn cùng nốt hương umami thuần khiết của bột Matcha Fuji MK4.
               </p>
 
               <div className={styles.heroCtaRow}>
@@ -118,7 +118,7 @@ export default function Home() {
                 </div>
                 <div className={styles.metricDivider} aria-hidden="true" />
                 <div className={styles.metricItem}>
-                  <span className={styles.metricValue}>100% Uji</span>
+                  <span className={styles.metricValue}>Fuji MK4</span>
                   <span className={styles.metricLabel}>Matcha Nhật đánh lạnh</span>
                 </div>
                 <div className={styles.metricDivider} aria-hidden="true" />
@@ -159,7 +159,7 @@ export default function Home() {
 
                 <div className={styles.showcaseFooter}>
                   <div className={styles.showcaseInfo}>
-                    <span className={styles.showcaseCategory}>UJI CEREMONIAL CRAFT</span>
+                    <span className={styles.showcaseCategory}>MATCHA FUJI MK4</span>
                     <h2 className={styles.showcaseDrinkTitle}>{signatureSpotlight.name}</h2>
                   </div>
                   <div className={styles.showcaseActionRow}>
@@ -309,7 +309,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 4-Up Starbucks Rewards Status Cards */}
+            {/* 4-Up Rewards Status Cards */}
             <div className={styles.tiersGrid}>
               {Object.values(TIERS_CONFIG).map((tier, idx) => {
                 const isCurrentUserTier =
@@ -384,7 +384,7 @@ export default function Home() {
         </section>
       </main>
 
-      {/* ── ZONE 5: HOUSE GREEN FLAGSHIP FOOTER BOOKEND ── */}
+      {/* ── ZONE 5: HOUSE GREEN FOOTER BOOKEND ── */}
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerTop}>
@@ -407,7 +407,7 @@ export default function Home() {
                 </div>
               </div>
               <p className={styles.footerDesc}>
-                Phòng thí nghiệm hương vị chuyên biệt về Matcha Uji đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm hoàn tiền minh bạch trên từng ly nước.
+                Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm hoàn tiền minh bạch trên từng ly nước.
               </p>
             </div>
 
@@ -464,19 +464,10 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-          <div className={styles.footerBottom}>
-            <p className={styles.footerCopy}>
-              © {new Date().getFullYear()} Ủ LAB — Matcha &amp; Cold Brew. Bảo lưu mọi quyền.
-            </p>
-            <span className={styles.footerCraftNote}>
-              Designed with Starbucks Flagship System · Handcrafted in Vietnam
-            </span>
-          </div>
         </div>
       </footer>
 
-      {/* Starbucks "Frap" Floating Circular CTA / Cart Bar */}
+      {/* Floating Circular CTA / Cart Bar */}
       <FloatingCartBar onClick={() => setCartOpen(true)} />
 
       {/* Slide-over Cart Drawer */}
