@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import styles from './CustomersPanel.module.css';
 import { formatVND } from '@/data/menu';
 
-export type CustomerSubTab = 'all' | 'members' | 'detail';
+export type CustomerSubTab = 'list' | 'detail' | 'all' | 'members';
 
 interface Tier {
   id: string;
@@ -46,8 +46,9 @@ interface CustomersPanelProps {
   initialSubTab?: CustomerSubTab;
 }
 
-export default function CustomersPanel({ initialSubTab = 'all' }: CustomersPanelProps) {
-  const [subTab, setSubTab] = useState<CustomerSubTab>(initialSubTab);
+export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPanelProps) {
+  const normalizedInit = initialSubTab === 'all' || initialSubTab === 'members' ? 'list' : initialSubTab;
+  const [subTab, setSubTab] = useState<'list' | 'detail'>(normalizedInit);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -76,7 +77,6 @@ export default function CustomersPanel({ initialSubTab = 'all' }: CustomersPanel
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (tierFilter && tierFilter !== 'ALL') params.set('tier', tierFilter);
-      if (subTab === 'members') params.set('membersOnly', 'true');
 
       const res = await fetch(`/api/admin/customers?${params.toString()}`);
       if (res.ok) {
@@ -230,27 +230,21 @@ export default function CustomersPanel({ initialSubTab = 'all' }: CustomersPanel
       {/* Sub Tabs */}
       <div className={styles.subTabs}>
         <button
-          className={`${styles.subTabBtn} ${subTab === 'all' ? styles.activeSubTab : ''}`}
-          onClick={() => setSubTab('all')}
-        >
-          <span>📋</span> Tất cả khách hàng
-        </button>
-        <button
-          className={`${styles.subTabBtn} ${subTab === 'members' ? styles.activeSubTab : ''}`}
-          onClick={() => setSubTab('members')}
-        >
-          <span>⭐</span> Thành viên tích điểm
-        </button>
-        <button
           className={`${styles.subTabBtn} ${subTab === 'detail' ? styles.activeSubTab : ''}`}
           onClick={() => setSubTab('detail')}
         >
-          <span>🔍</span> Tra cứu & Trừ điểm (POS)
+          <span>🔍</span> Tra cứu &amp; Cộng/Trừ điểm (POS)
+        </button>
+        <button
+          className={`${styles.subTabBtn} ${subTab === 'list' ? styles.activeSubTab : ''}`}
+          onClick={() => setSubTab('list')}
+        >
+          <span>📋</span> Danh sách thành viên
         </button>
       </div>
 
-      {/* TAB 1: ALL CUSTOMERS & TAB 2: MEMBERS */}
-      {(subTab === 'all' || subTab === 'members') && (
+      {/* TAB: MEMBERS LIST */}
+      {subTab === 'list' && (
         <>
           {/* Stats Grid */}
           <div className={styles.statsGrid}>

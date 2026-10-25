@@ -1,76 +1,147 @@
+/* Starbucks Signature "Frap" Floating Circular CTA (56px, #00754A) */
+.frapCircle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 150;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--sb-accent);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-frap);
+  transition: transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+
+.frapCircle:hover {
+  background: var(--sb-green);
+  transform: translateY(-2px);
+}
+
+.frapCircle:active {
+  transform: var(--button-active-scale);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0);
+}
+
+/* Active Cart Pill Bar */
 .bar {
   position: fixed;
-  bottom: var(--space-4);
-  left: var(--space-4);
-  right: var(--space-4);
+  bottom: 20px;
+  right: 24px;
   z-index: 150;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  background: var(--ink);
-  color: var(--ink-inverse);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  animation: slideUpBar 0.35s var(--ease-out);
-  transition: transform var(--duration-fast) var(--ease-out);
+  gap: 12px;
+  padding: 10px 18px 10px 12px;
+  background: var(--sb-accent);
+  color: #FFFFFF;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-frap);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  animation: slideUpBar 0.3s var(--ease-out);
+  transition: transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
 }
 
 .bar:hover {
+  background: var(--sb-green);
   transform: translateY(-2px);
 }
 
 .bar:active {
-  transform: translateY(0);
+  transform: var(--button-active-scale);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0);
 }
 
-.left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.badge {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  color: white;
-  font-size: var(--text-xs);
-  font-weight: 700;
+.frapIconWrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--sb-house);
+  color: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-gold);
+  color: var(--sb-house);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sb-accent);
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  line-height: 1.2;
 }
 
 .label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.total {
-  margin-left: auto;
-  font-size: var(--text-base);
+  font-size: 0.875rem;
   font-weight: 700;
 }
 
+.subLabel {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.total {
+  margin-left: 8px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
 .arrow {
-  opacity: 0.6;
+  opacity: 0.85;
 }
 
 @keyframes slideUpBar {
   from {
     opacity: 0;
-    transform: translateY(24px);
+    transform: translateY(20px) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
-@media (min-width: 769px) {
+@media (max-width: 640px) {
   .bar {
-    display: none;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+  .total {
+    margin-left: auto;
+  }
+  .frapCircle {
+    bottom: 18px;
+    right: 18px;
   }
 }

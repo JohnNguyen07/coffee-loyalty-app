@@ -1,13 +1,21 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import { formatVND } from '@/data/menu';
 import { useAuth } from '@/hooks/useAuth';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
+import Header from '@/components/Header/Header';
+import {
+  QrScanIcon,
+  StarSolidIcon,
+  CheckCircleIcon,
+  GiftIcon,
+  TierSvgIcon,
+} from '@/components/Icons/LabIcons';
 
-type ScanStatus = 'idle' | 'scanning' | 'phone_prompt' | 'looking_up' | 'success' | 'error' | 'login';
+type ClaimStatus = 'no_code' | 'phone_prompt' | 'looking_up' | 'processing' | 'success' | 'error';
 
 interface LookedUpUser {
   id: string;
@@ -23,27 +31,31 @@ interface LookedUpUser {
   };
 }
 
+function parseDrinkPriceFromCode(qrCode: string): number {
+  const match = qrCode.match(/(\d{4,6})/);
+  if (match) {
+    const parsed = parseInt(match[1], 10);
+    if (parsed >= 10000 && parsed <= 500000) {
+      return parsed;
+    }
+  }
+  return 34000;
+}
+
 function ScanContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const initialCode = searchParams.get('code');
-  const initialPhone = searchParams.get('phone');
+  const initialCode = searchParams.get('code')?.trim() || '';
+  const initialPhone = searchParams.get('phone')?.trim() || '';
 
   const { profile, earnPoints, refreshProfile } = useAuth();
 
-  const [code, setCode] = useState(initialCode || '');
-  const [inputCode, setInputCode] = useState('');
+  const [code, setCode] = useState(initialCode);
+  const [manualInputCode, setManualInputCode] = useState('');
   const [phoneInput, setPhoneInput] = useState(initialPhone || profile?.phone || '');
-  const [status, setStatus] = useState<ScanStatus>('idle');
+  const [status, setStatus] = useState<ClaimStatus>(initialCode ? 'phone_prompt' : 'no_code');
   const [message, setMessage] = useState('');
   const [lookedUpUser, setLookedUpUser] = useState<LookedUpUser | null>(null);
-
-  // Camera scanner state
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [result, setResult] = useState<{
     cashback: number;
@@ -55,131 +67,27 @@ function ScanContent() {
     cashback_rate: number;
   } | null>(null);
 
-  // Stop camera helper
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
-  }, []);
-
-  // Start camera helper
-  const startCamera = useCallback(async () => {
-    setCameraError('');
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      setCameraError('Trình duyệt không hỗ trợ mở camera trực tiếp.');
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setIsCameraActive(true);
-    } catch (err: any) {
-      console.warn('Cannot open camera:', err);
-      setCameraError('Không thể mở camera. Vui lòng cho phép quyền camera hoặc nhập mã.');
-      setIsCameraActive(false);
-    }
-  }, []);
-
-  // Barcode scanning loop using native BarcodeDetector if available
-  useEffect(() => {
-    if (!isCameraActive || typeof window === 'undefined') return;
-
-    let animationFrameId: number;
-    // Check if BarcodeDetector is available
-    const BarcodeDetectorClass = (window as any).BarcodeDetector;
-
-    if (BarcodeDetectorClass) {
-      const barcodeDetector = new BarcodeDetectorClass({ formats: ['qr_code'] });
-
-      const scanFrame = async () => {
-        if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-          try {
-            const barcodes = await barcodeDetector.detect(videoRef.current);
-            if (barcodes.length > 0) {
-              const rawValue = barcodes[0].rawValue;
-              stopCamera();
-
-              // Extract code from URL if it's a link
-              let detectedCode = rawValue;
-              try {
-                if (rawValue.includes('code=')) {
-                  const url = new URL(rawValue);
-                  detectedCode = url.searchParams.get('code') || rawValue;
-                }
-              } catch {
-                // Ignore url parse error
-              }
-
-              handleCodeScanned(detectedCode);
-              return;
-            }
-          } catch {
-            // Frame detection error, continue
-          }
-        }
-        animationFrameId = requestAnimationFrame(scanFrame);
-      };
-
-      animationFrameId = requestAnimationFrame(scanFrame);
-    }
-
-    return () => {
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    };
-  }, [isCameraActive, stopCamera]);
-
-  // Clean up camera on unmount
-  useEffect(() => {
-    return () => {
-      stopCamera();
-    };
-  }, [stopCamera]);
-
-  // Handle scanned or selected code
-  const handleCodeScanned = (scannedCode: string) => {
-    const cleanCode = scannedCode.trim();
-    if (!cleanCode) return;
-    setCode(cleanCode);
-
-    // If customer already has an identified profile, process immediately!
-    if (profile) {
-      processCode(cleanCode, profile.id, profile.phone || undefined);
-    } else {
-      // Prompt for phone number to assign points
-      setStatus('phone_prompt');
-    }
-  };
+  const detectedDrinkPrice = useMemo(() => (code ? parseDrinkPriceFromCode(code) : 34000), [code]);
+  const estimatedRate = profile?.tier?.cashback_rate || 5;
+  const estimatedCashback = Math.round((detectedDrinkPrice * estimatedRate) / 100);
 
   const processCode = async (qrCodeToProcess: string, userId?: string, userPhone?: string) => {
-    if (!qrCodeToProcess || qrCodeToProcess.trim() === '') {
+    const cleanCode = qrCodeToProcess.trim();
+    if (!cleanCode) {
       setStatus('error');
-      setMessage('Vui lòng nhập hoặc quét mã QR hợp lệ');
+      setMessage('Đường dẫn không chứa mã tích điểm hợp lệ.');
       return;
     }
 
-    setStatus('scanning');
-    stopCamera();
+    setStatus('processing');
 
-    // 1. Try Live Supabase API first if configured
     if (isSupabaseConfigured()) {
       try {
         const res = await fetch('/api/qr/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            code: qrCodeToProcess,
+            code: cleanCode,
             user_id: userId,
             phone: userPhone,
           }),
@@ -212,17 +120,9 @@ function ScanContent() {
       }
     }
 
-    // 2. Local / Demo mode fallback
+    // Local fallback when Supabase is in demo mode
     setTimeout(() => {
-      let drinkPrice = 38000;
-      const match = qrCodeToProcess.match(/(\d{4,6})/);
-      if (match) {
-        const parsed = parseInt(match[1], 10);
-        if (parsed >= 10000 && parsed <= 500000) {
-          drinkPrice = parsed;
-        }
-      }
-
+      const drinkPrice = parseDrinkPriceFromCode(cleanCode);
       const userToUse = lookedUpUser || profile;
       const rate = userToUse?.tier?.cashback_rate || 5;
       const cashback = Math.round((drinkPrice * rate) / 100);
@@ -230,7 +130,7 @@ function ScanContent() {
       const { newBalance, newTier } = earnPoints(
         cashback,
         drinkPrice,
-        `Hoàn ${rate}% cho mã ${qrCodeToProcess.slice(0, 14)} (${formatVND(drinkPrice)})`
+        `Hoàn ${rate}% cho mã ${cleanCode.slice(0, 16)} (${formatVND(drinkPrice)})`
       );
 
       setResult({
@@ -244,7 +144,7 @@ function ScanContent() {
       });
 
       setStatus('success');
-    }, 600);
+    }, 450);
   };
 
   const handlePhoneLookup = async (phone?: string, qrCodeOverride?: string) => {
@@ -258,7 +158,6 @@ function ScanContent() {
 
     setStatus('looking_up');
 
-    // Check with Supabase API
     if (isSupabaseConfigured()) {
       try {
         const res = await fetch(`/api/user/by-phone?phone=${encodeURIComponent(phoneToCheck)}`);
@@ -269,8 +168,9 @@ function ScanContent() {
           processCode(codeToUse, data.user.id, data.user.phone);
           return;
         } else if (res.ok && !data.found) {
-          // User not found in database, redirect to registration
-          router.push(`/register?phone=${encodeURIComponent(phoneToCheck)}&code=${encodeURIComponent(codeToUse)}`);
+          router.push(
+            `/register?phone=${encodeURIComponent(phoneToCheck)}&code=${encodeURIComponent(codeToUse)}`
+          );
           return;
         }
       } catch {
@@ -278,11 +178,13 @@ function ScanContent() {
       }
     }
 
-    // Demo lookup
     setTimeout(() => {
       const demoUser: LookedUpUser = {
         id: 'user-' + phoneToCheck,
-        full_name: phoneToCheck === '0901234567' ? 'Nguyễn Văn A' : `Thành viên (${phoneToCheck.slice(-4)})`,
+        full_name:
+          phoneToCheck === '0901234567'
+            ? 'Nguyễn Văn A'
+            : `Thành viên (${phoneToCheck.slice(-4)})`,
         phone: phoneToCheck,
         point_balance: profile?.point_balance || 150000,
         total_spending: profile?.total_spending || 720000,
@@ -295,10 +197,10 @@ function ScanContent() {
       };
       setLookedUpUser(demoUser);
       processCode(codeToUse, demoUser.id, demoUser.phone);
-    }, 500);
+    }, 400);
   };
 
-  // Initial code detection
+  // Auto-process when opened from QR link (?code=...)
   useEffect(() => {
     if (initialCode) {
       setCode(initialCode);
@@ -309,20 +211,35 @@ function ScanContent() {
       } else {
         setStatus('phone_prompt');
       }
+    } else {
+      setStatus('no_code');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCode, initialPhone]);
+  }, [initialCode, initialPhone, profile?.id]);
 
-  const handleManualScan = (e: React.FormEvent) => {
+  const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputCode.trim()) {
-      handleCodeScanned(inputCode.trim());
-    }
-  };
+    const raw = manualInputCode.trim();
+    if (!raw) return;
 
-  const handleQuickDemoScan = (demoPrice: number, label: string) => {
-    const mockCode = `QR-${demoPrice}-${label.replace(/\s+/g, '').toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-    handleCodeScanned(mockCode);
+    // Extract ?code= if user pasted a full link
+    let extractedCode = raw;
+    try {
+      if (raw.includes('code=')) {
+        const parsedUrl = new URL(raw.startsWith('http') ? raw : `https://ulab.vn/${raw}`);
+        extractedCode = parsedUrl.searchParams.get('code') || raw;
+      }
+    } catch {
+      // keep raw
+    }
+
+    setCode(extractedCode);
+    router.replace(`/scan?code=${encodeURIComponent(extractedCode)}`);
+    if (profile) {
+      processCode(extractedCode, profile.id, profile.phone || undefined);
+    } else {
+      setStatus('phone_prompt');
+    }
   };
 
   const handlePhoneSubmit = (e: React.FormEvent) => {
@@ -330,333 +247,302 @@ function ScanContent() {
     handlePhoneLookup();
   };
 
-  const resetScan = () => {
-    stopCamera();
-    setStatus('idle');
-    setResult(null);
-    setInputCode('');
-    setCode('');
-    setLookedUpUser(null);
-    setMessage('');
-  };
-
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        {/* Identified active user banner */}
-        {profile && status !== 'success' && (
-          <div className={styles.userHeaderCard}>
-            <div className={styles.userHeaderLeft}>
-              <div className={styles.userAvatarMini}>
-                {(profile.full_name || 'U').charAt(0).toUpperCase()}
-              </div>
-              <div className={styles.userHeaderInfo}>
-                <span className={styles.userHeaderName}>{profile.full_name || 'Khách hàng'}</span>
-                <span className={styles.userHeaderTier}>
-                  {profile.tier?.name || 'Member'} · Hoàn {profile.tier?.cashback_rate || 3}%
-                </span>
-              </div>
-            </div>
-            <div className={styles.userHeaderBalance}>
-              {formatVND(profile.point_balance || 0)}
-            </div>
-          </div>
-        )}
+    <div className={styles.pageWrapper}>
+      <Header />
 
-        {/* State: IDLE / SCANNER */}
-        {status === 'idle' && (
-          <div className={styles.center}>
-            <div className={styles.scannerHeader}>
-              <span className={styles.icon}>📷</span>
-              <h1 className={styles.title}>Quét mã QR ly nước</h1>
-              <p className={styles.subtitle}>
-                Quét tem in trên ly nước để nhận hoàn tiền{' '}
-                <strong>{profile?.tier?.cashback_rate || 5}%</strong> vào ví thành viên
-              </p>
+      <main className={styles.page}>
+        <div className={styles.card}>
+          {/* Top House Green Banner */}
+          <div className={styles.cardBanner}>
+            <div className={styles.bannerEyebrow}>
+              <StarSolidIcon size={12} />
+              <span>Ủ LAB REWARDS® · TÍCH ĐIỂM TỪ TEM LY</span>
             </div>
+            <h1 className={styles.bannerTitle}>Nhận Hoàn Tiền Thành Viên</h1>
+            <p className={styles.bannerSubtitle}>
+              Hoàn tiền từ <strong>3% – 10%</strong> giá trị mỗi ly nước vào ví thưởng
+            </p>
 
-            {/* Viewfinder frame */}
-            <div className={styles.viewfinder}>
-              {isCameraActive ? (
-                <video ref={videoRef} className={styles.cameraVideo} playsInline muted />
-              ) : (
-                <>
-                  <div className={styles.laser} />
-                  <div className={styles.cornerTL} />
-                  <div className={styles.cornerTR} />
-                  <div className={styles.cornerBL} />
-                  <div className={styles.cornerBR} />
-                  <div className={styles.viewfinderText}>
-                    <span>Hướng camera vào tem in trên ly</span>
+            {profile && (
+              <div className={styles.userHeaderCard}>
+                <div className={styles.userHeaderLeft}>
+                  <div className={styles.userAvatarMini}>
+                    {(profile.full_name || 'U').charAt(0).toUpperCase()}
                   </div>
-                </>
-              )}
-            </div>
-
-            {cameraError && (
-              <p style={{ color: '#E53E3E', fontSize: 'var(--text-xs)', marginTop: '4px' }}>
-                {cameraError}
-              </p>
-            )}
-
-            {/* Camera Controls */}
-            <div className={styles.cameraActions}>
-              <button
-                type="button"
-                className={styles.cameraToggleBtn}
-                onClick={isCameraActive ? stopCamera : startCamera}
-              >
-                {isCameraActive ? '⏹ Tắt camera' : '📸 Bật camera quét QR'}
-              </button>
-            </div>
-
-            {/* Manual input */}
-            <form onSubmit={handleManualScan} className={styles.manualForm}>
-              <input
-                type="text"
-                placeholder="Hoặc nhập mã tem in (VD: QR-38000)..."
-                value={inputCode}
-                onChange={(e) => setInputCode(e.target.value)}
-                className={styles.codeInput}
-              />
-              <button type="submit" className={styles.submitBtn}>
-                Tích điểm
-              </button>
-            </form>
-
-            {/* Quick Demo Test Buttons */}
-            <div className={styles.demoSection}>
-              <span className={styles.demoLabel}>⚡ Thử nghiệm nhanh mã QR mẫu:</span>
-              <div className={styles.demoPills}>
-                <button
-                  type="button"
-                  className={styles.demoPill}
-                  onClick={() => handleQuickDemoScan(38000, 'Matcha Dừa')}
-                >
-                  🍵 Ly Matcha 38k (+{formatVND(Math.round(38000 * (profile?.tier?.cashback_rate || 5) / 100))})
-                </button>
-                <button
-                  type="button"
-                  className={styles.demoPill}
-                  onClick={() => handleQuickDemoScan(34000, 'Cold Brew')}
-                >
-                  🧊 Cold Brew 34k (+{formatVND(Math.round(34000 * (profile?.tier?.cashback_rate || 5) / 100))})
-                </button>
-                <button
-                  type="button"
-                  className={styles.demoPill}
-                  onClick={() => handleQuickDemoScan(47000, 'Dirty Matcha')}
-                >
-                  ✨ Dirty Matcha 47k (+{formatVND(Math.round(47000 * (profile?.tier?.cashback_rate || 5) / 100))})
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.footerLinks}>
-              {profile?.role === 'ADMIN' && (
-                <button
-                  type="button"
-                  className={styles.linkBtn}
-                  onClick={() => router.push('/admin')}
-                >
-                  Mở POS Quán để tạo tem QR mới →
-                </button>
-              )}
-              <button
-                type="button"
-                className={styles.linkBtnMuted}
-                onClick={() => router.push('/')}
-              >
-                ← Về menu thức uống
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* State: PHONE PROMPT */}
-        {status === 'phone_prompt' && (
-          <div className={styles.center}>
-            <div className={styles.phonePromptIcon}>📱</div>
-            <h2 className={styles.title}>Nhập số điện thoại</h2>
-            <p className={styles.subtitle}>
-              Nhập SĐT để tích điểm ly nước vào tài khoản thành viên
-            </p>
-
-            {code && (
-              <div className={styles.scannedCodeChip}>
-                <span>📋</span>
-                <span>Mã QR: <strong>{code.length > 25 ? code.slice(0, 25) + '...' : code}</strong></span>
-              </div>
-            )}
-
-            {message && (
-              <div className={styles.phoneErrorMsg}>{message}</div>
-            )}
-
-            <form onSubmit={handlePhoneSubmit} className={styles.phoneForm}>
-              <input
-                type="tel"
-                placeholder="Nhập số điện thoại (VD: 0901234567)"
-                value={phoneInput}
-                onChange={(e) => {
-                  setPhoneInput(e.target.value);
-                  setMessage('');
-                }}
-                className={styles.phoneInput}
-                autoFocus
-                id="scan-phone-input"
-              />
-              <button type="submit" className={styles.phoneLookupBtn}>
-                🔍 Tra cứu & Tích điểm
-              </button>
-            </form>
-
-            <div className={styles.phoneHint}>
-              <p>Chưa có tài khoản?{' '}
-                <button
-                  type="button"
-                  className={styles.registerLink}
-                  onClick={() => router.push(`/register${code ? `?code=${encodeURIComponent(code)}` : ''}&phone=${encodeURIComponent(phoneInput)}`)}
-                >
-                  Đăng ký nhận ngay 10.000đ
-                </button>
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className={styles.linkBtnMuted}
-              onClick={resetScan}
-            >
-              ← Quay lại quét mã
-            </button>
-          </div>
-        )}
-
-        {/* State: LOOKING UP phone */}
-        {status === 'looking_up' && (
-          <div className={styles.center}>
-            <div className={styles.spinner} />
-            <h2 className={styles.title}>Đang tra cứu thành viên...</h2>
-            <p className={styles.subtitle}>SĐT: {phoneInput}</p>
-          </div>
-        )}
-
-        {/* State: SCANNING / PROCESSING */}
-        {status === 'scanning' && (
-          <div className={styles.center}>
-            <div className={styles.spinner} />
-            <h2 className={styles.title}>Đang xử lý tích điểm...</h2>
-            <p className={styles.subtitle}>
-              {lookedUpUser && <span>Thành viên: {lookedUpUser.full_name}<br /></span>}
-              Mã: {code.length > 25 ? code.slice(0, 25) + '...' : code}
-            </p>
-          </div>
-        )}
-
-        {/* State: SUCCESS */}
-        {status === 'success' && result && (
-          <div className={styles.center}>
-            <span className={styles.successIcon}>🎉</span>
-            <h2 className={styles.title}>Tích điểm thành công!</h2>
-            <p className={styles.subtitle}>
-              {lookedUpUser
-                ? <>Đã cộng điểm cho <strong>{lookedUpUser.full_name}</strong> ({lookedUpUser.phone})</>
-                : <>Đã cộng điểm hoàn tiền vào tài khoản <strong>{profile?.full_name || 'của bạn'}</strong></>}
-            </p>
-
-            <div className={styles.resultCard}>
-              <div className={styles.resultRow}>
-                <span>Giá ly nước</span>
-                <span className={styles.resultValue}>{formatVND(result.drink_value)}</span>
-              </div>
-              <div className={styles.resultRow}>
-                <span>Hoàn tiền theo hạng ({result.cashback_rate}%)</span>
-                <span className={styles.resultValue} style={{ color: 'var(--accent)', fontWeight: 700 }}>
-                  +{formatVND(result.cashback)}
-                </span>
-              </div>
-              {result.tier_changed && (
-                <div className={styles.tierUpBanner}>
-                  <span>🎊 Chúc mừng bạn đã thăng hạng {result.new_tier_name}!</span>
-                  {result.tier_bonus > 0 && (
-                    <small>+{formatVND(result.tier_bonus)} thưởng thăng hạng</small>
-                  )}
+                  <div className={styles.userHeaderInfo}>
+                    <span className={styles.userHeaderName}>
+                      {profile.full_name || 'Thành viên'}
+                    </span>
+                    <span className={styles.userHeaderTier}>
+                      <TierSvgIcon code={profile.tier?.code} size={12} />
+                      <span>
+                        {profile.tier?.name || 'Member'} · Hoàn {profile.tier?.cashback_rate || 3}%
+                      </span>
+                    </span>
+                  </div>
                 </div>
-              )}
-              <div className={`${styles.resultRow} ${styles.resultTotal}`}>
-                <span>Số dư ví điểm hiện tại</span>
-                <span className={styles.resultValue} style={{ color: 'var(--accent)', fontSize: '1.25rem', fontWeight: 800 }}>
-                  {formatVND(result.new_balance)}
-                </span>
+                <div className={styles.userHeaderBalance}>
+                  {formatVND(profile.point_balance || 0)}
+                </div>
               </div>
-            </div>
-
-            <div className={styles.successActions}>
-              <button className={styles.homeBtn} onClick={() => router.push('/')}>
-                🛍️ Dùng điểm đặt món take-away
-              </button>
-              <button className={styles.scanAgainBtn} onClick={resetScan}>
-                📷 Quét tiếp ly khác
-              </button>
-            </div>
+            )}
           </div>
-        )}
 
-        {/* State: LOGIN REQUIRED */}
-        {status === 'login' && (
-          <div className={styles.center}>
-            <span className={styles.icon}>🔑</span>
-            <h2 className={styles.title}>Đăng nhập để nhận điểm</h2>
-            <p className={styles.subtitle}>Bạn cần tài khoản thành viên để cộng điểm vào ví</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '280px' }}>
-              <button
-                className={styles.homeBtn}
-                onClick={() => router.push(`/login?redirect=${encodeURIComponent('/scan' + (code ? `?code=${code}` : ''))}`)}
-              >
-                🔑 Đăng nhập tài khoản
-              </button>
-              <button
-                className={styles.scanAgainBtn}
-                onClick={() => router.push(`/register?code=${encodeURIComponent(code)}`)}
-              >
-                🎁 Đăng ký nhận ngay 10.000đ
-              </button>
-            </div>
-          </div>
-        )}
+          <div className={styles.cardBody}>
+            {/* State 1: Customer arrived via QR Link (?code=...) and needs to enter Phone or Login */}
+            {status === 'phone_prompt' && (
+              <div className={styles.center}>
+                <div className={styles.qrDetectedBox}>
+                  <div className={styles.qrDetectedTop}>
+                    <span className={styles.qrDetectedBadge}>
+                      <CheckCircleIcon size={14} />
+                      <span>Đã nhận diện mã tem hợp lệ</span>
+                    </span>
+                    <span className={styles.qrCodeMono}>{code}</span>
+                  </div>
+                  <div className={styles.qrDetectedPreview}>
+                    <div>
+                      <span className={styles.previewLabel}>Giá trị ly nước</span>
+                      <strong className={styles.previewValue}>
+                        {formatVND(detectedDrinkPrice)}
+                      </strong>
+                    </div>
+                    <div className={styles.previewRight}>
+                      <span className={styles.previewLabel}>Hoàn tiền tích điểm</span>
+                      <strong className={styles.previewCashback}>
+                        +{formatVND(estimatedCashback)} ★
+                      </strong>
+                    </div>
+                  </div>
+                </div>
 
-        {/* State: ERROR */}
-        {status === 'error' && (
-          <div className={styles.center}>
-            <span className={styles.errorIcon}>⚠️</span>
-            <h2 className={styles.title}>Không thể tích điểm</h2>
-            <p className={styles.subtitle}>{message}</p>
-            <button className={styles.homeBtn} onClick={resetScan}>
-              Thử lại mã khác
-            </button>
-            <button className={styles.linkBtnMuted} onClick={() => router.push('/')}>
-              ← Về trang chủ
-            </button>
+                <h2 className={styles.title}>Nhập SĐT để nhận điểm</h2>
+                <p className={styles.subtitle}>
+                  Nhập số điện thoại thành viên của bạn để cộng ngay tiền hoàn từ ly nước này vào ví.
+                </p>
+
+                {message && <div className={styles.phoneErrorMsg}>{message}</div>}
+
+                <form onSubmit={handlePhoneSubmit} className={styles.phoneForm}>
+                  <input
+                    type="tel"
+                    placeholder="Nhập SĐT của bạn (VD: 0901234567)"
+                    value={phoneInput}
+                    onChange={(e) => {
+                      setPhoneInput(e.target.value);
+                      setMessage('');
+                    }}
+                    className={styles.phoneInput}
+                    autoFocus
+                    id="scan-phone-input"
+                  />
+                  <button type="submit" className={styles.phoneLookupBtn}>
+                    Nhận hoàn tiền ngay
+                  </button>
+                </form>
+
+                <div className={styles.phoneHint}>
+                  <p>
+                    Chưa có tài khoản thành viên?{' '}
+                    <button
+                      type="button"
+                      className={styles.registerLink}
+                      onClick={() =>
+                        router.push(
+                          `/register?code=${encodeURIComponent(code)}${phoneInput ? `&phone=${encodeURIComponent(phoneInput)}` : ''}`
+                        )
+                      }
+                    >
+                      Đăng ký nhận 10.000đ + cộng mã này
+                    </button>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* State 2: Looking up or Processing */}
+            {(status === 'looking_up' || status === 'processing') && (
+              <div className={styles.center}>
+                <div className={styles.spinner} />
+                <h2 className={styles.title}>
+                  {status === 'looking_up'
+                    ? 'Đang kiểm tra tài khoản thành viên...'
+                    : 'Đang cộng tiền hoàn vào ví...'}
+                </h2>
+                <p className={styles.subtitle}>
+                  Mã tem: <strong>{code}</strong>
+                </p>
+              </div>
+            )}
+
+            {/* State 3: SUCCESS */}
+            {status === 'success' && result && (
+              <div className={styles.center}>
+                <div className={styles.successBadgeCircle}>
+                  <CheckCircleIcon size={36} />
+                </div>
+                <h2 className={styles.title}>Tích điểm thành công!</h2>
+                <p className={styles.subtitle}>
+                  {lookedUpUser ? (
+                    <>
+                      Đã cộng hoàn tiền vào ví của <strong>{lookedUpUser.full_name}</strong> (
+                      {lookedUpUser.phone})
+                    </>
+                  ) : (
+                    <>
+                      Đã cộng hoàn tiền vào ví của{' '}
+                      <strong>{profile?.full_name || 'bạn'}</strong>
+                    </>
+                  )}
+                </p>
+
+                <div className={styles.resultCard}>
+                  <div className={styles.resultRow}>
+                    <span>Mã tem trên ly</span>
+                    <span className={styles.resultCodeText}>{code}</span>
+                  </div>
+                  <div className={styles.resultRow}>
+                    <span>Giá trị ly nước</span>
+                    <span className={styles.resultValue}>{formatVND(result.drink_value)}</span>
+                  </div>
+                  <div className={styles.resultRow}>
+                    <span>Hoàn tiền theo hạng ({result.cashback_rate}%)</span>
+                    <span className={styles.resultCashback}>
+                      +{formatVND(result.cashback)} ★
+                    </span>
+                  </div>
+                  {result.tier_changed && (
+                    <div className={styles.tierUpBanner}>
+                      <span>Chúc mừng thăng hạng {result.new_tier_name}!</span>
+                      {result.tier_bonus > 0 && (
+                        <small>+{formatVND(result.tier_bonus)} thưởng lên hạng</small>
+                      )}
+                    </div>
+                  )}
+                  <div className={`${styles.resultRow} ${styles.resultTotal}`}>
+                    <span>Số dư ví thưởng mới</span>
+                    <span className={styles.resultTotalVal}>
+                      {formatVND(result.new_balance)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className={styles.successActions}>
+                  <button
+                    type="button"
+                    className={styles.homeBtn}
+                    onClick={() => router.push('/')}
+                  >
+                    Về thực đơn &amp; Dùng điểm đặt món
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* State 4: Visited /scan without ?code= parameter */}
+            {status === 'no_code' && (
+              <div className={styles.center}>
+                <div className={styles.statusCircleIcon}>
+                  <QrScanIcon size={28} />
+                </div>
+                <h2 className={styles.title}>Quét bằng Camera điện thoại</h2>
+                <p className={styles.subtitle}>
+                  Mở ứng dụng <strong>Camera</strong> trên điện thoại và hướng vào tem QR dán trên ly nước Ủ LAB. Điện thoại sẽ tự động mở đường dẫn nhận điểm hoàn tiền.
+                </p>
+
+                <div className={styles.guideStepsBox}>
+                  <div className={styles.guideStepRow}>
+                    <span className={styles.guideStepNum}>1</span>
+                    <span>Mở ứng dụng Camera mặc định trên iPhone hoặc Android</span>
+                  </div>
+                  <div className={styles.guideStepRow}>
+                    <span className={styles.guideStepNum}>2</span>
+                    <span>Hướng vào tem QR dán trên ly Matcha / Cold Brew</span>
+                  </div>
+                  <div className={styles.guideStepRow}>
+                    <span className={styles.guideStepNum}>3</span>
+                    <span>Chạm vào thông báo đường link để tự động cộng tiền vào ví</span>
+                  </div>
+                </div>
+
+                {/* Fallback manual input if sticker is torn */}
+                <form onSubmit={handleManualSubmit} className={styles.manualForm}>
+                  <input
+                    type="text"
+                    placeholder="Hoặc nhập mã in dưới tem nếu tem bị mờ..."
+                    value={manualInputCode}
+                    onChange={(e) => setManualInputCode(e.target.value)}
+                    className={styles.codeInput}
+                    aria-label="Mã tem QR"
+                  />
+                  <button type="submit" className={styles.submitBtn}>
+                    Xác nhận
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  className={styles.linkBtnMuted}
+                  onClick={() => router.push('/')}
+                >
+                  ← Quay về thực đơn đặt món
+                </button>
+              </div>
+            )}
+
+            {/* State 5: ERROR */}
+            {status === 'error' && (
+              <div className={styles.center}>
+                <div className={styles.errorCircleIcon}>!</div>
+                <h2 className={styles.title}>Không thể tích điểm</h2>
+                <p className={styles.subtitle}>{message}</p>
+                <div className={styles.successActions}>
+                  <button
+                    type="button"
+                    className={styles.homeBtn}
+                    onClick={() => {
+                      setMessage('');
+                      setStatus('no_code');
+                    }}
+                  >
+                    Nhập lại mã tem khác
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.linkBtnMuted}
+                    onClick={() => router.push('/')}
+                  >
+                    ← Quay về thực đơn
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
 
 export default function ScanPage() {
   return (
-    <Suspense fallback={
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <div className={styles.center}>
-            <div className={styles.spinner} />
-            <p>Đang tải trang quét mã...</p>
+    <Suspense
+      fallback={
+        <div className={styles.pageWrapper}>
+          <div className={styles.page}>
+            <div className={styles.card}>
+              <div className={styles.cardBody}>
+                <div className={styles.center}>
+                  <div className={styles.spinner} />
+                  <p>Đang kiểm tra đường dẫn tích điểm...</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <ScanContent />
     </Suspense>
   );

@@ -1,24 +1,27 @@
 .card {
   background: var(--surface-card);
-  border-radius: var(--radius-lg);
+  border-radius: 12px; /* Starbucks --cardBorderRadius */
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  border: 1px solid rgba(0, 0, 0, 0.05);
   transition: transform var(--duration-normal) var(--ease-out),
-              box-shadow var(--duration-normal) var(--ease-out);
+              box-shadow var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out);
   animation: cardEnter 0.4s var(--ease-out) both;
   display: flex;
   flex-direction: column;
 }
 
 .card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow-md);
+  border-color: rgba(0, 117, 74, 0.22);
 }
 
 @keyframes cardEnter {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
@@ -26,179 +29,309 @@
   }
 }
 
-/* Category-specific accent strips */
+/* ── Product Studio Backdrop (Color-Block Surfaces, No Harsh Gradients) ── */
 .imageArea {
   position: relative;
-  height: 100px;
+  height: 168px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: var(--space-3);
 }
 
 .matcha .imageArea {
-  background: linear-gradient(135deg, #e8f0e4 0%, #d4e4cc 100%);
+  background: #EAF3EE;
 }
 
 .coldBrew .imageArea {
-  background: linear-gradient(135deg, #e4e8ee 0%, #d0d7e2 100%);
+  background: #F4F0E8;
 }
 
 .cannedBrew .imageArea {
-  background: linear-gradient(135deg, #f0ebe4 0%, #e4ddd2 100%);
+  background: #EFECE6;
 }
 
-.emoji {
-  font-size: 2.5rem;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-  transition: transform var(--duration-normal) var(--ease-spring);
+.illustrationWrap {
+  width: 126px;
+  height: 126px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--duration-normal) var(--ease-out);
 }
 
-.card:hover .emoji {
-  transform: scale(1.15) rotate(-5deg);
+.card:hover .illustrationWrap {
+  transform: scale(1.06) translateY(-2px);
+}
+
+.drinkSvg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Top & Bottom Badges ── */
+.topBadges {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  pointer-events: none;
 }
 
 .signatureBadge {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--accent-warm);
-  color: white;
-  font-size: 0.625rem;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-house);
+  color: var(--sb-gold);
+  border: 1px solid var(--sb-gold);
+  font-size: 0.6875rem;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.shelfBadge {
-  position: absolute;
-  bottom: var(--space-2);
-  left: var(--space-2);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(4px);
-  color: var(--ink-muted);
-  font-size: 0.625rem;
-  font-weight: 500;
+.craftTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--sb-green);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
+.rewardsPill {
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-gold-wash);
+  border: 1px solid var(--sb-gold);
+  color: #8C6722;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.shelfBadge {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: rgba(30, 57, 50, 0.88);
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+/* ── Card Content ── */
 .content {
-  padding: var(--space-3) var(--space-3) var(--space-3);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   flex: 1;
 }
 
-.name {
-  font-family: 'Inter', sans-serif;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--ink-deep);
-  line-height: 1.3;
-  min-height: 2.6em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.headerInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
+.name {
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--ink-deep);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+/* ── Starbucks PDP Cup-Size Selector ── */
 .sizeRow {
   display: flex;
-  gap: var(--space-1);
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .sizeBtn {
   flex: 1;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--ink-muted);
-  background: var(--surface-dim);
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
   border: 1.5px solid transparent;
+  color: var(--ink-muted);
   transition: all var(--duration-fast) var(--ease-out);
-  white-space: nowrap;
+  text-align: left;
 }
 
 .sizeBtn:hover {
-  color: var(--ink);
-  border-color: var(--ink-light);
+  background: var(--surface-dim);
+  color: var(--ink-deep);
+}
+
+.sizeBtn:active {
+  transform: var(--button-active-scale);
 }
 
 .sizeBtn.sizeActive {
-  color: var(--accent);
-  background: var(--accent-light);
-  border-color: var(--accent);
+  background: rgba(212, 233, 226, 0.42);
+  border-color: var(--sb-accent);
+  color: var(--sb-house);
 }
 
+.cupIconRing {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid transparent;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transition: all var(--duration-fast);
+}
+
+.sizeActive .cupIconRing {
+  border-color: var(--sb-accent);
+  background: #FFFFFF;
+  color: var(--sb-accent);
+}
+
+.sizeMeta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.sizeLabelText {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-deep);
+}
+
+.sizeActive .sizeLabelText {
+  color: var(--sb-green);
+}
+
+.sizeSubPrice {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+/* ── Footer & Primary Pill CTA ── */
 .footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
   margin-top: auto;
-  padding-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-light);
+}
+
+.priceBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.priceLabel {
+  font-size: 0.6875rem;
+  color: var(--ink-muted);
+  font-weight: 500;
 }
 
 .price {
-  font-size: var(--text-base);
-  font-weight: 700;
-  color: var(--ink-deep);
-  letter-spacing: -0.01em;
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--sb-green);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .addBtn {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-full);
-  background: var(--ink);
-  color: var(--ink-inverse);
-  display: flex;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill); /* Universal 50px pill */
+  background: var(--sb-accent);
+  color: #FFFFFF;
+  border: 1px solid var(--sb-accent);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   transition: all var(--duration-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
 .addBtn:hover {
-  background: var(--accent);
-  transform: scale(1.1);
+  background: var(--sb-green);
+  border-color: var(--sb-green);
+  box-shadow: 0 4px 10px rgba(0, 117, 74, 0.25);
 }
 
 .addBtn:active {
-  transform: scale(0.9);
+  transform: var(--button-active-scale);
 }
 
 .addBtn.adding {
-  animation: addPulse 0.4s var(--ease-spring);
-  background: var(--accent);
+  background: var(--sb-house);
+  border-color: var(--sb-house);
 }
 
-@keyframes addPulse {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.3); }
-  100% { transform: scale(1); }
-}
-
-/* Responsive */
-@media (max-width: 380px) {
+/* Mobile Compact Adjustments */
+@media (max-width: 520px) {
   .imageArea {
-    height: 80px;
+    height: 138px;
   }
-
-  .emoji {
-    font-size: 2rem;
+  .illustrationWrap {
+    width: 102px;
+    height: 102px;
   }
-
+  .content {
+    padding: 12px;
+    gap: 10px;
+  }
   .name {
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
   }
-
+  .description {
+    font-size: 0.75rem;
+  }
+  .cupIconRing {
+    display: none;
+  }
   .sizeBtn {
-    font-size: 0.625rem;
-    padding: 3px var(--space-1);
+    justify-content: center;
+    text-align: center;
+    min-height: 38px;
+    padding: 4px 6px;
+  }
+  .sizeMeta {
+    align-items: center;
+  }
+  .addBtn {
+    padding: 7px 12px;
+    font-size: 0.75rem;
   }
 }

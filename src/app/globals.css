@@ -1,45 +1,86 @@
 /* ============================================================
-   COFFEE LOYALTY - DESIGN SYSTEM
-   Color Palette: #F7F6F4 (cream) + #424A58 (slate) + #7C9A6E (matcha)
+   Ủ LAB — MATCHA & COLD BREW DESIGN SYSTEM
+   Starbucks Retail Flagship (awesome-design-md) × UI/UX Pro Max
+   Canvas: #F2F0EB (Neutral Warm) · #EDEBE9 (Ceramic) · #FFFFFF (White)
+   4-Tier Greens: #006241 (Starbucks) · #00754A (Accent) · #1E3932 (House) · #2B5148 (Uplift)
+   Rewards Gold: #CBA258 · #DFC49D · #FAF6EE
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Lora:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-/* ── Tokens ── */
 :root {
-  /* Surface */
-  --surface: #F7F6F4;
-  --surface-card: #FFFFFF;
-  --surface-dim: #EDECE9;
-  --surface-overlay: rgba(66, 74, 88, 0.5);
+  /* ── 1. Four-Tier Green Brand System (Starbucks Flagship) ── */
+  --sb-green: #006241;           /* Primary brand green (headings, brand badges) */
+  --sb-accent: #00754A;          /* Luminous CTA green (filled pills, active rings, Frap) */
+  --sb-accent-hover: #005C3A;    /* Darker hover state for Green Accent */
+  --sb-house: #1E3932;           /* Deep espresso-matcha green (feature bands, footer, rewards) */
+  --sb-uplift: #2B5148;          /* Mid-dark botanical green (decorative depth) */
+  --sb-mint: #D4E9E2;            /* Pale mint wash (valid states, light green chips) */
+  --sb-mint-soft: rgba(212, 233, 226, 0.45);
 
-  /* Ink */
-  --ink: #424A58;
-  --ink-deep: #2E3440;
-  --ink-muted: #6B7280;
-  --ink-light: #9CA3AF;
-  --ink-inverse: #F7F6F4;
+  /* ── 2. Rewards Gold Ceremony Tokens ── */
+  --sb-gold: #CBA258;            /* Reserved for Rewards stars, cashback & Signature tags */
+  --sb-gold-deep: #A88038;
+  --sb-gold-light: #DFC49D;      /* Soft gold border & wash */
+  --sb-gold-wash: #FAF6EE;       /* Cream-gold surface wash for Rewards ceremony sections */
 
-  /* Accent */
-  --accent: #7C9A6E;
-  --accent-hover: #6B8A5D;
-  --accent-light: rgba(124, 154, 110, 0.12);
-  --accent-warm: #C4956A;
-  --accent-warm-light: rgba(196, 149, 106, 0.12);
+  /* ── 3. Warm Café Surfaces & Canvases ── */
+  --surface: #F2F0EB;            /* Neutral Warm — Primary café cream page canvas */
+  --surface-dim: #EDEBE9;        /* Ceramic — Zone separators & subtle container washes */
+  --surface-cool: #F9F9F9;       /* Neutral Cool — Quiet utility containers & form wraps */
+  --surface-card: #FFFFFF;       /* Crisp white card & modal surface */
+  --surface-overlay: rgba(30, 57, 50, 0.56);
 
-  /* Tier colors */
-  --tier-member: #424A58;
-  --tier-silver: #9CA3AF;
-  --tier-gold: #D4A853;
-  --tier-diamond: #8B5CF6;
+  /* Admin & Table Compatibility Aliases */
+  --bg-alt: #F2F0EB;
+  --border: #DFDDD7;
+  --border-light: #ECEAE4;
+  --input-border: #D6DBDE;
 
-  /* Semantic */
-  --success: #22C55E;
-  --warning: #F59E0B;
-  --error: #EF4444;
-  --info: #3B82F6;
+  /* ── 4. Warm Neutrals & Typography Ink ── */
+  --ink-deep: rgba(0, 0, 0, 0.87);     /* Text Black (#1F2120) — never cold pure black */
+  --ink: #1E3932;                      /* House Green ink for primary structural UI */
+  --ink-secondary: rgba(0, 0, 0, 0.70);
+  --ink-muted: rgba(0, 0, 0, 0.58);    /* Text Black Soft */
+  --ink-light: rgba(0, 0, 0, 0.38);
+  --ink-inverse: #FFFFFF;
+  --ink-inverse-soft: rgba(255, 255, 255, 0.72);
+  --ink-rewards: #33433D;              /* Dedicated Rewards slate-green text */
 
-  /* Spacing */
+  /* ── 5. Primary Accent Mapping ── */
+  --accent: #00754A;
+  --accent-hover: #006241;
+  --accent-light: rgba(0, 117, 74, 0.10);
+  --accent-warm: #CBA258;
+  --accent-warm-light: rgba(203, 162, 88, 0.16);
+
+  /* ── 6. Loyalty Tier Colors ── */
+  --tier-member: #2B5148;
+  --tier-silver: #64748B;
+  --tier-gold: #CBA258;
+  --tier-diamond: #006241;
+
+  /* ── 7. Semantic Feedback Colors ── */
+  --success: #00754A;
+  --warning: #D97706;
+  --error: #C82014;
+  --info: #0284C7;
+
+  /* ── 8. Typography Families & Scale ── */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.1875rem;    /* 19px — Starbucks Body Large */
+  --text-xl: 1.375rem;     /* 22px */
+  --text-2xl: 1.5rem;      /* 24px — Starbucks H1/H2 standard */
+  --text-3xl: 2.125rem;    /* 34px */
+  --text-4xl: 2.8125rem;   /* 45px — Starbucks Hero Large */
+
+  /* ── 9. Spacing Scale (8dp / 16px Universal Rhythm) ── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -51,35 +92,30 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* ── 10. Border Radius System ── */
+  --radius-xs: 4px;        /* PDP select / input rectangle */
+  --radius-sm: 8px;
+  --radius-md: 12px;       /* Starbucks universal card radius (--cardBorderRadius) */
+  --radius-lg: 12px;       /* Normalized to 12px flagship card geometry */
+  --radius-xl: 16px;
+  --radius-pill: 50px;     /* Universal full-pill button radius (--buttonBorderRadius) */
   --radius-full: 9999px;
 
-  /* Shadow */
-  --shadow-sm: 0 1px 3px rgba(46, 52, 64, 0.06);
-  --shadow-md: 0 4px 12px rgba(46, 52, 64, 0.08);
-  --shadow-lg: 0 8px 30px rgba(46, 52, 64, 0.12);
-  --shadow-card: 0 2px 8px rgba(46, 52, 64, 0.05);
+  /* ── 11. Whisper-Soft Multi-Layer Shadows ── */
+  --shadow-card: 0 0 0.5px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(30, 57, 50, 0.10), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 28px rgba(30, 57, 50, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  --shadow-nav: 0 1px 3px rgba(0, 0, 0, 0.10), 0 2px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.07);
+  --shadow-frap: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0.14);
 
-  /* Transition */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --duration-fast: 150ms;
-  --duration-normal: 250ms;
+  /* ── 12. Motion & Micro-Interaction Tokens ── */
+  --button-active-scale: scale(0.95);
+  --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-spring: cubic-bezier(0.32, 2.32, 0.61, 0.27);
+  --duration-fast: 180ms;
+  --duration-normal: 280ms;
   --duration-slow: 400ms;
-
-  /* Type scale */
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 2rem;
-  --text-4xl: 2.5rem;
 }
 
 /* ── Reset ── */
@@ -96,10 +132,11 @@ html {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  color: var(--ink);
+  font-family: var(--font-sans);
+  color: var(--ink-deep);
   background: var(--surface);
-  line-height: 1.6;
+  line-height: 1.5;
+  letter-spacing: -0.01em; /* SoDoSans characteristic tight tracking */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100dvh;
@@ -116,11 +153,13 @@ button {
   border: none;
   background: none;
   font-size: inherit;
+  letter-spacing: -0.01em;
 }
 
 input, select, textarea {
   font-family: inherit;
   font-size: inherit;
+  letter-spacing: -0.01em;
 }
 
 img {
@@ -133,18 +172,19 @@ ul, ol {
   list-style: none;
 }
 
-/* ── Typography ── */
+/* ── Typography Hierarchy ── */
 h1, h2, h3, h4 {
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: var(--font-sans);
   color: var(--ink-deep);
   line-height: 1.2;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 h1 { font-size: var(--text-4xl); }
-h2 { font-size: var(--text-3xl); }
-h3 { font-size: var(--text-2xl); }
-h4 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-2xl); }
+h3 { font-size: var(--text-xl); }
+h4 { font-size: var(--text-lg); }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
@@ -155,17 +195,20 @@ h4 { font-size: var(--text-xl); }
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--ink-light);
+  background: rgba(30, 57, 50, 0.25);
   border-radius: var(--radius-full);
 }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 57, 50, 0.45);
+}
 
-/* ── Focus ── */
+/* ── Accessible Focus Ring ── */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--sb-accent);
   outline-offset: 2px;
 }
 
-/* ── Reduced motion ── */
+/* ── Reduced Motion Support (UI/UX Pro Max) ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -175,7 +218,7 @@ h4 { font-size: var(--text-xl); }
   html { scroll-behavior: auto; }
 }
 
-/* ── Animations ── */
+/* ── Keyframe Animations ── */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -198,22 +241,13 @@ h4 { font-size: var(--text-xl); }
 
 @keyframes cartBounce {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.25); }
+  50% { transform: scale(1.18); }
 }
 
 @keyframes pointPulse {
-  0% { box-shadow: 0 0 0 0 rgba(124, 154, 110, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(124, 154, 110, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(124, 154, 110, 0); }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
-}
-
-@keyframes progressFill {
-  from { width: 0; }
+  0% { box-shadow: 0 0 0 0 rgba(0, 117, 74, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(0, 117, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 117, 74, 0); }
 }
 
 @keyframes spin {
@@ -221,12 +255,7 @@ h4 { font-size: var(--text-xl); }
   to { transform: rotate(360deg); }
 }
 
-@keyframes toast-enter {
-  from { opacity: 0; transform: translateY(20px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* ── Utility classes ── */
+/* ── Utility Classes ── */
 .animate-fade-in {
   animation: fadeIn var(--duration-normal) var(--ease-out);
 }
@@ -235,12 +264,6 @@ h4 { font-size: var(--text-xl); }
 }
 .animate-scale-in {
   animation: scaleIn var(--duration-normal) var(--ease-out);
-}
-.animate-cart-bounce {
-  animation: cartBounce 0.4s var(--ease-spring);
-}
-.animate-point-pulse {
-  animation: pointPulse 1s var(--ease-out);
 }
 
 /* ── Print styles for Xprinter XP-350B (50mm x 30mm) ── */
@@ -273,7 +296,7 @@ h4 { font-size: var(--text-xl); }
   }
 
   .print-label__price {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
     font-size: 10pt;
     font-weight: 700;
     color: #000;
@@ -292,11 +315,11 @@ h4 { font-size: var(--text-xl); }
   }
 }
 
-/* ── Responsive ── */
+/* ── Responsive Typography ── */
 @media (max-width: 768px) {
   :root {
-    --text-4xl: 2rem;
+    --text-4xl: 2.125rem;
     --text-3xl: 1.75rem;
-    --text-2xl: 1.25rem;
+    --text-2xl: 1.375rem;
   }
 }

@@ -14,12 +14,14 @@ export interface MenuItem {
   sizes: MenuItemSize[];
   isSignature?: boolean;
   shelfLife?: string; // For bottled products
+  tag?: string;
 }
 
 export interface MenuCategory {
   name: string;
   slug: string;
   icon: string;
+  subtitle?: string;
   items: MenuItem[];
 }
 
@@ -34,6 +36,7 @@ export const menuData: MenuCategory[] = [
         name: 'Original Cold Brew',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        tag: '18h Steeped',
         sizes: [
           { label: 'M', price: 29000 },
           { label: 'L', price: 34000 },
@@ -44,6 +47,8 @@ export const menuData: MenuCategory[] = [
         name: 'Cold Brew Cam Sả',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        tag: 'Best Seller',
+        isSignature: true,
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
@@ -54,6 +59,7 @@ export const menuData: MenuCategory[] = [
         name: 'Cold Brew Vải',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        tag: 'Fruity Note',
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
@@ -64,6 +70,7 @@ export const menuData: MenuCategory[] = [
         name: 'Cold Brew Chanh Vàng',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        tag: 'Refreshing',
         sizes: [
           { label: 'M', price: 29000 },
           { label: 'L', price: 34000 },
@@ -74,6 +81,7 @@ export const menuData: MenuCategory[] = [
         name: 'Cold Brew Nước Dừa',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        tag: 'Tropical',
         sizes: [
           { label: 'M', price: 29000 },
           { label: 'L', price: 34000 },
@@ -91,6 +99,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Latte',
         category: 'Matcha',
         categorySlug: 'matcha',
+        tag: 'Uji Ceremonial',
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
@@ -101,6 +110,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Coco',
         category: 'Matcha',
         categorySlug: 'matcha',
+        tag: 'Light & Fresh',
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
@@ -111,6 +121,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
+        tag: 'Plant-Based',
         sizes: [
           { label: 'M', price: 34000 },
           { label: 'L', price: 39000 },
@@ -121,6 +132,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Cold Whisk',
         category: 'Matcha',
         categorySlug: 'matcha',
+        tag: 'Craft Signature',
         sizes: [
           { label: 'M', price: 42000 },
           { label: 'L', price: 46000 },
@@ -139,6 +151,7 @@ export const menuData: MenuCategory[] = [
         name: 'Cold Brew Chanh Vàng',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
+        tag: 'Bottled Craft',
         sizes: [
           { label: 'Chai', price: 74000 },
         ],
@@ -149,6 +162,7 @@ export const menuData: MenuCategory[] = [
         name: 'Pure Black Cold Brew',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
+        tag: 'Zero Sugar',
         sizes: [
           { label: 'Chai', price: 69000 },
         ],

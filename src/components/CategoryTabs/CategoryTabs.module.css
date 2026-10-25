@@ -5,9 +5,9 @@
 
 .scroll {
   display: flex;
-  gap: var(--space-2);
+  gap: 10px;
   overflow-x: auto;
-  padding: 0 var(--space-4);
+  padding: 4px var(--space-4);
   -ms-overflow-style: none;
   scrollbar-width: none;
   scroll-snap-type: x mandatory;
@@ -18,40 +18,70 @@
 }
 
 .tab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-full);
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--ink-muted);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink-deep);
   background: var(--surface-card);
-  border: 1.5px solid var(--surface-dim);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-card);
   transition: all var(--duration-fast) var(--ease-out);
   scroll-snap-align: start;
   flex-shrink: 0;
 }
 
 .tab:hover {
-  color: var(--ink);
-  border-color: var(--ink-light);
+  border-color: var(--sb-accent);
+  color: var(--sb-green);
+  transform: translateY(-1px);
+}
+
+.tab:active {
+  transform: var(--button-active-scale);
 }
 
 .tab.active {
-  color: var(--ink-inverse);
-  background: var(--ink);
-  border-color: var(--ink);
+  color: #FFFFFF;
+  background: var(--sb-house);
+  border-color: var(--sb-house);
+  box-shadow: 0 4px 12px rgba(30, 57, 50, 0.22);
 }
 
 .tabIcon {
-  font-size: 1.125rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sb-accent);
+  transition: color var(--duration-fast);
+}
+
+.tab.active .tabIcon {
+  color: var(--sb-gold);
 }
 
 .tabLabel {
   line-height: 1;
+}
+
+.tabCount {
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--surface);
+  color: var(--ink-muted);
+  line-height: 1.2;
+}
+
+.tab.active .tabCount {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--sb-mint);
 }
 
 .fadeLeft,
@@ -59,7 +89,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 32px;
+  width: 36px;
   z-index: 2;
   pointer-events: none;
 }

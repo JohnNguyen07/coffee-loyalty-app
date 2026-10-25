@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import styles from './page.module.css';
 import { useAuth } from '@/hooks/useAuth';
+import Header from '@/components/Header/Header';
+import { StarSolidIcon } from '@/components/Icons/LabIcons';
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -49,111 +51,122 @@ function LoginContent() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        <div className={styles.logo}>
-          <div className={styles.logoWrap}>
-            <Image
-              src="/logo.png"
-              alt="Ủ LAB Logo"
-              width={64}
-              height={64}
-              className={styles.logoImg}
-              priority
-            />
+    <div className={styles.pageWrapper}>
+      <Header />
+
+      <main className={styles.page}>
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={styles.logoWrap}>
+              <Image
+                src="/logo.png"
+                alt="Ủ LAB Logo"
+                width={56}
+                height={56}
+                className={styles.logoImg}
+                priority
+              />
+            </div>
+            <div className={styles.eyebrow}>
+              <StarSolidIcon size={12} />
+              <span>Ủ LAB REWARDS®</span>
+            </div>
+            <h1 className={styles.logoText}>Đăng nhập thành viên</h1>
+            <p className={styles.description}>
+              Quản lý ví điểm thưởng và nhận hoàn tiền tới 10% cho mỗi ly nước
+            </p>
           </div>
-          <h1 className={styles.logoText}>Ủ LAB</h1>
+
+          <div className={styles.cardBody}>
+            {errorMsg && <div className={styles.errorMsg}>{errorMsg}</div>}
+
+            <form onSubmit={handleSubmit} className={styles.form}>
+              <div className={styles.field}>
+                <label htmlFor="login-account" className={styles.label}>
+                  Số điện thoại hoặc Email
+                </label>
+                <input
+                  id="login-account"
+                  type="text"
+                  placeholder="VD: 0901234567 hoặc email..."
+                  value={account}
+                  onChange={(e) => {
+                    setAccount(e.target.value);
+                    setErrorMsg('');
+                  }}
+                  className={styles.input}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className={styles.field}>
+                <label htmlFor="login-password" className={styles.label}>
+                  Mật khẩu
+                </label>
+                <input
+                  id="login-password"
+                  type="password"
+                  placeholder="Nhập mật khẩu của bạn..."
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setErrorMsg('');
+                  }}
+                  className={styles.input}
+                  required
+                />
+              </div>
+
+              <button type="submit" className={styles.submitBtn} disabled={loading}>
+                {loading ? <span className={styles.spinner} /> : 'Đăng nhập'}
+              </button>
+            </form>
+
+            <div className={styles.joinBanner}>
+              <p className={styles.footer}>
+                Chưa có tài khoản thành viên?
+                <button
+                  type="button"
+                  className={styles.registerLink}
+                  onClick={() =>
+                    router.push(
+                      `/register${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`
+                    )
+                  }
+                >
+                  Đăng ký ngay (+10.000đ)
+                </button>
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className={styles.backBtn}
+              onClick={() => router.push('/')}
+            >
+              ← Quay lại thực đơn Ủ LAB
+            </button>
+          </div>
         </div>
-
-        <p className={styles.description}>
-          Đăng nhập tài khoản thành viên để tích điểm và nhận ưu đãi hoàn tiền tới 10%
-        </p>
-
-        {errorMsg && (
-          <div className={styles.errorMsg}>
-            {errorMsg}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.field}>
-            <label htmlFor="login-account" className={styles.label}>
-              Số điện thoại hoặc Email
-            </label>
-            <input
-              id="login-account"
-              type="text"
-              placeholder="VD: 0901234567 hoặc email..."
-              value={account}
-              onChange={(e) => {
-                setAccount(e.target.value);
-                setErrorMsg('');
-              }}
-              className={styles.input}
-              autoFocus
-              required
-            />
-          </div>
-
-          <div className={styles.field}>
-            <label htmlFor="login-password" className={styles.label}>
-              Mật khẩu
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              placeholder="Nhập mật khẩu của bạn..."
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setErrorMsg('');
-              }}
-              className={styles.input}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className={styles.submitBtn}
-            disabled={loading}
-          >
-            {loading ? <span className={styles.spinner} /> : 'Đăng nhập'}
-          </button>
-        </form>
-
-        <p className={styles.footer}>
-          Chưa có tài khoản thành viên?
-          <button
-            type="button"
-            className={styles.registerLink}
-            onClick={() => router.push(`/register${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`)}
-          >
-            Đăng ký ngay (+10.000đ)
-          </button>
-        </p>
-
-        <button
-          type="button"
-          className={styles.backBtn}
-          onClick={() => router.push('/')}
-        >
-          ← Quay lại thực đơn
-        </button>
-      </div>
+      </main>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <div style={{ textAlign: 'center', padding: '2rem' }}>Đang tải...</div>
+    <Suspense
+      fallback={
+        <div className={styles.pageWrapper}>
+          <div className={styles.page}>
+            <div className={styles.card}>
+              <div style={{ textAlign: 'center', padding: '2rem' }}>Đang tải...</div>
+            </div>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <LoginContent />
     </Suspense>
   );

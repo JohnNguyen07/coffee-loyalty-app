@@ -6,12 +6,11 @@ import AdminSidebar, { AdminTab, AdminNavSelection } from '@/components/Admin/Ad
 import POSPanel from '@/components/Admin/POSPanel';
 import OrdersPanel from '@/components/Admin/OrdersPanel';
 import CustomersPanel, { CustomerSubTab } from '@/components/Admin/CustomersPanel';
-import ProductsPanel, { ProductSubTab } from '@/components/Admin/ProductsPanel';
+import ProductsPanel from '@/components/Admin/ProductsPanel';
 import LoyaltyPanel, { LoyaltySubTab } from '@/components/Admin/LoyaltyPanel';
-import QRPanel, { QRSubTab } from '@/components/Admin/QRPanel';
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<AdminTab>('customers');
+  const [activeTab, setActiveTab] = useState<AdminTab>('pos');
   const [activeSubTab, setActiveSubTab] = useState<string>('detail');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -19,10 +18,12 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab') as AdminTab;
+      const rawTab = params.get('tab');
       const sub = params.get('sub');
-      if (tab) {
-        setActiveTab(tab);
+      if (rawTab) {
+        // Redirect legacy 'qr' tab to unified 'pos' tab
+        const normalizedTab = (rawTab === 'qr' ? 'pos' : rawTab) as AdminTab;
+        setActiveTab(normalizedTab);
         if (sub) setActiveSubTab(sub);
       }
     }
@@ -63,7 +64,7 @@ export default function AdminPage() {
             <line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <span className={styles.mobileTitle}>Ủ LAB Admin</span>
+        <span className={styles.mobileTitle}>Ủ LAB POS &amp; Admin</span>
       </div>
 
       {/* Overlay for mobile sidebar */}
@@ -82,32 +83,21 @@ export default function AdminPage() {
       />
 
       <main className={styles.content}>
+        {activeTab === 'pos' && <POSPanel />}
+        {activeTab === 'orders' && <OrdersPanel />}
         {activeTab === 'customers' && (
           <CustomersPanel
             key={`cust-${activeSubTab}`}
             initialSubTab={(activeSubTab as CustomerSubTab) || 'detail'}
           />
         )}
-        {activeTab === 'products' && (
-          <ProductsPanel
-            key={`prod-${activeSubTab}`}
-            initialSubTab={(activeSubTab as ProductSubTab) || 'products'}
-          />
-        )}
+        {activeTab === 'products' && <ProductsPanel />}
         {activeTab === 'loyalty' && (
           <LoyaltyPanel
             key={`loy-${activeSubTab}`}
             initialSubTab={(activeSubTab as LoyaltySubTab) || 'tiers'}
           />
         )}
-        {activeTab === 'qr' && (
-          <QRPanel
-            key={`qr-${activeSubTab}`}
-            initialSubTab={(activeSubTab as QRSubTab) || 'generator'}
-          />
-        )}
-        {activeTab === 'pos' && <POSPanel />}
-        {activeTab === 'orders' && <OrdersPanel />}
       </main>
     </div>
   );
