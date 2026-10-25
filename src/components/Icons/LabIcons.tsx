@@ -171,6 +171,7 @@ export function DrinkIllustration({
   const isLychee = itemId.includes('vai');
   const isLemon = itemId.includes('chanh-vang');
   const isCoconut = itemId.includes('nuoc-dua');
+  const isSaltedCream = itemId.includes('kem-muoi');
 
   return (
     <svg
@@ -241,6 +242,25 @@ export function DrinkIllustration({
       <rect x="50" y="50" width="15" height="15" rx="3.5" transform="rotate(-10 50 50)" fill="rgba(255,255,255,0.38)" stroke="rgba(255,255,255,0.75)" strokeWidth="1" />
       <rect x="71" y="55" width="15" height="15" rx="3.5" transform="rotate(14 71 55)" fill="rgba(255,255,255,0.32)" stroke="rgba(255,255,255,0.7)" strokeWidth="1" />
       <rect x="57" y="76" width="15" height="15" rx="3.5" transform="rotate(5 57 76)" fill="rgba(255,255,255,0.28)" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+
+      {/* Kem Muối Velvet Foam Layer */}
+      {isSaltedCream && (
+        <g>
+          <path
+            d="M41.8 40H98.2L96 60C89 62 83 58 78 60C72 62 67 58 61 60C55 61 49 58 44 60L41.8 40Z"
+            fill="#FFFDF7"
+          />
+          <path
+            d="M43.5 59C48.5 57 54.5 60 60.5 59C66.5 57 71.5 61 77.5 59C82.5 57 88.5 61 95.5 59"
+            stroke="#EAE4D5"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <circle cx="58" cy="48" r="1" fill="#CBA258" opacity="0.6" />
+          <circle cx="73" cy="51" r="1.2" fill="#CBA258" opacity="0.7" />
+          <circle cx="84" cy="47" r="0.8" fill="#CBA258" opacity="0.5" />
+        </g>
+      )}
 
       {/* Cup rim */}
       <rect x="37" y="30" width="66" height="5" rx="2.5" fill="#1E3932" />

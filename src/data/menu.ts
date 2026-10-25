@@ -43,6 +43,17 @@ export const menuData: MenuCategory[] = [
         ],
       },
       {
+        id: 'cold-brew-kem-muoi',
+        name: 'Cold Brew Kem Muối',
+        category: 'Cold Brew',
+        categorySlug: 'cold-brew',
+        tag: 'Mới · Béo Mịn',
+        sizes: [
+          { label: 'M', price: 29000 },
+          { label: 'L', price: 34000 },
+        ],
+      },
+      {
         id: 'cold-brew-cam-sa',
         name: 'Cold Brew Cam Sả',
         category: 'Cold Brew',
