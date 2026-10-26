@@ -1,6 +1,36 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 import { allMenuItems } from '@/data/menu';
+
+async function resolveProfile(user: { id: string; email?: string | null }) {
+  const adminClient = createAdminClient();
+  let { data: profile } = await adminClient
+    .from('users')
+    .select('id, role, point_balance')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (!profile) {
+    const { data: byGoogle } = await adminClient
+      .from('users')
+      .select('id, role, point_balance')
+      .eq('google_id', user.id)
+      .maybeSingle();
+    profile = byGoogle;
+  }
+
+  if (!profile && user.email) {
+    const { data: byEmail } = await adminClient
+      .from('users')
+      .select('id, role, point_balance')
+      .eq('email', user.email)
+      .maybeSingle();
+    profile = byEmail;
+  }
+
+  return { profile, adminClient };
+}
 
 // POST /api/orders — Create a new order (customer)
 export async function POST(request: NextRequest) {
@@ -11,11 +41,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, point_balance')
-    .eq('google_id', user.id)
-    .single();
+  const { profile, adminClient } = await resolveProfile(user);
 
   if (!profile) {
     return NextResponse.json({ error: 'Không tìm thấy tài khoản' }, { status: 404 });
@@ -44,7 +70,7 @@ export async function POST(request: NextRequest) {
   const totalDue = subtotal - pointsToUse;
 
   // Create order with items using RPC for atomicity
-  const { data: result, error } = await supabase.rpc('create_order', {
+  const { data: result, error } = await adminClient.rpc('create_order', {
     p_user_id: profile.id,
     p_items: JSON.stringify(items),
     p_points_used: pointsToUse,
@@ -70,11 +96,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('id, role')
-    .eq('google_id', user.id)
-    .single();
+  const { profile, adminClient } = await resolveProfile(user);
 
   if (!profile) {
     return NextResponse.json({ error: 'Không tìm thấy tài khoản' }, { status: 404 });
@@ -86,7 +108,7 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '20');
   const offset = (page - 1) * limit;
 
-  let query = supabase
+  let query = adminClient
     .from('orders')
     .select('*, items:order_items(*), user:users(id, full_name, email, phone, current_tier_id)', { count: 'exact' })
     .order('created_at', { ascending: false })

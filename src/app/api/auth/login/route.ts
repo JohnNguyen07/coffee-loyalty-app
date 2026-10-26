@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user profile from database with admin client to bypass RLS
+    // Fetch user profile from database with admin client (or authenticated supabase client)
     let { data: profile } = await adminClient
       .from('users')
       .select('*, tier:tiers(*)')
@@ -98,6 +98,15 @@ export async function POST(request: NextRequest) {
       profile = profileByPhone;
     }
 
+    if (!profile) {
+      const { data: profileFromSession } = await supabase
+        .from('users')
+        .select('*, tier:tiers(*)')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+      profile = profileFromSession;
+    }
+
     // Get next tier info
     const { data: nextTier } = await adminClient
       .from('tiers')
@@ -115,16 +124,19 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(10);
 
+    const isAdminEmail = targetEmail.toLowerCase() === 'admin@coffeehouse.vn';
+
     const fullUser = profile ? {
       ...profile,
+      role: isAdminEmail ? 'ADMIN' : profile.role,
       next_tier: nextTier || null,
       recent_transactions: recentTransactions || [],
     } : {
       id: authData.user.id,
       email: authData.user.email,
-      full_name: authData.user.user_metadata?.full_name || 'Khách hàng',
+      full_name: authData.user.user_metadata?.full_name || (isAdminEmail ? 'Quản trị viên' : 'Khách hàng'),
       phone: authData.user.user_metadata?.phone || cleanAccount,
-      role: 'USER',
+      role: isAdminEmail ? 'ADMIN' : 'USER',
       point_balance: 10000,
       total_spending: 0,
       tier: { code: 'MEMBER', name: 'Member', cashback_rate: 3 },

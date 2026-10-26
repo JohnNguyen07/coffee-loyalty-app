@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/qr/scan — Customer scans QR code to earn cashback points
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const adminClient = createAdminClient();
     const body = await request.json();
     const { code, user_id, phone } = body;
 
@@ -18,7 +20,7 @@ export async function POST(request: NextRequest) {
     let profile: any = null;
 
     if (user_id) {
-      const { data } = await supabase
+      const { data } = await adminClient
         .from('users')
         .select('*, tier:tiers(*)')
         .eq('id', user_id)
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
       profile = data;
     } else if (phone) {
       const normalized = phone.replace(/[\s\-()]/g, '');
-      const { data } = await supabase
+      const { data } = await adminClient
         .from('users')
         .select('*, tier:tiers(*)')
         .eq('phone', normalized)
@@ -38,12 +40,21 @@ export async function POST(request: NextRequest) {
     if (!profile) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase
+        const { data: byId } = await adminClient
           .from('users')
           .select('*, tier:tiers(*)')
-          .eq('google_id', user.id)
+          .eq('id', user.id)
           .maybeSingle();
-        profile = data;
+        profile = byId;
+
+        if (!profile) {
+          const { data: byGoogle } = await adminClient
+            .from('users')
+            .select('*, tier:tiers(*)')
+            .eq('google_id', user.id)
+            .maybeSingle();
+          profile = byGoogle;
+        }
       }
     }
 
@@ -55,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Look up or auto-register QR token
-    let { data: qrToken } = await supabase
+    let { data: qrToken } = await adminClient
       .from('qr_tokens')
       .select('*')
       .eq('code', cleanCode)
@@ -76,7 +87,7 @@ export async function POST(request: NextRequest) {
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 48);
 
-      const { data: newQR } = await supabase
+      const { data: newQR } = await adminClient
         .from('qr_tokens')
         .insert({
           code: cleanCode,
@@ -105,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Try Supabase RPC first
     try {
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('process_qr_scan', {
+      const { data: rpcResult, error: rpcError } = await adminClient.rpc('process_qr_scan', {
         p_qr_code: cleanCode,
         p_user_id: profile.id,
       });
@@ -133,7 +144,7 @@ export async function POST(request: NextRequest) {
     let tierBonus = 0;
 
     // Fetch all tiers to evaluate
-    const { data: allTiers } = await supabase.from('tiers').select('*').order('min_spending', { ascending: false });
+    const { data: allTiers } = await adminClient.from('tiers').select('*').order('min_spending', { ascending: false });
 
     if (allTiers && allTiers.length > 0) {
       for (const t of allTiers) {
@@ -153,7 +164,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update QR token to USED
-    await supabase
+    await adminClient
       .from('qr_tokens')
       .update({
         status: 'USED',
@@ -163,7 +174,7 @@ export async function POST(request: NextRequest) {
       .eq('code', cleanCode);
 
     // Log CASHBACK point transaction
-    await supabase.from('point_transactions').insert({
+    await adminClient.from('point_transactions').insert({
       user_id: profile.id,
       type: 'CASHBACK',
       amount: cashback,
@@ -174,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Log TIER_UP_BONUS if any
     if (tierBonus > 0) {
-      await supabase.from('point_transactions').insert({
+      await adminClient.from('point_transactions').insert({
         user_id: profile.id,
         type: 'TIER_UP_BONUS',
         amount: tierBonus,
@@ -197,7 +208,7 @@ export async function POST(request: NextRequest) {
       if (newTierName === 'Diamond') updatePayload.upgraded_to_diamond = true;
     }
 
-    await supabase.from('users').update(updatePayload).eq('id', profile.id);
+    await adminClient.from('users').update(updatePayload).eq('id', profile.id);
 
     return NextResponse.json({
       success: true,

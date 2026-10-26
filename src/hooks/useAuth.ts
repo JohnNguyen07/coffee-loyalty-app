@@ -176,6 +176,8 @@ export function useAuth(): AuthState {
         }
       }
       setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
 
     // Listen for auth state changes
@@ -203,47 +205,7 @@ export function useAuth(): AuthState {
         targetEmail = 'admin@coffeehouse.vn';
       }
 
-      // 1. If it's a phone number, resolve to registered email
-      const isPhone = /^[0-9+]{9,15}$/.test(cleanAccount.replace(/[\s\-()]/g, ''));
-      if (isPhone) {
-        const normalized = cleanAccount.replace(/[\s\-()]/g, '');
-        try {
-          const res = await fetch(`/api/user/by-phone?phone=${encodeURIComponent(normalized)}`);
-          const data = await res.json();
-          if (data?.found && data?.user?.email) {
-            targetEmail = data.user.email;
-          } else {
-            targetEmail = `${normalized}@coffeehouse.vn`;
-          }
-        } catch {
-          targetEmail = `${normalized}@coffeehouse.vn`;
-        }
-      }
-
-      // 2. Sign in via browser Supabase client (sets cookies and session tokens)
-      const supabase = createClient();
-      let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: targetEmail,
-        password: params.password,
-      });
-
-      // Flexible fallback for admin
-      if ((authError || !authData?.user) && targetEmail === 'admin@coffeehouse.vn') {
-        const candidates = ['123456', 'Admin@123456'];
-        for (const cand of candidates) {
-          const retry = await supabase.auth.signInWithPassword({
-            email: targetEmail,
-            password: cand,
-          });
-          if (retry.data?.user) {
-            authData = retry.data;
-            authError = null;
-            break;
-          }
-        }
-      }
-
-      // 3. Also call server endpoint to ensure server cookies and profile fetch
+      // 1. Call server endpoint first (sets SSR cookies and resolves phone/admin fallback)
       const serverRes = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,19 +213,59 @@ export function useAuth(): AuthState {
       });
       const serverData = await serverRes.json();
 
+      // 2. Also sync browser Supabase client session if possible
+      let authData: { user: SupabaseUser | null } | null = null;
+      let authError: { message?: string } | null = null;
+
+      try {
+        const isPhone = /^[0-9+]{9,15}$/.test(cleanAccount.replace(/[\s\-()]/g, ''));
+        if (isPhone) {
+          const normalized = cleanAccount.replace(/[\s\-()]/g, '');
+          targetEmail = serverData?.user?.email || `${normalized}@coffeehouse.vn`;
+        }
+
+        const supabase = createClient();
+        const signInRes = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: params.password,
+        });
+        authData = signInRes.data;
+        authError = signInRes.error;
+
+        if ((authError || !authData?.user) && targetEmail === 'admin@coffeehouse.vn') {
+          const candidates = ['123456', 'Admin@123456'];
+          for (const cand of candidates) {
+            const retry = await supabase.auth.signInWithPassword({
+              email: targetEmail,
+              password: cand,
+            });
+            if (retry.data?.user) {
+              authData = retry.data;
+              authError = null;
+              break;
+            }
+          }
+        }
+      } catch {
+        // Ignore browser client sync error if server login succeeded
+      }
+
       if (!serverRes.ok || serverData.error) {
-        if (authError) {
-          return { success: false, error: authError.message || serverData.error || 'Số điện thoại hoặc mật khẩu không chính xác' };
+        if (!authData?.user) {
+          return {
+            success: false,
+            error: serverData.error || 'Số điện thoại hoặc mật khẩu không chính xác',
+          };
         }
       }
 
-      // 4. Update profile in state and localStorage
+      // 3. Update profile in state and localStorage
       const activeUser = serverData.user || {
         id: authData?.user?.id,
         email: authData?.user?.email,
         full_name: authData?.user?.user_metadata?.full_name || 'Khách hàng',
         phone: authData?.user?.user_metadata?.phone || cleanAccount,
-        role: 'USER',
+        role: targetEmail === 'admin@coffeehouse.vn' ? 'ADMIN' : 'USER',
       };
 
       setProfile(activeUser);
@@ -271,12 +273,9 @@ export function useAuth(): AuthState {
         localStorage.setItem('coffee_active_user', JSON.stringify(activeUser));
       }
 
-      // Fetch complete profile with tiers and transactions
-      await fetchProfile();
-
       return { success: true, user: activeUser };
     } catch {
-      return { success: false, error: 'Lỗi kết nối máy chủ' };
+      return { success: false, error: 'Lỗi kết nối máy chủ. Vui lòng kiểm tra lại đường truyền hoặc máy chủ.' };
     }
   };
 
@@ -298,11 +297,15 @@ export function useAuth(): AuthState {
       const normalizedPhone = params.phone.replace(/[\s\-()]/g, '');
       const targetEmail = params.email?.trim() || `${normalizedPhone}@coffeehouse.vn`;
 
-      const supabase = createClient();
-      await supabase.auth.signInWithPassword({
-        email: targetEmail,
-        password: params.password,
-      });
+      try {
+        const supabase = createClient();
+        await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: params.password,
+        });
+      } catch {
+        // Ignore browser sync error
+      }
 
       // 3. Update profile state and localStorage
       if (data.user) {

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 
@@ -6,17 +7,27 @@ import { randomBytes } from 'crypto';
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const adminClient = createAdminClient();
 
     // Check if there is an authenticated user
     let creatorId: string | null = null;
     const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
-      const { data: profile } = await supabase
+      let { data: profile } = await adminClient
         .from('users')
         .select('id, role')
-        .eq('google_id', user.id)
+        .eq('id', user.id)
         .maybeSingle();
+
+      if (!profile) {
+        const { data: byGoogle } = await adminClient
+          .from('users')
+          .select('id, role')
+          .eq('google_id', user.id)
+          .maybeSingle();
+        profile = byGoogle;
+      }
 
       if (profile) {
         creatorId = profile.id;
@@ -39,7 +50,7 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48);
 
-    const { data: qrToken, error } = await supabase
+    const { data: qrToken, error } = await adminClient
       .from('qr_tokens')
       .insert({
         code,
