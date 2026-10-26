@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Flexible fallback for admin
-    if ((authError || !authData?.user) && targetEmail === 'admin@coffeehouse.vn') {
+    if ((authError || !authData?.user) && targetEmail.toLowerCase() === 'admin@coffeehouse.vn') {
       const candidates = ['Admin@123456', '123456'];
       for (const cand of candidates) {
         const retry = await supabase.auth.signInWithPassword({
@@ -144,10 +144,20 @@ export async function POST(request: NextRequest) {
       recent_transactions: recentTransactions || [],
     };
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       user: fullUser,
     });
+
+    const cookieOpts = {
+      path: '/',
+      sameSite: 'lax' as const,
+      maxAge: 60 * 60 * 24 * 30,
+    };
+    res.cookies.set('ulab_uid', String(fullUser.id), cookieOpts);
+    res.cookies.set('ulab_role', String(fullUser.role || 'USER'), cookieOpts);
+
+    return res;
   } catch (err: any) {
     console.error('Login error:', err);
     return NextResponse.json({ error: 'Lỗi đăng nhập hệ thống' }, { status: 500 });

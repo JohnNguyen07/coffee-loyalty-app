@@ -1,25 +1,29 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 // GET /api/user/profile — Get current user profile with tier and transactions info
 export async function GET() {
   const supabase = await createClient();
+  const cookieStore = await cookies();
+  const cookieUid = cookieStore.get('ulab_uid')?.value;
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  if (!user && !cookieUid) {
     return NextResponse.json({ user: null });
   }
 
   const adminClient = createAdminClient();
+  const targetId = user?.id || cookieUid;
 
   let { data: profile } = await adminClient
     .from('users')
     .select('*, tier:tiers(*)')
-    .eq('id', user.id)
+    .eq('id', targetId)
     .maybeSingle();
 
-  if (!profile && user.email) {
+  if (!profile && user?.email) {
     const { data } = await adminClient
       .from('users')
       .select('*, tier:tiers(*)')
@@ -28,7 +32,7 @@ export async function GET() {
     profile = data;
   }
 
-  if (!profile && user.user_metadata?.phone) {
+  if (!profile && user?.user_metadata?.phone) {
     const { data } = await adminClient
       .from('users')
       .select('*, tier:tiers(*)')

@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
       password,
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       user: {
         ...newUser,
@@ -153,6 +153,16 @@ export async function POST(request: NextRequest) {
         recent_transactions: welcomeTx ? [welcomeTx] : [],
       },
     });
+
+    const cookieOpts = {
+      path: '/',
+      sameSite: 'lax' as const,
+      maxAge: 60 * 60 * 24 * 30,
+    };
+    res.cookies.set('ulab_uid', String(newUser.id), cookieOpts);
+    res.cookies.set('ulab_role', 'USER', cookieOpts);
+
+    return res;
   } catch (err: any) {
     console.error('Registration API error:', err);
     return NextResponse.json({ error: 'Lỗi đăng ký thành viên' }, { status: 500 });

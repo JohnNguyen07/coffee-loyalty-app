@@ -6,7 +6,10 @@ export async function POST() {
   try {
     const supabase = await createClient();
     await supabase.auth.signOut();
-    return NextResponse.json({ success: true });
+    const res = NextResponse.json({ success: true });
+    res.cookies.delete('ulab_uid');
+    res.cookies.delete('ulab_role');
+    return res;
   } catch (err: any) {
     console.error('Logout error:', err);
     return NextResponse.json({ error: 'Lỗi đăng xuất' }, { status: 500 });

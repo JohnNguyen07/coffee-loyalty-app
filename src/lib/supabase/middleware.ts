@@ -35,9 +35,12 @@ export async function updateSession(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    const cookieRole = request.cookies.get('ulab_role')?.value;
+    const cookieUid = request.cookies.get('ulab_uid')?.value;
+
     // Protect admin routes
     if (request.nextUrl.pathname.startsWith('/admin')) {
-      if (!user) {
+      if (!user && cookieRole !== 'ADMIN' && !cookieUid) {
         const url = request.nextUrl.clone();
         url.pathname = '/login';
         url.searchParams.set('redirect', request.nextUrl.pathname);
