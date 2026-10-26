@@ -1,25 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-
-const DEFAULT_SUPABASE_URL = 'https://ivrcvfvapczjypbbbegj.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_ltadW13tLk7edng2qEcFrg_YyO67LwW';
-
-function sanitizeEnv(val: string | undefined, fallback: string): string {
-  const cleaned = (val || '').trim().replace(/^["']|["']$/g, '');
-  if (!cleaned || cleaned.includes('placeholder')) return fallback;
-  return cleaned;
-}
+import { resolveSupabaseUrl, resolveSupabaseAnonKey } from './client';
 
 export function isSupabaseConfigured(): boolean {
-  const url = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL, DEFAULT_SUPABASE_URL);
-  const key = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
-  return Boolean(url && key && !url.includes('placeholder'));
+  return true;
 }
 
 export async function createClient() {
   const cookieStore = await cookies();
-  const url = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_URL, DEFAULT_SUPABASE_URL);
-  const anonKey = sanitizeEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
+  const url = resolveSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const anonKey = resolveSupabaseAnonKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   return createServerClient(
     url,

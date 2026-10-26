@@ -54,37 +54,97 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Giỏ hàng trống' }, { status: 400 });
   }
 
-  // Calculate subtotal using SERVER-SIDE prices (don't trust client)
-  const subtotal = items.reduce(
-    (sum: number, item: { item_id: string; size_label: string; unit_price: number; quantity: number }) => {
-      // Look up real price from menu data
-      const menuItem = allMenuItems.find(m => m.id === item.item_id);
-      const sizeInfo = menuItem?.sizes.find(s => s.label === item.size_label);
-      const verifiedPrice = sizeInfo?.price ?? item.unit_price; // fallback to client price only if item not found
-      return sum + verifiedPrice * item.quantity;
-    },
-    0
+  // Normalize items and calculate subtotal using SERVER-SIDE prices
+  const normalizedItems = items.map(
+    (item: { item_id?: string; name?: string; product_name?: string; size_label?: string; size?: string; unit_price: number; quantity: number }) => {
+      const menuItem = allMenuItems.find(m => m.id === item.item_id || m.name === (item.product_name || item.name));
+      const sizeLabel = item.size_label || item.size || 'M';
+      const sizeInfo = menuItem?.sizes.find(s => s.label === sizeLabel);
+      const verifiedPrice = sizeInfo?.price ?? Number(item.unit_price) ?? 0;
+      const qty = Math.max(1, Number(item.quantity) || 1);
+      const prodName = item.product_name || item.name || menuItem?.name || 'Món nước';
+
+      return {
+        item_id: item.item_id,
+        product_name: prodName,
+        name: prodName,
+        size: sizeLabel,
+        size_label: sizeLabel,
+        unit_price: verifiedPrice,
+        quantity: qty,
+        subtotal: verifiedPrice * qty,
+      };
+    }
   );
 
+  const subtotal = normalizedItems.reduce((sum: number, it: { subtotal: number }) => sum + it.subtotal, 0);
   const pointsToUse = Math.min(points_used || 0, profile.point_balance, subtotal);
   const totalDue = subtotal - pointsToUse;
 
-  // Create order with items using RPC for atomicity
-  const { data: result, error } = await adminClient.rpc('create_order', {
+  // 1. Try creating order with items using RPC for atomicity
+  const { data: rpcResult, error: rpcError } = await adminClient.rpc('create_order', {
     p_user_id: profile.id,
-    p_items: JSON.stringify(items),
+    p_items: normalizedItems,
     p_points_used: pointsToUse,
     p_subtotal: subtotal,
     p_total_due: totalDue,
     p_note: note || null,
   });
 
-  if (error) {
-    console.error('Order creation error:', error);
+  if (!rpcError && rpcResult) {
+    return NextResponse.json({ success: true, order: rpcResult });
+  }
+
+  // 2. Fallback direct insert if RPC is not available or signature differs
+  const orderCode = `CF-${Math.floor(1000 + Math.random() * 9000)}`;
+  const { data: insertedOrder, error: orderErr } = await adminClient
+    .from('orders')
+    .insert({
+      order_code: orderCode,
+      user_id: profile.id,
+      status: 'PENDING',
+      subtotal,
+      points_used: pointsToUse,
+      total_due: totalDue,
+      note: note || null,
+    })
+    .select()
+    .single();
+
+  if (orderErr || !insertedOrder) {
+    console.error('Order creation error:', orderErr || rpcError);
     return NextResponse.json({ error: 'Không thể tạo đơn hàng' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, order: result });
+  await adminClient.from('order_items').insert(
+    normalizedItems.map((it: { product_name: string; size: string; quantity: number; unit_price: number; subtotal: number }) => ({
+      order_id: insertedOrder.id,
+      product_name: it.product_name,
+      size: it.size,
+      quantity: it.quantity,
+      unit_price: it.unit_price,
+      subtotal: it.subtotal,
+    }))
+  );
+
+  if (pointsToUse > 0) {
+    const newBalance = Math.max(0, profile.point_balance - pointsToUse);
+    await adminClient
+      .from('users')
+      .update({ point_balance: newBalance })
+      .eq('id', profile.id);
+
+    await adminClient.from('point_transactions').insert({
+      user_id: profile.id,
+      type: 'ORDER_DEDUCT',
+      amount: -pointsToUse,
+      balance_after: newBalance,
+      reference_id: insertedOrder.order_code,
+      description: `Dùng điểm cho đơn ${insertedOrder.order_code}`,
+    });
+  }
+
+  return NextResponse.json({ success: true, order: insertedOrder });
 }
 
 // GET /api/orders — Get orders (admin: all, user: own)

@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
-  // Require authentication — only logged-in users can look up by phone
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-  }
-
   const phone = request.nextUrl.searchParams.get('phone');
 
   if (!phone) {

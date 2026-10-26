@@ -96,8 +96,8 @@ export default function OrdersPanel() {
             customer_phone: o.user?.phone || o.user?.email || '—',
             items: Array.isArray(o.items)
               ? o.items.map((it: any) => ({
-                  item_name: it.item_name || it.name || 'Món nước',
-                  size_label: it.size_label || 'M',
+                  item_name: it.product_name || it.item_name || it.name || 'Món nước',
+                  size_label: it.size || it.size_label || 'M',
                   unit_price: Number(it.unit_price) || 0,
                   quantity: Number(it.quantity) || 1,
                 }))

@@ -21,20 +21,31 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPhone = phone.replace(/[\s\-()]/g, '');
-    const targetEmail = (email && email.trim()) ? email.trim() : `${normalizedPhone}@coffeehouse.vn`;
+    const targetEmail = (email && email.trim()) ? email.trim().toLowerCase() : `${normalizedPhone}@coffeehouse.vn`;
 
     // Service role client to perform admin auth and bypass client restrictions
     const adminClient = createAdminClient();
 
     // 1. Check if phone already registered in users table
-    const { data: existingUser } = await adminClient
+    const { data: existingPhoneUser } = await adminClient
       .from('users')
       .select('id, phone')
       .eq('phone', normalizedPhone)
       .maybeSingle();
 
-    if (existingUser) {
-      return NextResponse.json({ error: 'Số điện thoại này đã được đăng ký' }, { status: 409 });
+    if (existingPhoneUser) {
+      return NextResponse.json({ error: 'Số điện thoại này đã được đăng ký. Vui lòng đăng nhập!' }, { status: 409 });
+    }
+
+    // Check if email already registered in users table
+    const { data: existingEmailUser } = await adminClient
+      .from('users')
+      .select('id, email')
+      .eq('email', targetEmail)
+      .maybeSingle();
+
+    if (existingEmailUser) {
+      return NextResponse.json({ error: 'Email này đã được đăng ký bởi tài khoản khác' }, { status: 409 });
     }
 
     // 2. Create user in Supabase Auth
@@ -51,12 +62,19 @@ export async function POST(request: NextRequest) {
 
     if (authCreateErr) {
       // If user already exists in auth with that email, try to update their password
-      if (authCreateErr.message.includes('already registered')) {
+      if (authCreateErr.message.toLowerCase().includes('already') || authCreateErr.message.toLowerCase().includes('registered')) {
         const { data: list } = await adminClient.auth.admin.listUsers();
-        const existingAuth = list?.users?.find(u => u.email === targetEmail);
+        const existingAuth = list?.users?.find(u => u.email?.toLowerCase() === targetEmail);
         if (existingAuth) {
           authUserId = existingAuth.id;
-          await adminClient.auth.admin.updateUserById(authUserId, { password });
+          await adminClient.auth.admin.updateUserById(authUserId, {
+            password,
+            email_confirm: true,
+            user_metadata: {
+              full_name: full_name.trim(),
+              phone: normalizedPhone,
+            },
+          });
         } else {
           return NextResponse.json({ error: 'Tài khoản email này đã tồn tại' }, { status: 409 });
         }
@@ -82,8 +100,9 @@ export async function POST(request: NextRequest) {
     // 4. Create user record in `users` table
     const { data: newUser, error: insertErr } = await adminClient
       .from('users')
-      .insert({
+      .upsert({
         id: authUserId,
+        google_id: authUserId,
         full_name: full_name.trim(),
         phone: normalizedPhone,
         email: targetEmail,
@@ -106,14 +125,18 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Log WELCOME_BONUS transaction
-    await adminClient.from('point_transactions').insert({
-      user_id: authUserId,
-      type: 'WELCOME_BONUS',
-      amount: 10000,
-      balance_after: 10000,
-      reference_id: 'WELCOME-10K',
-      description: 'Thưởng chào mừng thành viên mới 🌱 +10.000đ',
-    });
+    const { data: welcomeTx } = await adminClient
+      .from('point_transactions')
+      .insert({
+        user_id: authUserId,
+        type: 'WELCOME_BONUS',
+        amount: 10000,
+        balance_after: 10000,
+        reference_id: 'WELCOME-10K',
+        description: 'Thưởng chào mừng thành viên mới 🌱 +10.000đ',
+      })
+      .select()
+      .maybeSingle();
 
     // 6. Sign in on the server client to set session cookies
     const serverClient = await createClient();
@@ -124,7 +147,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: newUser,
+      user: {
+        ...newUser,
+        next_tier: { code: 'SILVER', name: 'Silver', min_spending: 500000 },
+        recent_transactions: welcomeTx ? [welcomeTx] : [],
+      },
     });
   } catch (err: any) {
     console.error('Registration API error:', err);
