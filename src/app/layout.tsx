@@ -27,11 +27,11 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
   title: "Ủ LAB - Matcha & Cold Brew",
-  description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm hoàn tiền theo hạng thành viên.",
+  description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm thưởng theo hạng thành viên.",
   keywords: ["Ủ LAB", "coffee", "matcha", "cold brew", "take-away", "tích điểm", "cà phê ủ"],
   openGraph: {
     title: "Ủ LAB - Matcha & Cold Brew",
-    description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm hoàn tiền theo hạng thành viên.",
+    description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm thưởng theo hạng thành viên.",
     type: "website",
     images: [{ url: "/logo.png", width: 1024, height: 1024, alt: "Ủ LAB Logo" }],
   },

@@ -70,7 +70,7 @@ function LoginContent() {
             </div>
             <h1 className={styles.logoText}>Đăng nhập thành viên</h1>
             <p className={styles.description}>
-              Quản lý ví điểm thưởng và nhận hoàn tiền tới 10% cho mỗi ly nước
+              Quản lý ví điểm thưởng và nhận hoàn điểm tới 10% cho mỗi ly nước
             </p>
           </div>
 

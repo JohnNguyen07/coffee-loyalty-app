@@ -259,9 +259,9 @@ function ScanContent() {
               <StarSolidIcon size={12} />
               <span>Ủ LAB REWARDS® · TÍCH ĐIỂM TỪ TEM LY</span>
             </div>
-            <h1 className={styles.bannerTitle}>Nhận Hoàn Tiền Thành Viên</h1>
+            <h1 className={styles.bannerTitle}>Nhận Hoàn Điểm Thành Viên</h1>
             <p className={styles.bannerSubtitle}>
-              Hoàn tiền từ <strong>3% – 10%</strong> giá trị mỗi ly nước vào ví thưởng
+              Hoàn điểm từ <strong>3% – 10%</strong> giá trị mỗi ly nước vào ví thưởng
             </p>
 
             {profile && (
@@ -309,7 +309,7 @@ function ScanContent() {
                       </strong>
                     </div>
                     <div className={styles.previewRight}>
-                      <span className={styles.previewLabel}>Hoàn tiền tích điểm</span>
+                      <span className={styles.previewLabel}>Hoàn điểm tích lũy</span>
                       <strong className={styles.previewCashback}>
                         +{formatVND(estimatedCashback)} ★
                       </strong>
@@ -319,7 +319,7 @@ function ScanContent() {
 
                 <h2 className={styles.title}>Nhập SĐT để nhận điểm</h2>
                 <p className={styles.subtitle}>
-                  Nhập số điện thoại thành viên của bạn để cộng ngay tiền hoàn từ ly nước này vào ví.
+                  Nhập số điện thoại thành viên của bạn để cộng ngay điểm hoàn từ ly nước này vào ví.
                 </p>
 
                 {message && <div className={styles.phoneErrorMsg}>{message}</div>}
@@ -338,7 +338,7 @@ function ScanContent() {
                     id="scan-phone-input"
                   />
                   <button type="submit" className={styles.phoneLookupBtn}>
-                    Nhận hoàn tiền ngay
+                    Nhận hoàn điểm ngay
                   </button>
                 </form>
 
@@ -368,7 +368,7 @@ function ScanContent() {
                 <h2 className={styles.title}>
                   {status === 'looking_up'
                     ? 'Đang kiểm tra tài khoản thành viên...'
-                    : 'Đang cộng tiền hoàn vào ví...'}
+                    : 'Đang cộng điểm hoàn vào ví...'}
                 </h2>
                 <p className={styles.subtitle}>
                   Mã tem: <strong>{code}</strong>
@@ -386,12 +386,12 @@ function ScanContent() {
                 <p className={styles.subtitle}>
                   {lookedUpUser ? (
                     <>
-                      Đã cộng hoàn tiền vào ví của <strong>{lookedUpUser.full_name}</strong> (
+                      Đã cộng hoàn điểm vào ví của <strong>{lookedUpUser.full_name}</strong> (
                       {lookedUpUser.phone})
                     </>
                   ) : (
                     <>
-                      Đã cộng hoàn tiền vào ví của{' '}
+                      Đã cộng hoàn điểm vào ví của{' '}
                       <strong>{profile?.full_name || 'bạn'}</strong>
                     </>
                   )}
@@ -407,7 +407,7 @@ function ScanContent() {
                     <span className={styles.resultValue}>{formatVND(result.drink_value)}</span>
                   </div>
                   <div className={styles.resultRow}>
-                    <span>Hoàn tiền theo hạng ({result.cashback_rate}%)</span>
+                    <span>Hoàn điểm theo hạng ({result.cashback_rate}%)</span>
                     <span className={styles.resultCashback}>
                       +{formatVND(result.cashback)} ★
                     </span>
@@ -448,7 +448,7 @@ function ScanContent() {
                 </div>
                 <h2 className={styles.title}>Quét bằng Camera điện thoại</h2>
                 <p className={styles.subtitle}>
-                  Mở ứng dụng <strong>Camera</strong> trên điện thoại và hướng vào tem QR dán trên ly nước Ủ LAB. Điện thoại sẽ tự động mở đường dẫn nhận điểm hoàn tiền.
+                  Mở ứng dụng <strong>Camera</strong> trên điện thoại và hướng vào tem QR dán trên ly nước Ủ LAB. Điện thoại sẽ tự động mở đường dẫn nhận hoàn điểm.
                 </p>
 
                 <div className={styles.guideStepsBox}>
@@ -462,7 +462,7 @@ function ScanContent() {
                   </div>
                   <div className={styles.guideStepRow}>
                     <span className={styles.guideStepNum}>3</span>
-                    <span>Chạm vào thông báo đường link để tự động cộng tiền vào ví</span>
+                    <span>Chạm vào thông báo đường link để tự động cộng điểm vào ví</span>
                   </div>
                 </div>
 

@@ -479,7 +479,7 @@ export default function QRPanel({ initialSubTab = 'generator' }: QRPanelProps) {
                         <img src={t.qrDataUrl} alt="QR Code" width="130" height="130" />
                       )}
                       <div className={styles.stickerCode}>{t.code}</div>
-                      <div className={styles.stickerFooter}>Quét để nhận hoàn tiền</div>
+                      <div className={styles.stickerFooter}>Quét để nhận hoàn điểm</div>
                     </div>
                   ))}
                 </div>
@@ -498,7 +498,7 @@ export default function QRPanel({ initialSubTab = 'generator' }: QRPanelProps) {
               <span className={styles.statValue} style={{ color: '#15803d' }}>{stats.active}</span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statLabel}>Tem đã quét nhận tiền</span>
+              <span className={styles.statLabel}>Tem đã quét nhận điểm</span>
               <span className={styles.statValue} style={{ color: '#475569' }}>{stats.used}</span>
             </div>
             <div className={styles.statCard}>
@@ -787,7 +787,7 @@ export default function QRPanel({ initialSubTab = 'generator' }: QRPanelProps) {
                   </div>
                 )}
                 <div className={styles.stickerCode}>{t.code}</div>
-                <div className={styles.stickerFooter}>Quét để nhận hoàn tiền</div>
+                <div className={styles.stickerFooter}>Quét để nhận hoàn điểm</div>
               </div>
             ))}
           </div>

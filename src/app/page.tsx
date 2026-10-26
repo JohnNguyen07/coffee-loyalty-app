@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import styles from './page.module.css';
-import { menuData, allMenuItems, formatVND } from '@/data/menu';
+import { menuData, formatVND } from '@/data/menu';
 import { TIERS_CONFIG, useAuth } from '@/hooks/useAuth';
-import { useCartStore } from '@/store/cart';
 import Header from '@/components/Header/Header';
 import CategoryTabs from '@/components/CategoryTabs/CategoryTabs';
 import MenuCard from '@/components/MenuCard/MenuCard';
@@ -15,10 +14,8 @@ import CartDrawer from '@/components/CartDrawer/CartDrawer';
 import ProfilePanel from '@/components/ProfilePanel/ProfilePanel';
 import FloatingCartBar from '@/components/FloatingCartBar/FloatingCartBar';
 import {
-  DrinkIllustration,
   CategorySvgIcon,
   StarSolidIcon,
-  SparkleIcon,
   SearchIcon,
   TierSvgIcon,
   FlaskIcon,
@@ -33,7 +30,6 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
 
   const { profile } = useAuth();
-  const addItem = useCartStore((s) => s.addItem);
 
   // If a customer scans a QR link formatted as https://domain.com/?code=XYZ, forward seamlessly to /scan?code=XYZ
   useEffect(() => {
@@ -45,11 +41,6 @@ export default function Home() {
       }
     }
   }, [router]);
-
-  const signatureSpotlight = useMemo(
-    () => allMenuItems.find((i) => i.id === 'matcha-cold-whisk') || allMenuItems[0],
-    []
-  );
 
   // Filter categories and items based on search, category tab, and signature toggle
   const displayedCategories = useMemo(() => {
@@ -83,108 +74,10 @@ export default function Home() {
       />
 
       <main className={styles.main}>
-        {/* ── ZONE 1: ASYMMETRIC SPLIT HERO (60/40) ── */}
-        <section className={styles.heroSection}>
-          <div className={styles.heroContainer}>
-            {/* 60% Editorial Content Crate */}
-            <div className={styles.heroContent}>
-              <div className={styles.heroEyebrow}>
-                <StarSolidIcon size={13} className={styles.eyebrowStar} />
-                <span>Ủ LAB CRAFT · MATCHA FUJI MK4 &amp; 18H COLD BREW</span>
-              </div>
-
-              <h1 className={styles.heroTitle}>
-                Nghệ thuật <span className={styles.heroHighlight}>Ủ Lạnh 18 Giờ</span> &amp; Matcha Đánh Chasen Thủ Công
-              </h1>
-
-              <p className={styles.heroSubtitle}>
-                Chiết xuất chuẩn xác trong từng mẻ nhỏ. Giữ trọn vị êm mượt tự nhiên từ hạt Arabica Cầu Đất tuyển chọn cùng nốt hương umami thuần khiết của bột Matcha Fuji MK4.
-              </p>
-
-              <div className={styles.heroCtaRow}>
-                <a href="#menu-section" className={styles.btnPrimaryFilled}>
-                  <span>Đặt món ngay</span>
-                </a>
-                <a href="#rewards-ceremony" className={styles.btnPrimaryOutlined}>
-                  <StarSolidIcon size={15} />
-                  <span>Ưu đãi Thành viên</span>
-                </a>
-              </div>
-
-              <div className={styles.heroMetrics}>
-                <div className={styles.metricItem}>
-                  <span className={styles.metricValue}>18 Giờ</span>
-                  <span className={styles.metricLabel}>Ủ lạnh chiết xuất chậm</span>
-                </div>
-                <div className={styles.metricDivider} aria-hidden="true" />
-                <div className={styles.metricItem}>
-                  <span className={styles.metricValue}>Fuji MK4</span>
-                  <span className={styles.metricLabel}>Matcha Nhật đánh lạnh</span>
-                </div>
-                <div className={styles.metricDivider} aria-hidden="true" />
-                <div className={styles.metricItem}>
-                  <span className={styles.metricValue}>Hoàn 10%</span>
-                  <span className={styles.metricLabel}>Tích điểm ví thành viên</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 40% House Green Visual Showcase Crate */}
-            <div className={styles.heroShowcase}>
-              <div className={styles.showcaseCard}>
-                <div className={styles.showcaseTopRow}>
-                  <span className={styles.showcaseBadge}>
-                    <SparkleIcon size={12} />
-                    <span>Món Signature Nổi Bật</span>
-                  </span>
-                  <span className={styles.showcaseGoldPill}>+2.100đ ★</span>
-                </div>
-
-                <div className={styles.showcaseVisualStage}>
-                  <div className={styles.showcaseSecondaryDrink}>
-                    <DrinkIllustration
-                      itemId="cold-brew-cam-sa"
-                      categorySlug="cold-brew"
-                      className={styles.showcaseSvgBack}
-                    />
-                  </div>
-                  <div className={styles.showcasePrimaryDrink}>
-                    <DrinkIllustration
-                      itemId="matcha-cold-whisk"
-                      categorySlug="matcha"
-                      className={styles.showcaseSvgFront}
-                    />
-                  </div>
-                </div>
-
-                <div className={styles.showcaseFooter}>
-                  <div className={styles.showcaseInfo}>
-                    <span className={styles.showcaseCategory}>MATCHA FUJI MK4</span>
-                    <h2 className={styles.showcaseDrinkTitle}>{signatureSpotlight.name}</h2>
-                  </div>
-                  <div className={styles.showcaseActionRow}>
-                    <span className={styles.showcasePrice}>
-                      Từ {formatVND(signatureSpotlight.sizes[0].price)}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.btnInvertedWhite}
-                      onClick={() => addItem(signatureSpotlight, 0)}
-                    >
-                      + Thêm vào giỏ
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* ── ZONE 2: MENU CATALOG & INTERACTIVE FILTER BAR ── */}
         <section id="menu-section" className={styles.menuSection}>
           <div className={styles.sectionHeaderRow}>
             <div>
-              <span className={styles.sectionEyebrow}>THỰC ĐƠN THỦ CÔNG</span>
               <h2 className={styles.sectionHeading}>Chọn thức uống yêu thích của bạn</h2>
             </div>
 
@@ -281,10 +174,10 @@ export default function Home() {
                 <span>Ủ LAB REWARDS® · CHƯƠNG TRÌNH THÀNH VIÊN</span>
               </div>
               <h2 className={styles.rewardsHeadline}>
-                Ly nước trên tay, hoàn tiền vào ví ngay tức thì
+                Ly nước trên tay, hoàn điểm vào ví ngay tức thì
               </h2>
               <p className={styles.rewardsBody}>
-                Mỗi ly Matcha và Cold Brew tại Ủ LAB đều đi kèm tem mã QR tích điểm riêng. Chỉ cần mở <strong>Camera điện thoại</strong> quét mã trên ly để truy cập đường link nhận hoàn tiền từ <strong>3% đến 10%</strong> và trừ trực tiếp vào những đơn đặt hàng tiếp theo.
+                Mỗi ly Matcha và Cold Brew tại Ủ LAB đều đi kèm tem mã QR tích điểm riêng. Chỉ cần mở <strong>Camera điện thoại</strong> quét mã trên ly để truy cập đường link nhận hoàn điểm từ <strong>3% đến 10%</strong> và trừ trực tiếp vào những đơn đặt hàng tiếp theo.
               </p>
 
               <div className={styles.rewardsCtaGroup}>
@@ -377,7 +270,7 @@ export default function Home() {
               <span className={styles.stepNumber}>03</span>
               <h3 className={styles.stepTitle}>Mở Camera điện thoại quét tem</h3>
               <p className={styles.stepDesc}>
-                Dùng Camera mặc định trên điện thoại quét tem QR dán trên ly để mở link nhận hoàn tiền tự động vào ví.
+                Dùng Camera mặc định trên điện thoại quét tem QR dán trên ly để mở link nhận hoàn điểm tự động vào ví.
               </p>
             </div>
           </div>
@@ -407,7 +300,7 @@ export default function Home() {
                 </div>
               </div>
               <p className={styles.footerDesc}>
-                Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm hoàn tiền minh bạch trên từng ly nước.
+                Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm minh bạch trên từng ly nước.
               </p>
             </div>
 

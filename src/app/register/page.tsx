@@ -121,7 +121,7 @@ function RegisterContent() {
             </div>
             <h1 className={styles.logoText}>Đăng ký thành viên Ủ LAB</h1>
             <p className={styles.description}>
-              Nhận ngay <strong>10.000đ</strong> vào ví thưởng &amp; hoàn tiền tới 10% mỗi lần uống nước
+              Nhận ngay <strong>10.000đ</strong> vào ví thưởng &amp; hoàn điểm tới 10% mỗi lần uống nước
             </p>
           </div>
 

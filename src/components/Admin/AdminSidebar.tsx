@@ -123,7 +123,7 @@ export default function AdminSidebar({
           onClick={() => onSelect({ mainTab: 'loyalty', subTab: 'tiers' })}
           id="nav-loyalty-tiers"
         >
-          Hạng &amp; Tỷ lệ hoàn tiền
+          Hạng &amp; Tỷ lệ hoàn điểm
         </button>
         <button
           type="button"

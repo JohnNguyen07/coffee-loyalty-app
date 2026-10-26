@@ -64,7 +64,7 @@ export default function MenuCard({ item, index }: MenuCardProps) {
             <span className={styles.craftTag}>{item.tag}</span>
           ) : null}
 
-          <span className={styles.rewardsPill} title="Hoàn tiền tích điểm thành viên">
+          <span className={styles.rewardsPill} title="Hoàn điểm tích lũy thành viên">
             +{formatVND(estimatedCashback)} ★
           </span>
         </div>

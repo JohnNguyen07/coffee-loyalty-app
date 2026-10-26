@@ -82,7 +82,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
             </span>
             <div>
               <h2 className={styles.title}>Ủ LAB Rewards®</h2>
-              <span className={styles.subtitle}>Thành viên &amp; Tích điểm hoàn tiền</span>
+              <span className={styles.subtitle}>Thành viên &amp; Tích điểm thưởng</span>
             </div>
           </div>
           <button
@@ -139,7 +139,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                 </span>
                 <div className={styles.actionText}>
                   <strong>Tích điểm bằng Camera điện thoại</strong>
-                  <small>Quét mã QR dán trên ly nước để mở link nhận hoàn tiền tự động</small>
+                  <small>Quét mã QR dán trên ly nước để mở link nhận hoàn điểm tự động</small>
                 </div>
               </div>
 
@@ -194,7 +194,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                     <div className={styles.txEmpty}>
                       Chưa có giao dịch tích điểm nào.
                       <br />
-                      Hãy quét mã QR trên ly nước để nhận hoàn tiền ngay!
+                      Hãy quét mã QR trên ly nước để nhận hoàn điểm ngay!
                     </div>
                   ) : (
                     transactions.map((tx) => {
@@ -282,7 +282,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                   Tham gia thành viên nhận ngay 10.000đ
                 </h3>
                 <p className={styles.guestWelcomeDesc}>
-                  Tích điểm hoàn tiền từ <strong>3% đến 10%</strong> cho mỗi ly Matcha &amp; Cold Brew, sử dụng điểm trừ trực tiếp cho đơn hàng tiếp theo.
+                  Tích điểm thưởng từ <strong>3% đến 10%</strong> cho mỗi ly Matcha &amp; Cold Brew, sử dụng điểm trừ trực tiếp cho đơn hàng tiếp theo.
                 </p>
 
                 <div className={styles.guestActionRow}>

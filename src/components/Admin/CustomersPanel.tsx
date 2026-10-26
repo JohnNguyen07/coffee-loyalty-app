@@ -470,7 +470,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.8rem', opacity: 0.9 }}>
                     <span>Tổng chi tiêu: <strong>{formatVND(detailCustomer.total_spending || 0)}</strong></span>
-                    <span>Hoàn tiền: <strong>{detailCustomer.tier?.cashback_rate || 3}%</strong> / đơn</span>
+                    <span>Hoàn điểm: <strong>{detailCustomer.tier?.cashback_rate || 3}%</strong> / đơn</span>
                   </div>
                 </div>
 

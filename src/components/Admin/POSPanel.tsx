@@ -233,7 +233,7 @@ export default function POSPanel() {
         <div class="brand">Ủ LAB · TÍCH ĐIỂM</div>
         <img class="qr" src="${dataUrl}" alt="QR" />
         <div class="price">${formatVND(price)}</div>
-        <div class="hint">Mở Camera ĐT quét nhận hoàn tiền 3-10%</div>
+        <div class="hint">Mở Camera ĐT quét nhận hoàn điểm 3-10%</div>
         <div class="code">${qrCode}</div>
         <script>
           window.onload = () => { window.print(); window.close(); };
@@ -368,7 +368,7 @@ export default function POSPanel() {
       <div className={styles.header}>
         <h1 className={styles.title}>POS Quầy Pha Chế &amp; Tạo Tem QR</h1>
         <p className={styles.subtitle}>
-          Chọn món hoặc mệnh giá để in tem QR dán lên ly. Khi khách dùng <strong>Camera điện thoại</strong> quét tem, điện thoại sẽ tự mở đường dẫn <code>/scan?code=...</code> để cộng tiền hoàn tự động.
+          Chọn món hoặc mệnh giá để in tem QR dán lên ly. Khi khách dùng <strong>Camera điện thoại</strong> quét tem, điện thoại sẽ tự mở đường dẫn <code>/scan?code=...</code> để cộng điểm hoàn tự động.
         </p>
       </div>
 
@@ -495,7 +495,7 @@ export default function POSPanel() {
                 <span className={styles.qrCode}>{currentQR.code}</span>
 
                 <div className={styles.cashbackHintBox}>
-                  Hoàn tiền tự động: <strong>+{formatVND(Math.round(currentQR.price * 0.03))}</strong> (Member) →{' '}
+                  Hoàn điểm tự động: <strong>+{formatVND(Math.round(currentQR.price * 0.03))}</strong> (Member) →{' '}
                   <strong>+{formatVND(Math.round(currentQR.price * 0.1))}</strong> (Diamond)
                 </div>
 

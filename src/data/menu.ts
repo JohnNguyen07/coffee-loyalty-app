@@ -110,7 +110,7 @@ export const menuData: MenuCategory[] = [
         name: 'Matcha Kem Muối',
         category: 'Matcha',
         categorySlug: 'matcha',
-        tag: 'Mới · Béo Mịn',
+        tag: 'Béo Mịn',
         sizes: [
           { label: 'M', price: 39000 },
           { label: 'L', price: 44000 },
@@ -121,7 +121,7 @@ export const menuData: MenuCategory[] = [
         name: 'Strawberry Matcha',
         category: 'Matcha',
         categorySlug: 'matcha',
-        tag: 'Mới · Dâu Tươi',
+        tag: 'Dâu Tươi',
         sizes: [
           { label: 'M', price: 42000 },
           { label: 'L', price: 46000 },

@@ -90,7 +90,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
         <div>
           <h1 className={styles.title}>Cấu Hình Tích Điểm — Ủ LAB Rewards®</h1>
           <p className={styles.subtitle}>
-            Quản lý 4 hạng thành viên, tỷ lệ hoàn tiền khi khách quét QR trên ly và sổ cái lịch sử cộng/trừ điểm.
+            Quản lý 4 hạng thành viên, tỷ lệ hoàn điểm khi khách quét QR trên ly và sổ cái lịch sử cộng/trừ điểm.
           </p>
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
           className={`${styles.subTab} ${subTab === 'tiers' ? styles.subTabActive : ''}`}
           onClick={() => setSubTab('tiers')}
         >
-          Hạng &amp; Tỷ lệ hoàn tiền
+          Hạng &amp; Tỷ lệ hoàn điểm
         </button>
         <button
           type="button"
@@ -133,7 +133,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
                   {isEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '8px 0' }}>
                       <label style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-                        Mức hoàn tiền (%):
+                        Mức hoàn điểm (%):
                         <input
                           type="number"
                           value={editRate}
@@ -214,9 +214,9 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
 
           {/* Inline Cashback Simulator */}
           <div className={styles.detailCard} style={{ marginTop: 20 }}>
-            <h3 className={styles.sectionTitle}>Mô phỏng số tiền hoàn khi khách quét tem QR</h3>
+            <h3 className={styles.sectionTitle}>Mô phỏng số điểm hoàn khi khách quét tem QR</h3>
             <p className={styles.subtitle}>
-              Nhập giá trị ly nước để kiểm tra số tiền hoàn tự động cộng vào ví khách theo từng hạng:
+              Nhập giá trị ly nước để kiểm tra số điểm hoàn tự động cộng vào ví khách theo từng hạng:
             </p>
             <div className={styles.toolbar} style={{ marginTop: 12 }}>
               <input
@@ -268,7 +268,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
               className={styles.selectInput}
             >
               <option value="ALL">Tất cả loại giao dịch</option>
-              <option value="CASHBACK">Hoàn tiền quét QR (CASHBACK)</option>
+              <option value="CASHBACK">Hoàn điểm quét QR (CASHBACK)</option>
               <option value="ADMIN_ADJUST">Quầy điều chỉnh (ADMIN_ADJUST)</option>
               <option value="REDEMPTION">Đổi điểm trừ đơn (REDEMPTION)</option>
               <option value="REGISTER_BONUS">Thưởng đăng ký (REGISTER_BONUS)</option>
