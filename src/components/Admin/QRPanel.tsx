@@ -775,7 +775,7 @@ export default function QRPanel({ initialSubTab = 'generator' }: QRPanelProps) {
 
           {/* Stickers Grid */}
           <div className={styles.printGrid}>
-            {(generatedTokens.length > 0 ? generatedTokens : tokens.filter((t) => t.status === 'ACTIVE')).slice(0, 30).map((t) => (
+            {(generatedTokens.length > 0 ? generatedTokens : tokens.filter((t) => t.status === 'ACTIVE')).slice(0, 1).map((t) => (
               <div key={t.code} className={styles.stickerLabel}>
                 <div className={styles.stickerHeader}>Ủ LAB</div>
                 <div className={styles.stickerPrice}>{formatVND(t.drink_value)}</div>

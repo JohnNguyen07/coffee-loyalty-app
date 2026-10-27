@@ -34,7 +34,6 @@ export default function POSPanel() {
   const quickPrices = getQuickPrices();
   const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
   const [customPrice, setCustomPrice] = useState('');
-  const [batchQty, setBatchQty] = useState<number>(1);
   const [activeCategorySlug, setActiveCategorySlug] = useState<string>('all');
   const [currentQR, setCurrentQR] = useState<GeneratedQR | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -83,45 +82,12 @@ export default function POSPanel() {
     fetchDBTokens();
   }, [fetchDBTokens]);
 
-  const generateQR = async (price: number, label?: string, qty: number = 1) => {
+  const generateQR = async (price: number, label?: string) => {
     if (!price || price <= 0) return;
     setIsGenerating(true);
 
     try {
-      if (qty > 1) {
-        // Batch generate via /api/admin/qr
-        const res = await fetch('/api/admin/qr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ drink_value: price, quantity: qty, prefix: 'QR' }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const firstToken = data.tokens?.[0];
-          if (firstToken) {
-            const scanUrl = buildScanUrl(firstToken.code);
-            const qrDataUrl = await QRCode.toDataURL(scanUrl, {
-              width: 280,
-              margin: 2,
-              color: { dark: '#1E3932', light: '#FFFFFF' },
-            });
-            setCurrentQR({
-              code: firstToken.code,
-              price,
-              label: label ? `${label} (Lô ${qty} tem)` : `Lô ${qty} tem · ${formatVND(price)}`,
-              qrDataUrl,
-              scanUrl,
-              createdAt: new Date().toLocaleTimeString('vi-VN'),
-            });
-          }
-          fetchDBTokens();
-          setIsGenerating(false);
-          return;
-        }
-      }
-
-      // Single QR generate
+      // Single QR generate (1 sticker only)
       let code = `QR-${price}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
       try {
@@ -140,7 +106,7 @@ export default function POSPanel() {
 
       const scanUrl = buildScanUrl(code);
       const qrDataUrl = await QRCode.toDataURL(scanUrl, {
-        width: 280,
+        width: 340,
         margin: 2,
         color: { dark: '#1E3932', light: '#FFFFFF' },
       });
@@ -166,13 +132,13 @@ export default function POSPanel() {
   const handleQuickPrice = (price: number) => {
     setSelectedPrice(price);
     setCustomPrice('');
-    generateQR(price, undefined, batchQty);
+    generateQR(price, undefined);
   };
 
   const handleMenuDrinkSelect = (drinkName: string, sizeLabel: string, price: number) => {
     setSelectedPrice(price);
     setCustomPrice('');
-    generateQR(price, `${drinkName} (${sizeLabel})`, 1);
+    generateQR(price, `${drinkName} (${sizeLabel})`);
   };
 
   const handleCustomSubmit = (e: React.FormEvent) => {
@@ -180,7 +146,7 @@ export default function POSPanel() {
     const price = parseInt(customPrice.replace(/\D/g, ''), 10);
     if (price && price >= 1000) {
       setSelectedPrice(null);
-      generateQR(price, undefined, batchQty);
+      generateQR(price, undefined);
     }
   };
 
@@ -191,110 +157,117 @@ export default function POSPanel() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const handlePrintSingle = async (qrCode: string, price: number, existingDataUrl?: string) => {
+  // Single 75x100mm sticker print (1 sheet only)
+  const handlePrintSingle = async (
+    qrCode: string,
+    price: number,
+    existingDataUrl?: string,
+    drinkLabel?: string
+  ) => {
     const scanUrl = buildScanUrl(qrCode);
     const dataUrl =
       existingDataUrl ||
       (await QRCode.toDataURL(scanUrl, {
-        width: 260,
+        width: 360,
         margin: 2,
         color: { dark: '#1E3932', light: '#FFFFFF' },
       }));
 
-    const printWindow = window.open('', '_blank', 'width=420,height=520');
+    const printWindow = window.open('', '_blank', 'width=450,height=600');
     if (!printWindow) return;
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>In Tem QR - Ủ LAB</title>
+        <title>In Tem QR 75x100mm - Ủ LAB</title>
         <style>
-          @page { size: 50mm 30mm; margin: 1.5mm; }
+          @page {
+            size: 75mm 100mm;
+            margin: 0;
+          }
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
+          html, body {
+            width: 75mm;
+            height: 100mm;
+            overflow: hidden;
+            page-break-after: avoid;
+            page-break-before: avoid;
+            page-break-inside: avoid;
+          }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            margin: 0;
-            padding: 4px;
+            padding: 4mm;
             text-align: center;
             color: #1E3932;
+            background: #FFFFFF;
           }
-          .brand { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-          .qr { width: 76px; height: 76px; margin: 2px 0; }
-          .price { font-size: 11px; font-weight: 800; }
-          .hint { font-size: 7px; color: #444; }
-          .code { font-size: 6px; font-family: monospace; color: #666; margin-top: 1px; }
+          .brand {
+            font-size: 13pt;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 2mm;
+          }
+          .label {
+            font-size: 10pt;
+            font-weight: 700;
+            color: #006241;
+            margin-bottom: 1.5mm;
+            max-width: 67mm;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .qr {
+            width: 48mm;
+            height: 48mm;
+            margin: 2mm 0;
+            display: block;
+          }
+          .price {
+            font-size: 15pt;
+            font-weight: 800;
+            margin-top: 1mm;
+          }
+          .hint {
+            font-size: 8.5pt;
+            font-weight: 600;
+            color: #333;
+            margin-top: 1.5mm;
+            line-height: 1.3;
+          }
+          .code {
+            font-size: 7.5pt;
+            font-family: monospace;
+            color: #555;
+            margin-top: 1.5mm;
+            word-break: break-all;
+          }
         </style>
       </head>
       <body>
         <div class="brand">Ủ LAB · TÍCH ĐIỂM</div>
+        ${drinkLabel ? `<div class="label">${drinkLabel}</div>` : ''}
         <img class="qr" src="${dataUrl}" alt="QR" />
         <div class="price">${formatVND(price)}</div>
         <div class="hint">Mở Camera ĐT quét nhận hoàn điểm 3-10%</div>
         <div class="code">${qrCode}</div>
         <script>
-          window.onload = () => { window.print(); window.close(); };
+          window.onload = () => {
+            window.focus();
+            window.print();
+            window.close();
+          };
         </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
-  const handleBatchPrintSelected = async () => {
-    const targets = dbTokens.filter((t) => selectedCodes.includes(t.code));
-    if (targets.length === 0) return;
-
-    const stickersHtml: string[] = [];
-    for (const t of targets) {
-      const url = buildScanUrl(t.code);
-      const dataUrl = await QRCode.toDataURL(url, {
-        width: 220,
-        margin: 2,
-        color: { dark: '#1E3932', light: '#FFFFFF' },
-      });
-      stickersHtml.push(`
-        <div class="sticker">
-          <div class="brand">Ủ LAB · REWARDS</div>
-          <img class="qr" src="${dataUrl}" alt="QR" />
-          <div class="price">${formatVND(t.drink_value)}</div>
-          <div class="hint">Quét bằng Camera ĐT</div>
-          <div class="code">${t.code}</div>
-        </div>
-      `);
-    }
-
-    const printWindow = window.open('', '_blank', 'width=800,height=700');
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>In Lô Tem QR (${targets.length} tem) - Ủ LAB</title>
-        <style>
-          body { font-family: sans-serif; margin: 12px; color: #1E3932; }
-          .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-          .sticker {
-            border: 1px dashed #1E3932;
-            border-radius: 8px;
-            padding: 8px;
-            text-align: center;
-            page-break-inside: avoid;
-          }
-          .brand { font-size: 10px; font-weight: 800; }
-          .qr { width: 100px; height: 100px; margin: 4px auto; display: block; }
-          .price { font-size: 12px; font-weight: 800; }
-          .hint { font-size: 9px; color: #555; }
-          .code { font-size: 8px; font-family: monospace; color: #666; margin-top: 2px; word-break: break-all; }
-        </style>
-      </head>
-      <body>
-        <div class="grid">${stickersHtml.join('')}</div>
-        <script>window.onload = () => { window.print(); };</script>
       </body>
       </html>
     `);
@@ -368,7 +341,7 @@ export default function POSPanel() {
       <div className={styles.header}>
         <h1 className={styles.title}>POS Quầy Pha Chế &amp; Tạo Tem QR</h1>
         <p className={styles.subtitle}>
-          Chọn món hoặc mệnh giá để in tem QR dán lên ly. Khi khách dùng <strong>Camera điện thoại</strong> quét tem, điện thoại sẽ tự mở đường dẫn <code>/scan?code=...</code> để cộng điểm hoàn tự động.
+          Chọn món hoặc mệnh giá để in <strong>1 tem QR duy nhất (khổ 75×100mm)</strong> dán lên ly. Khi khách dùng <strong>Camera điện thoại</strong> quét tem, điện thoại sẽ tự mở đường dẫn <code>/scan?code=...</code> để cộng điểm hoàn tự động.
         </p>
       </div>
 
@@ -378,7 +351,7 @@ export default function POSPanel() {
           {/* 1. Pick by Menu Item */}
           <div className={styles.cardBox}>
             <div className={styles.cardHeaderRow}>
-              <h2 className={styles.sectionTitle}>1. Chọn nhanh theo Món trong Thực Đơn</h2>
+              <h2 className={styles.sectionTitle}>1. Chọn nhanh theo Món trong Menu</h2>
               <div className={styles.catFilterPills}>
                 <button
                   type="button"
@@ -425,23 +398,10 @@ export default function POSPanel() {
             </div>
           </div>
 
-          {/* 2. Quick Prices & Batch Quantity */}
+          {/* 2. Quick Prices (Single Sticker 75x100mm) */}
           <div className={styles.cardBox}>
             <div className={styles.cardHeaderRow}>
-              <h2 className={styles.sectionTitle}>2. Chọn Mệnh Giá Nhanh / Tạo Theo Lô</h2>
-              <div className={styles.qtySelector}>
-                <span>Số lượng tem:</span>
-                {[1, 5, 10, 20].map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    className={`${styles.qtyPill} ${batchQty === q ? styles.qtyPillActive : ''}`}
-                    onClick={() => setBatchQty(q)}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              <h2 className={styles.sectionTitle}>2. Chọn Mệnh Giá Nhanh (1 Tem · Khổ 75×100mm)</h2>
             </div>
 
             <div className={styles.priceGrid}>
@@ -473,7 +433,7 @@ export default function POSPanel() {
                 className={styles.generateBtn}
                 disabled={isGenerating || !customPrice}
               >
-                {isGenerating ? <span className={styles.spinner} /> : `Tạo ${batchQty > 1 ? `${batchQty} tem` : 'tem QR'}`}
+                {isGenerating ? <span className={styles.spinner} /> : 'Tạo 1 tem QR'}
               </button>
             </form>
           </div>
@@ -484,7 +444,7 @@ export default function POSPanel() {
           <div className={styles.qrPreviewCard} ref={printRef}>
             {currentQR ? (
               <>
-                <span className={styles.previewBadge}>TEM QR VỪA TẠO</span>
+                <span className={styles.previewBadge}>TEM QR VỪA TẠO (75×100mm · 1 TỜ)</span>
                 {currentQR.label && <div className={styles.qrDrinkLabel}>{currentQR.label}</div>}
                 <div className={styles.qrPrice}>{formatVND(currentQR.price)}</div>
                 <img
@@ -528,10 +488,15 @@ export default function POSPanel() {
                   type="button"
                   className={styles.printBtn}
                   onClick={() =>
-                    handlePrintSingle(currentQR.code, currentQR.price, currentQR.qrDataUrl)
+                    handlePrintSingle(
+                      currentQR.code,
+                      currentQR.price,
+                      currentQR.qrDataUrl,
+                      currentQR.label
+                    )
                   }
                 >
-                  🖨️ In Tem Dán Ly (50×30mm)
+                  🖨️ In 1 Tem QR (Khổ 75×100mm · 1 Tờ)
                 </button>
               </>
             ) : (
@@ -539,7 +504,7 @@ export default function POSPanel() {
                 <div className={styles.emptyQrIcon}>QR</div>
                 <h3>Chưa chọn món hoặc mệnh giá</h3>
                 <p>
-                  Bấm vào một món nước hoặc mệnh giá bên trái để tạo mã QR chứa đường dẫn tích điểm tự động.
+                  Bấm vào một món nước hoặc mệnh giá bên trái để tạo 1 tem QR khổ 75×100mm duy nhất.
                 </p>
               </div>
             )}
@@ -547,7 +512,7 @@ export default function POSPanel() {
         </div>
       </div>
 
-      {/* 3. Database QR Tokens Table & Batch Print */}
+      {/* 3. Database QR Tokens Table */}
       <div className={styles.section} style={{ marginTop: 28 }}>
         <div className={styles.tableHeaderBar}>
           <div>
@@ -566,22 +531,13 @@ export default function POSPanel() {
 
           <div className={styles.tableFilterActions}>
             {selectedCodes.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleBatchPrintSelected}
-                  className={styles.batchPrintBtn}
-                >
-                  🖨️ In {selectedCodes.length} tem đã chọn
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBatchDelete}
-                  className={styles.batchDeleteBtn}
-                >
-                  Xóa ({selectedCodes.length})
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleBatchDelete}
+                className={styles.batchDeleteBtn}
+              >
+                Xóa ({selectedCodes.length})
+              </button>
             )}
 
             <select
@@ -691,9 +647,9 @@ export default function POSPanel() {
                               type="button"
                               className={styles.rowBtn}
                               onClick={() => handlePrintSingle(t.code, t.drink_value)}
-                              title="In tem này"
+                              title="In 1 tem 75x100mm"
                             >
-                              In tem
+                              In tem (75×100)
                             </button>
                             <button
                               type="button"
