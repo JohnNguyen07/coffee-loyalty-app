@@ -26,6 +26,8 @@ interface OrderSuccessInfo {
   pageUrl: string;
 }
 
+export type FulfillmentType = 'DELIVERY' | 'PICKUP';
+
 const FANPAGE_ID = process.env.NEXT_PUBLIC_MESSENGER_FANPAGE_ID || '61595629718216';
 const FACEBOOK_PAGE_URL =
   process.env.NEXT_PUBLIC_FACEBOOK_PAGE_URL ||
@@ -73,9 +75,12 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { profile, spendPoints } = useAuth();
   const drawerRef = useRef<HTMLDivElement>(null);
 
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('DELIVERY');
   const [customerName, setCustomerName] = useState(profile?.full_name || '');
   const [customerPhone, setCustomerPhone] = useState(profile?.phone || '');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [customerNote, setCustomerNote] = useState('');
+  const [formError, setFormError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState<OrderSuccessInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -100,6 +105,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       setOrderSuccess(null);
       setCopied(false);
       setShowPreview(false);
+      setFormError('');
     } else {
       document.body.style.overflow = '';
     }
@@ -124,6 +130,27 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const handleSendOrder = async () => {
     if (items.length === 0) return;
 
+    const cleanName = customerName.trim();
+    const cleanPhone = customerPhone.trim().replace(/[\s\-()]/g, '');
+    const cleanAddress = customerAddress.trim();
+
+    if (!cleanName) {
+      setFormError('Vui lòng nhập họ và tên người đặt hàng.');
+      return;
+    }
+
+    if (!cleanPhone || !/^0\d{8,10}$/.test(cleanPhone)) {
+      setFormError('Vui lòng nhập số điện thoại hợp lệ (9–11 số, bắt đầu bằng số 0).');
+      return;
+    }
+
+    if (!cleanAddress) {
+      setFormError('Vui lòng nhập địa chỉ của bạn.');
+      return;
+    }
+
+    setFormError('');
+
     const orderCode = `ULAB-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const orderItemsText = items
@@ -133,7 +160,9 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       )
       .join('\n');
 
-    const customerInfo = `${customerName ? customerName.trim() : 'Khách đặt món'}${customerPhone ? ` - ${customerPhone.trim()}` : ''}`;
+    const fulfillmentLabel =
+      fulfillmentType === 'DELIVERY' ? '🛵 Giao tới nhà' : '🏪 Lấy tại cửa hàng';
+    const customerInfo = `${cleanName} - ${cleanPhone}`;
     const tierInfo = profile?.tier?.name
       ? `${profile.tier.name} (Hoàn ${profile.tier.cashback_rate}%)`
       : null;
@@ -143,7 +172,9 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
     const fullText = [
       `🧪 Ủ LAB - ĐƠN ĐẶT HÀNG [#${orderCode}]`,
+      `📦 Hình thức nhận: ${fulfillmentLabel}`,
       `👤 Khách hàng: ${customerInfo}`,
+      `📍 Địa chỉ: ${cleanAddress}`,
       tierInfo ? `⭐ Hạng thành viên: ${tierInfo}` : null,
       `---------------------------------`,
       orderItemsText,
@@ -151,18 +182,14 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       `💰 Tạm tính: ${formatVND(subtotal)}`,
       pointsToUse > 0 ? `🎁 Giảm từ điểm ví: -${formatVND(pointsToUse)}` : null,
       `👉 TỔNG THANH TOÁN: ${formatVND(totalDue)}`,
-      customerNote ? `📝 Ghi chú: ${customerNote.trim()}` : null,
+      customerNote.trim() ? `📝 Ghi chú: ${customerNote.trim()}` : null,
       `---------------------------------`,
       `⏰ Thời gian: ${timeStr}`,
-      `📍 Đặt từ: Website Ủ LAB`,
+      `🌐 Đặt từ: Website Ủ LAB`,
     ]
       .filter(Boolean)
       .join('\n');
 
-    // Start copying and open Messenger synchronously inside the click gesture,
-    // otherwise browsers block the popup after an `await`.
-    // Note: Facebook ignores `?text=` on m.me page links, so the clipboard is the
-    // reliable way to hand the order text to the user (they paste it into the chat).
     const copyPromise = copyToClipboard(fullText);
     const messengerUrl = `https://m.me/${FANPAGE_ID}?ref=${orderCode}`;
     const webMessengerUrl = `https://www.facebook.com/messages/t/${FANPAGE_ID}`;
@@ -175,24 +202,34 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       spendPoints(pointsToUse, orderCode);
     }
 
-    if (profile) {
-      fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: items.map((ci) => ({
-            item_id: ci.menuItem.id,
-            name: ci.menuItem.name,
-            size_label: ci.sizeLabel,
-            unit_price: ci.price,
-            quantity: ci.quantity,
-          })),
-          points_used: pointsToUse,
-          note: customerNote,
-        }),
-      }).catch((err) => console.warn('Order DB sync:', err));
-    }
+    const combinedOrderNote = [
+      `[${fulfillmentType === 'DELIVERY' ? 'Giao tới nhà' : 'Lấy tại cửa hàng'}]`,
+      `KH: ${cleanName} (${cleanPhone})`,
+      `Đ/c: ${cleanAddress}`,
+      customerNote.trim() ? `Ghi chú: ${customerNote.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
 
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: items.map((ci) => ({
+          item_id: ci.menuItem.id,
+          name: ci.menuItem.name,
+          size_label: ci.sizeLabel,
+          unit_price: ci.price,
+          quantity: ci.quantity,
+        })),
+        points_used: pointsToUse,
+        note: combinedOrderNote,
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
+        customer_address: cleanAddress,
+        fulfillment_type: fulfillmentType,
+      }),
+    }).catch((err) => console.warn('Order DB sync:', err));
 
     setOrderSuccess({
       code: orderCode,
@@ -393,30 +430,83 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 ))}
               </div>
 
-              {/* Customer Info & Customization Notes */}
+              {/* Customer Info, Fulfillment Type & Customization Notes */}
               <div className={styles.customerForm}>
-                <span className={styles.sectionSmallTitle}>THÔNG TIN &amp; TÙY CHỈNH KHẨU VỊ</span>
+                <span className={styles.sectionSmallTitle}>HÌNH THỨC NHẬN MÓN &amp; THÔNG TIN BẮT BUỘC *</span>
+
+                {/* Fulfillment Option Selector */}
+                <div className={styles.fulfillmentToggle} role="radiogroup" aria-label="Chọn hình thức nhận món">
+                  <button
+                    type="button"
+                    className={`${styles.fulfillmentBtn} ${fulfillmentType === 'DELIVERY' ? styles.fulfillmentBtnActive : ''}`}
+                    onClick={() => setFulfillmentType('DELIVERY')}
+                    aria-pressed={fulfillmentType === 'DELIVERY'}
+                  >
+                    <span>🛵 Giao tới nhà</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.fulfillmentBtn} ${fulfillmentType === 'PICKUP' ? styles.fulfillmentBtnActive : ''}`}
+                    onClick={() => setFulfillmentType('PICKUP')}
+                    aria-pressed={fulfillmentType === 'PICKUP'}
+                  >
+                    <span>🏪 Lấy tại cửa hàng</span>
+                  </button>
+                </div>
+
+                {formError && (
+                  <div className={styles.formErrorBox} role="alert">
+                    {formError}
+                  </div>
+                )}
+
                 <div className={styles.formRow}>
                   <input
                     type="text"
-                    placeholder="Tên của bạn (VD: Minh)"
+                    placeholder="Họ và tên *"
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (formError) setFormError('');
+                    }}
                     className={styles.formInput}
                     aria-label="Tên khách hàng"
+                    required
                   />
                   <input
                     type="tel"
-                    placeholder="Số điện thoại"
+                    placeholder="Số điện thoại *"
                     value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerPhone(e.target.value);
+                      if (formError) setFormError('');
+                    }}
                     className={styles.formInput}
                     aria-label="Số điện thoại"
+                    required
                   />
                 </div>
+
                 <input
                   type="text"
-                  placeholder="Ghi chú: Ít ngọt, đá riêng, giao giờ nghỉ trưa..."
+                  placeholder={
+                    fulfillmentType === 'DELIVERY'
+                      ? 'Địa chỉ giao hàng chi tiết (Số nhà, đường, phường/xã) *'
+                      : 'Địa chỉ của bạn / Ghi chú thời gian ghé lấy tại quán *'
+                  }
+                  value={customerAddress}
+                  onChange={(e) => {
+                    setCustomerAddress(e.target.value);
+                    if (formError) setFormError('');
+                  }}
+                  className={styles.formInput}
+                  aria-label="Địa chỉ khách hàng"
+                  required
+                />
+
+                <input
+                  type="text"
+                  placeholder="Ghi chú khẩu vị: Ít ngọt, đá riêng, giao giờ nghỉ trưa..."
                   value={customerNote}
                   onChange={(e) => setCustomerNote(e.target.value)}
                   className={styles.noteInput}
@@ -480,6 +570,12 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             {/* Sticky Checkout Footer */}
             <div className={styles.footerDock}>
               <div className={styles.summary}>
+                <div className={styles.summaryRow}>
+                  <span>Hình thức nhận</span>
+                  <strong>
+                    {fulfillmentType === 'DELIVERY' ? '🛵 Giao tới nhà' : '🏪 Lấy tại cửa hàng'}
+                  </strong>
+                </div>
                 <div className={styles.summaryRow}>
                   <span>Tạm tính ({items.reduce((s, i) => s + i.quantity, 0)} món)</span>
                   <span>{formatVND(subtotal)}</span>

@@ -677,3 +677,53 @@
   color: var(--sb-house);
   text-decoration: underline;
 }
+
+
+/* ── Fulfillment Type Selector & Validation Error ── */
+.fulfillmentToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: var(--surface);
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.fulfillmentBtn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.fulfillmentBtn:hover {
+  color: var(--sb-house);
+}
+
+.fulfillmentBtnActive {
+  background: #FFFFFF;
+  color: var(--sb-green);
+  border-color: var(--sb-accent);
+  box-shadow: 0 2px 6px rgba(0, 98, 65, 0.12);
+}
+
+.formErrorBox {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+}

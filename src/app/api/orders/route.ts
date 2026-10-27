@@ -2,31 +2,64 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 import { allMenuItems } from '@/data/menu';
+import { cookies } from 'next/headers';
 
-async function resolveProfile(user: { id: string; email?: string | null }) {
+async function resolveProfile(user: { id: string; email?: string | null } | null, customerPhone?: string) {
   const adminClient = createAdminClient();
-  let { data: profile } = await adminClient
-    .from('users')
-    .select('id, role, point_balance')
-    .eq('id', user.id)
-    .maybeSingle();
+  let profile: { id: string; role: string; point_balance: number } | null = null;
 
-  if (!profile) {
-    const { data: byGoogle } = await adminClient
+  if (user) {
+    const { data: byId } = await adminClient
       .from('users')
       .select('id, role, point_balance')
-      .eq('google_id', user.id)
+      .eq('id', user.id)
       .maybeSingle();
-    profile = byGoogle;
+    profile = byId;
+
+    if (!profile) {
+      const { data: byGoogle } = await adminClient
+        .from('users')
+        .select('id, role, point_balance')
+        .eq('google_id', user.id)
+        .maybeSingle();
+      profile = byGoogle;
+    }
+
+    if (!profile && user.email) {
+      const { data: byEmail } = await adminClient
+        .from('users')
+        .select('id, role, point_balance')
+        .eq('email', user.email)
+        .maybeSingle();
+      profile = byEmail;
+    }
   }
 
-  if (!profile && user.email) {
-    const { data: byEmail } = await adminClient
-      .from('users')
-      .select('id, role, point_balance')
-      .eq('email', user.email)
-      .maybeSingle();
-    profile = byEmail;
+  // Fallback to ulab_uid cookie if present
+  if (!profile) {
+    const cookieStore = await cookies();
+    const uidCookie = cookieStore.get('ulab_uid')?.value;
+    if (uidCookie) {
+      const { data: byCookie } = await adminClient
+        .from('users')
+        .select('id, role, point_balance')
+        .eq('id', uidCookie)
+        .maybeSingle();
+      profile = byCookie;
+    }
+  }
+
+  // Fallback to matching phone number if customer entered their registered phone
+  if (!profile && customerPhone) {
+    const cleanPhone = customerPhone.replace(/[\s\-()]/g, '');
+    if (cleanPhone) {
+      const { data: byPhone } = await adminClient
+        .from('users')
+        .select('id, role, point_balance')
+        .eq('phone', cleanPhone)
+        .maybeSingle();
+      profile = byPhone;
+    }
   }
 
   return { profile, adminClient };
@@ -35,24 +68,16 @@ async function resolveProfile(user: { id: string; email?: string | null }) {
 // POST /api/orders — Create a new order (customer)
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-  }
-
-  const { profile, adminClient } = await resolveProfile(user);
-
-  if (!profile) {
-    return NextResponse.json({ error: 'Không tìm thấy tài khoản' }, { status: 404 });
-  }
 
   const body = await request.json();
-  const { items, points_used, note } = body;
+  const { items, points_used, note, customer_phone } = body;
 
   if (!items || items.length === 0) {
     return NextResponse.json({ error: 'Giỏ hàng trống' }, { status: 400 });
   }
+
+  const { profile, adminClient } = await resolveProfile(user, customer_phone);
 
   // Normalize items and calculate subtotal using SERVER-SIDE prices
   const normalizedItems = items.map(
@@ -78,30 +103,33 @@ export async function POST(request: NextRequest) {
   );
 
   const subtotal = normalizedItems.reduce((sum: number, it: { subtotal: number }) => sum + it.subtotal, 0);
-  const pointsToUse = Math.min(points_used || 0, profile.point_balance, subtotal);
+  const availablePoints = profile?.point_balance || 0;
+  const pointsToUse = profile ? Math.min(points_used || 0, availablePoints, subtotal) : 0;
   const totalDue = subtotal - pointsToUse;
 
-  // 1. Try creating order with items using RPC for atomicity
-  const { data: rpcResult, error: rpcError } = await adminClient.rpc('create_order', {
-    p_user_id: profile.id,
-    p_items: normalizedItems,
-    p_points_used: pointsToUse,
-    p_subtotal: subtotal,
-    p_total_due: totalDue,
-    p_note: note || null,
-  });
+  // 1. If profile exists, try creating order with items using RPC for atomicity
+  if (profile) {
+    const { data: rpcResult, error: rpcError } = await adminClient.rpc('create_order', {
+      p_user_id: profile.id,
+      p_items: normalizedItems,
+      p_points_used: pointsToUse,
+      p_subtotal: subtotal,
+      p_total_due: totalDue,
+      p_note: note || null,
+    });
 
-  if (!rpcError && rpcResult) {
-    return NextResponse.json({ success: true, order: rpcResult });
+    if (!rpcError && rpcResult) {
+      return NextResponse.json({ success: true, order: rpcResult });
+    }
   }
 
-  // 2. Fallback direct insert if RPC is not available or signature differs
+  // 2. Fallback direct insert
   const orderCode = `CF-${Math.floor(1000 + Math.random() * 9000)}`;
   const { data: insertedOrder, error: orderErr } = await adminClient
     .from('orders')
     .insert({
       order_code: orderCode,
-      user_id: profile.id,
+      user_id: profile?.id || null,
       status: 'PENDING',
       subtotal,
       points_used: pointsToUse,
@@ -112,7 +140,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (orderErr || !insertedOrder) {
-    console.error('Order creation error:', orderErr || rpcError);
+    console.error('Order creation error:', orderErr);
     return NextResponse.json({ error: 'Không thể tạo đơn hàng' }, { status: 500 });
   }
 
@@ -127,7 +155,7 @@ export async function POST(request: NextRequest) {
     }))
   );
 
-  if (pointsToUse > 0) {
+  if (profile && pointsToUse > 0) {
     const newBalance = Math.max(0, profile.point_balance - pointsToUse);
     await adminClient
       .from('users')
@@ -150,16 +178,11 @@ export async function POST(request: NextRequest) {
 // GET /api/orders — Get orders (admin: all, user: own)
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-  }
-
   const { profile, adminClient } = await resolveProfile(user);
 
   if (!profile) {
-    return NextResponse.json({ error: 'Không tìm thấy tài khoản' }, { status: 404 });
+    return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
