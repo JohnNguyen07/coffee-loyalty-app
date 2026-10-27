@@ -29,6 +29,13 @@ export const metadata: Metadata = {
   title: "Ủ LAB - Matcha & Cold Brew",
   description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm thưởng theo hạng thành viên.",
   keywords: ["Ủ LAB", "coffee", "matcha", "cold brew", "take-away", "tích điểm", "cà phê ủ"],
+  icons: {
+    icon: [
+      { url: "/favicon-circle.png?v=2", type: "image/png", sizes: "64x64" },
+    ],
+    shortcut: ["/favicon-circle.png?v=2"],
+    apple: ["/favicon-circle.png?v=2"],
+  },
   openGraph: {
     title: "Ủ LAB - Matcha & Cold Brew",
     description: "Ủ LAB - Đặt hàng Matcha & Cold Brew take-away. Tích điểm thưởng theo hạng thành viên.",
@@ -50,4 +57,3 @@ export default function RootLayout({
     </html>
   );
 }
-
