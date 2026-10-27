@@ -51,7 +51,7 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
               <StarSolidIcon size={12} />
             </span>
             <span className={styles.rewardsStripText}>
-              <strong>Ủ LAB REWARDS</strong> · Hoàn điểm 3% – 10% mọi ly nước &amp; tặng 10.000đ thành viên mới
+              <strong>THÔNG BÁO:</strong> Chương trình tích điểm thành viên sẽ chính thức bắt đầu từ <strong>ngày 9</strong> · Hoàn điểm 3% – 10% mọi ly nước &amp; tặng 10.000đ thành viên mới
             </span>
           </div>
           <div className={styles.rewardsStripRight}>

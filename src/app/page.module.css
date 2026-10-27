@@ -1020,3 +1020,53 @@
   color: var(--sb-gold);
   font-weight: 600;
 }
+
+
+/* ============================================================
+   LOYALTY START DATE NOTICE BANNER
+   ============================================================ */
+
+.loyaltyNoticeBanner {
+  background: var(--sb-gold-wash);
+  border-bottom: 1.5px solid var(--sb-gold-light);
+  padding: 12px var(--space-4);
+}
+
+.loyaltyNoticeInner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  text-align: center;
+}
+
+.loyaltyNoticeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-house);
+  color: var(--sb-gold);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.loyaltyNoticeText {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sb-house);
+  line-height: 1.45;
+}
+
+.loyaltyNoticeText strong {
+  color: var(--sb-green);
+  font-weight: 800;
+}

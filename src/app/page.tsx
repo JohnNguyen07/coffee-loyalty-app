@@ -74,6 +74,19 @@ export default function Home() {
       />
 
       <main className={styles.main}>
+        {/* ── NOTICE BANNER: LOYALTY START DATE ── */}
+        <div className={styles.loyaltyNoticeBanner}>
+          <div className={styles.loyaltyNoticeInner}>
+            <span className={styles.loyaltyNoticeBadge}>
+              <StarSolidIcon size={13} />
+              <span>THÔNG BÁO</span>
+            </span>
+            <p className={styles.loyaltyNoticeText}>
+              Chương trình <strong>tích điểm thành viên Ủ LAB Rewards</strong> sẽ chính thức bắt đầu áp dụng từ <strong>ngày 9</strong>. Đăng ký tài khoản ngay hôm nay để nhận trước <strong>10.000đ</strong> vào ví thưởng!
+            </p>
+          </div>
+        </div>
+
         {/* ── ZONE 2: MENU CATALOG & INTERACTIVE FILTER BAR ── */}
         <section id="menu-section" className={styles.menuSection}>
           <div className={styles.sectionHeaderRow}>
@@ -171,7 +184,7 @@ export default function Home() {
             <div className={styles.rewardsIntro}>
               <div className={styles.rewardsGoldEyebrow}>
                 <StarSolidIcon size={14} />
-                <span>Ủ LAB REWARDS® · CHƯƠNG TRÌNH THÀNH VIÊN</span>
+                <span>Ủ LAB REWARDS® · TÍCH ĐIỂM BẮT ĐẦU TỪ NGÀY 9</span>
               </div>
               <h2 className={styles.rewardsHeadline}>
                 Ly nước trên tay, hoàn điểm vào ví ngay tức thì
