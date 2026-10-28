@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styles from './LocationsRbacPanel.module.css';
 import {
   type MvpRole,
@@ -15,10 +15,16 @@ export default function LocationsRbacPanel() {
   const [profile, setProfile] = useState<UserRbacProfile | null>(null);
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [staffList, setStaffList] = useState<StaffMemberDto[]>([]);
+  const [activeLocationId, setActiveLocationId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Modal states
+  // Search & Filter states
+  const [searchLoc, setSearchLoc] = useState('');
+  const [searchStaff, setSearchStaff] = useState('');
+  const [filterRole, setFilterRole] = useState<string>('ALL');
+
+  // Location Modal states
   const [createLocModal, setCreateLocModal] = useState(false);
   const [newLocCode, setNewLocCode] = useState('');
   const [newLocName, setNewLocName] = useState('');
@@ -32,11 +38,19 @@ export default function LocationsRbacPanel() {
   const [editLocPhone, setEditLocPhone] = useState('');
   const [editLocActive, setEditLocActive] = useState(true);
 
-  // Staff assignment modal
+  // Staff Assignment Modal
   const [staffModal, setStaffModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<StaffMemberDto | null>(null);
   const [targetRole, setTargetRole] = useState<MvpRole>('CASHIER');
   const [targetLocationIds, setTargetLocationIds] = useState<string[]>([]);
+
+  // Add Staff Modal
+  const [addStaffModal, setAddStaffModal] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<MvpRole>('CASHIER');
+  const [newStaffLocIds, setNewStaffLocIds] = useState<string[]>([]);
 
   // Fetch initial RBAC data
   const loadData = useCallback(async () => {
@@ -48,6 +62,7 @@ export default function LocationsRbacPanel() {
       if (data.success && data.profile) {
         setProfile(data.profile);
         setLocations(data.locations || []);
+        setActiveLocationId(data.profile.assignedLocationIds?.[0] || data.locations?.[0]?.id || '');
 
         // If Owner or Admin, load staff list
         if (data.profile.role === 'OWNER' || data.profile.role === 'ADMIN') {
@@ -89,6 +104,7 @@ export default function LocationsRbacPanel() {
         if (data.success && data.profile) {
           setProfile(data.profile);
           setLocations(data.locations || []);
+          setActiveLocationId(data.profile.assignedLocationIds?.[0] || data.locations?.[0]?.id || '');
           if (data.profile.role === 'OWNER' || data.profile.role === 'ADMIN') {
             const staffRes = await fetch('/api/rbac/staff');
             const staffData = await staffRes.json();
@@ -97,7 +113,6 @@ export default function LocationsRbacPanel() {
             }
           }
         } else if (active) {
-          // Fallback profile so admin user can always manage and edit
           setProfile({
             userId: '00000000-0000-0000-0000-000000000003',
             fullName: 'Quản trị viên Ủ LAB',
@@ -109,10 +124,6 @@ export default function LocationsRbacPanel() {
             isManager: false,
             isCashier: false,
             isInventoryStaff: false,
-          });
-          setStatusMessage({
-            type: 'error',
-            text: data.error || 'Đang sử dụng cấu hình phân quyền quản trị dự phòng.',
           });
         }
       } catch {
@@ -128,6 +139,31 @@ export default function LocationsRbacPanel() {
       active = false;
     };
   }, []);
+
+  // Handle Switch Working Location
+  const handleSwitchLocation = async (locId: string) => {
+    try {
+      const res = await fetch('/api/rbac/switch-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId: locId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Lỗi chuyển đổi điểm bán');
+      }
+
+      setActiveLocationId(locId);
+      setStatusMessage({ type: 'success', text: data.message });
+      // Notify other parts of the admin UI through custom event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ulab:location-changed', { detail: { locationId: locId } }));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Lỗi chuyển đổi điểm bán';
+      setStatusMessage({ type: 'error', text: msg });
+    }
+  };
 
   // Handle Location Creation
   const handleCreateLocation = async (e: React.FormEvent) => {
@@ -196,12 +232,46 @@ export default function LocationsRbacPanel() {
       setEditingLoc(null);
       await loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi tạo điểm bán';
+      const msg = err instanceof Error ? err.message : 'Lỗi cập nhật điểm bán';
       setStatusMessage({ type: 'error', text: msg });
     }
   };
 
-  // Handle Staff Assignment Modal Open
+  // Handle Add New Staff
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/rbac/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          fullName: newStaffName,
+          email: newStaffEmail,
+          phone: newStaffPhone,
+          role: newStaffRole,
+          locationIds: newStaffLocIds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Lỗi tạo nhân viên mới');
+      }
+
+      setStatusMessage({ type: 'success', text: data.message });
+      setAddStaffModal(false);
+      setNewStaffName('');
+      setNewStaffEmail('');
+      setNewStaffPhone('');
+      setNewStaffLocIds([]);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Lỗi tạo nhân viên mới';
+      setStatusMessage({ type: 'error', text: msg });
+    }
+  };
+
+  // Handle Staff Assignment
   const handleOpenStaffModal = (staff: StaffMemberDto) => {
     setSelectedStaff(staff);
     setTargetRole(staff.role);
@@ -215,6 +285,12 @@ export default function LocationsRbacPanel() {
     );
   };
 
+  const handleToggleNewStaffLocation = (locId: string) => {
+    setNewStaffLocIds((prev) =>
+      prev.includes(locId) ? prev.filter((id) => id !== locId) : [...prev, locId]
+    );
+  };
+
   const handleSaveStaffAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStaff) return;
@@ -224,6 +300,7 @@ export default function LocationsRbacPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'update',
           targetUserId: selectedStaff.userId,
           targetRole,
           locationIds: targetLocationIds,
@@ -239,10 +316,105 @@ export default function LocationsRbacPanel() {
       setSelectedStaff(null);
       await loadData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi tạo điểm bán';
+      const msg = err instanceof Error ? err.message : 'Lỗi cập nhật phân quyền nhân viên';
       setStatusMessage({ type: 'error', text: msg });
     }
   };
+
+  // Handle Toggle Active/Lock Staff
+  const handleToggleStaffStatus = async (staff: StaffMemberDto) => {
+    const nextStatus = !staff.isActive;
+    try {
+      const res = await fetch('/api/rbac/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle',
+          targetUserId: staff.userId,
+          isActive: nextStatus,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Lỗi cập nhật trạng thái');
+      }
+
+      setStatusMessage({ type: 'success', text: data.message });
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Lỗi cập nhật trạng thái';
+      setStatusMessage({ type: 'error', text: msg });
+    }
+  };
+
+  // Handle Revoke Staff
+  const handleRevokeStaff = async (staff: StaffMemberDto) => {
+    if (!confirm(`Bạn có chắc chắn muốn hủy quyền và xóa nhân viên "${staff.fullName}" không?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/rbac/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'revoke',
+          targetUserId: staff.userId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Lỗi xóa nhân viên');
+      }
+
+      setStatusMessage({ type: 'success', text: data.message });
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Lỗi xóa nhân viên';
+      setStatusMessage({ type: 'error', text: msg });
+    }
+  };
+
+  // Staff Count by Location
+  const staffCountByLocation = useMemo(() => {
+    const map = new Map<string, number>();
+    staffList.forEach((st) => {
+      st.assignedLocations.forEach((l) => {
+        map.set(l.locationId, (map.get(l.locationId) || 0) + 1);
+      });
+    });
+    return map;
+  }, [staffList]);
+
+  // Filtered Locations
+  const filteredLocations = useMemo(() => {
+    const q = searchLoc.trim().toLowerCase();
+    if (!q) return locations;
+    return locations.filter(
+      (l) =>
+        l.code.toLowerCase().includes(q) ||
+        l.name.toLowerCase().includes(q) ||
+        (l.address && l.address.toLowerCase().includes(q))
+    );
+  }, [locations, searchLoc]);
+
+  // Filtered Staff
+  const filteredStaff = useMemo(() => {
+    let list = staffList;
+    if (filterRole !== 'ALL') {
+      list = list.filter((st) => st.role === filterRole);
+    }
+    const q = searchStaff.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (st) =>
+          st.fullName.toLowerCase().includes(q) ||
+          (st.email && st.email.toLowerCase().includes(q)) ||
+          (st.phone && st.phone.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [staffList, filterRole, searchStaff]);
 
   const getRoleClass = (r?: string) => {
     switch (r) {
@@ -281,14 +453,28 @@ export default function LocationsRbacPanel() {
 
         <div className={styles.actionBtnsRow}>
           {isOwnerOrAdmin && (
-            <button
-              type="button"
-              className={styles.primaryBtn}
-              onClick={() => setCreateLocModal(true)}
-              id="btn-create-location"
-            >
-              + Thêm Điểm Bán Mới
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.primaryBtn}
+                onClick={() => setCreateLocModal(true)}
+                id="btn-create-location"
+              >
+                + Thêm Điểm Bán Mới
+              </button>
+              <button
+                type="button"
+                className={styles.primaryBtn}
+                style={{ background: '#0284c7' }}
+                onClick={() => {
+                  setNewStaffLocIds(locations.map((l) => l.id));
+                  setAddStaffModal(true);
+                }}
+                id="btn-add-staff"
+              >
+                + Thêm Nhân Viên Mới
+              </button>
+            </>
           )}
           <button type="button" className={styles.secondaryBtn} onClick={loadData}>
             Làm mới
@@ -376,6 +562,23 @@ export default function LocationsRbacPanel() {
             </div>
           )}
 
+          {/* Filter & Search Bar */}
+          <div className={styles.filterBar}>
+            <div className={styles.searchBox}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Tìm điểm bán theo mã, tên, địa chỉ..."
+                value={searchLoc}
+                onChange={(e) => setSearchLoc(e.target.value)}
+                className={styles.searchInput}
+              />
+            </div>
+          </div>
+
           {loading ? (
             <div style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>Đang tải danh sách điểm bán...</div>
           ) : (
@@ -387,36 +590,71 @@ export default function LocationsRbacPanel() {
                     <th>Tên Điểm Bán / Quầy</th>
                     <th>Địa Chỉ</th>
                     <th>Số Điện Thoại</th>
+                    <th>Nhân Sự Phụ Trách</th>
                     <th>Trạng Thái</th>
-                    {isOwnerOrAdmin && <th>Thao Tác</th>}
+                    <th>Thao Tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {locations.map((loc) => (
-                    <tr key={loc.id}>
-                      <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{loc.code}</td>
-                      <td style={{ fontWeight: 600 }}>{loc.name}</td>
-                      <td>{loc.address || '—'}</td>
-                      <td>{loc.phone || '—'}</td>
-                      <td>
-                        <span className={loc.isActive ? styles.badgeActive : styles.badgeInactive}>
-                          {loc.isActive ? 'Đang hoạt động' : 'Tạm dừng'}
-                        </span>
-                      </td>
-                      {isOwnerOrAdmin && (
-                        <td>
-                          <button
-                            type="button"
-                            className={styles.secondaryBtn}
-                            style={{ padding: '4px 10px', fontSize: '0.775rem' }}
-                            onClick={() => handleOpenEdit(loc)}
-                          >
-                            Chỉnh sửa
-                          </button>
+                  {filteredLocations.map((loc) => {
+                    const isActiveWorkplace = loc.id === activeLocationId;
+                    const staffCount = staffCountByLocation.get(loc.id) || 0;
+
+                    return (
+                      <tr key={loc.id}>
+                        <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {loc.code}
+                          {isActiveWorkplace && (
+                            <span className={styles.activeLocationBadge} style={{ marginLeft: 6 }}>
+                              ✓ Đang làm việc
+                            </span>
+                          )}
                         </td>
-                      )}
+                        <td style={{ fontWeight: 600 }}>{loc.name}</td>
+                        <td>{loc.address || '—'}</td>
+                        <td>{loc.phone || '—'}</td>
+                        <td>
+                          <span style={{ fontWeight: 600, color: '#0369a1' }}>{staffCount}</span> nhân viên
+                        </td>
+                        <td>
+                          <span className={loc.isActive ? styles.badgeActive : styles.badgeInactive}>
+                            {loc.isActive ? 'Đang hoạt động' : 'Tạm dừng'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {!isActiveWorkplace && (
+                              <button
+                                type="button"
+                                className={styles.secondaryBtn}
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}
+                                onClick={() => handleSwitchLocation(loc.id)}
+                              >
+                                Chọn làm việc
+                              </button>
+                            )}
+                            {isOwnerOrAdmin && (
+                              <button
+                                type="button"
+                                className={styles.secondaryBtn}
+                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                                onClick={() => handleOpenEdit(loc)}
+                              >
+                                Chỉnh sửa
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredLocations.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                        Không tìm thấy điểm bán phù hợp với từ khóa tìm kiếm.
+                      </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -433,8 +671,37 @@ export default function LocationsRbacPanel() {
             </div>
           ) : (
             <>
-              <div style={{ marginBottom: 16, fontSize: '0.875rem', color: '#475569' }}>
-                Một nhân viên có thể được cấp quyền ở nhiều điểm bán cùng lúc. Cashier chỉ được thao tác POS tại chi nhánh được cấp.
+              {/* Filter & Search Bar */}
+              <div className={styles.filterBar}>
+                <div className={styles.searchBox}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Tìm nhân viên theo tên, email, SĐT..."
+                    value={searchStaff}
+                    onChange={(e) => setSearchStaff(e.target.value)}
+                    className={styles.searchInput}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Lọc vai trò:</label>
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value)}
+                    className={styles.filterSelect}
+                  >
+                    <option value="ALL">Tất cả vai trò</option>
+                    <option value="OWNER">Owner</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="CASHIER">Cashier</option>
+                    <option value="INVENTORY_STAFF">Inventory Staff</option>
+                  </select>
+                </div>
               </div>
 
               <div className={styles.tableWrap}>
@@ -445,11 +712,12 @@ export default function LocationsRbacPanel() {
                       <th>Email / SĐT</th>
                       <th>Vai Trò (Role)</th>
                       <th>Điểm Bán Được Phân Công</th>
+                      <th>Trạng Thái</th>
                       <th>Hành Động</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {staffList.map((st) => (
+                    {filteredStaff.map((st) => (
                       <tr key={st.userId}>
                         <td style={{ fontWeight: 600 }}>{st.fullName}</td>
                         <td style={{ fontSize: '0.8rem', color: '#64748b' }}>
@@ -474,18 +742,50 @@ export default function LocationsRbacPanel() {
                           )}
                         </td>
                         <td>
-                          <button
-                            type="button"
-                            className={styles.secondaryBtn}
-                            style={{ padding: '4px 10px', fontSize: '0.775rem' }}
-                            onClick={() => handleOpenStaffModal(st)}
-                            disabled={!canAssignRole(profile?.role || 'CASHIER', st.role)}
-                          >
-                            Phân quyền
-                          </button>
+                          <span className={st.isActive ? styles.badgeActive : styles.badgeInactive}>
+                            {st.isActive ? 'Đang hoạt động' : 'Đã khóa'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              className={styles.secondaryBtn}
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleOpenStaffModal(st)}
+                              disabled={!canAssignRole(profile?.role || 'CASHIER', st.role)}
+                            >
+                              Phân quyền
+                            </button>
+                            {st.role !== 'OWNER' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className={st.isActive ? styles.warningBtn : styles.successBtn}
+                                  onClick={() => handleToggleStaffStatus(st)}
+                                >
+                                  {st.isActive ? 'Khóa' : 'Kích hoạt'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.dangerBtn}
+                                  onClick={() => handleRevokeStaff(st)}
+                                >
+                                  Xóa
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
+                    {filteredStaff.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                          Không tìm thấy nhân viên phù hợp.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -642,6 +942,97 @@ export default function LocationsRbacPanel() {
                 </button>
                 <button type="submit" className={styles.primaryBtn}>
                   Cập Nhật
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Add New Staff Member ── */}
+      {addStaffModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalBox}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Thêm Nhân Viên Mới</h3>
+              <button type="button" className={styles.closeBtn} onClick={() => setAddStaffModal(false)}>
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleCreateStaff} className={styles.formGrid}>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Họ Và Tên *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Lê Thị Bích"
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  className={styles.formInput}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Số Điện Thoại Liên Hệ *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: 0908123456"
+                  value={newStaffPhone}
+                  onChange={(e) => setNewStaffPhone(e.target.value)}
+                  className={styles.formInput}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Email (Tùy chọn)</label>
+                <input
+                  type="email"
+                  placeholder="Ví dụ: staff@ulab.vn"
+                  value={newStaffEmail}
+                  onChange={(e) => setNewStaffEmail(e.target.value)}
+                  className={styles.formInput}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Vai Trò (Role) *</label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as MvpRole)}
+                  className={styles.formSelect}
+                >
+                  {profile?.role === 'OWNER' && <option value="ADMIN">Admin (Quản trị vận hành)</option>}
+                  <option value="MANAGER">Manager (Quản lý chi nhánh)</option>
+                  <option value="CASHIER">Cashier (Thu ngân POS)</option>
+                  <option value="INVENTORY_STAFF">Inventory Staff (Thủ kho)</option>
+                </select>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  Phân Công Điểm Bán (Nhân viên có thể được cấp quyền ở nhiều điểm bán)
+                </label>
+                <div className={styles.checkboxGrid}>
+                  {locations.map((loc) => (
+                    <label key={loc.id} className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={newStaffLocIds.includes(loc.id)}
+                        onChange={() => handleToggleNewStaffLocation(loc.id)}
+                      />
+                      <span>{loc.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button type="button" className={styles.secondaryBtn} onClick={() => setAddStaffModal(false)}>
+                  Hủy
+                </button>
+                <button type="submit" className={styles.primaryBtn}>
+                  Tạo Nhân Viên
                 </button>
               </div>
             </form>

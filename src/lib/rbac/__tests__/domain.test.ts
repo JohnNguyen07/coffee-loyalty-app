@@ -15,6 +15,10 @@ import {
   validateServerLocationAccess,
   validateCreateLocationInput,
   buildUserRbacProfile,
+  canAccessMenuTab,
+  validateStaffCreateInput,
+  canToggleStaffStatus,
+  canRevokeStaff,
 } from '../domain';
 
 const BIZ_A = '00000000-0000-0000-0000-000000000001'; // Ủ LAB
@@ -248,5 +252,108 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     });
     assert.strictEqual(clean.code, 'ULAB_LANDMARK81');
     assert.strictEqual(clean.name, 'Ủ LAB Landmark 81');
+  });
+
+  // Test 14: Phân quyền hiển thị Menu Sidebar (canAccessMenuTab)
+  it('14. Phân quyền hiển thị Menu Sidebar nghiêm ngặt theo vai trò', () => {
+    // Owner & Admin xem được toàn bộ 9 module
+    const tabs = ['dashboard', 'pos', 'orders', 'products', 'customers', 'inventory', 'revenue', 'invoices', 'settings', 'locations', 'loyalty'];
+    tabs.forEach((tab) => {
+      assert.strictEqual(canAccessMenuTab('OWNER', tab), true);
+      assert.strictEqual(canAccessMenuTab('ADMIN', tab), true);
+    });
+
+    // Manager xem được nghiệp vụ vận hành, nhưng không được vào Cài đặt / Điểm bán
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'dashboard'), true);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'pos'), true);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'orders'), true);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'inventory'), true);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'revenue'), true);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'settings'), false);
+    assert.strictEqual(canAccessMenuTab('MANAGER', 'locations'), false);
+
+    // Cashier chỉ được vào POS và Tra cứu Đơn
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'pos'), true);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'orders'), true);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'inventory'), false);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'revenue'), false);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'settings'), false);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'dashboard'), false);
+
+    // Inventory staff chỉ được vào Kho và Đơn hàng
+    assert.strictEqual(canAccessMenuTab('INVENTORY_STAFF', 'inventory'), true);
+    assert.strictEqual(canAccessMenuTab('INVENTORY_STAFF', 'orders'), true);
+    assert.strictEqual(canAccessMenuTab('INVENTORY_STAFF', 'pos'), false);
+    assert.strictEqual(canAccessMenuTab('INVENTORY_STAFF', 'revenue'), false);
+    assert.strictEqual(canAccessMenuTab('INVENTORY_STAFF', 'settings'), false);
+  });
+
+  // Test 15: Kiểm tra xác thực thông tin khi tạo nhân viên mới (validateStaffCreateInput)
+  it('15. Ràng buộc xác thực thông tin nhân viên mới', () => {
+    // Hợp lệ
+    assert.doesNotThrow(() => {
+      validateStaffCreateInput({
+        fullName: 'Nguyễn Văn Pha Chế',
+        role: 'CASHIER',
+        phone: '0901234567',
+        locationIds: [LOC_A1],
+      });
+    });
+
+    // Tên quá ngắn
+    assert.throws(
+      () => {
+        validateStaffCreateInput({
+          fullName: 'A',
+          role: 'CASHIER',
+          phone: '0901234567',
+          locationIds: [LOC_A1],
+        });
+      },
+      (err: unknown) => err instanceof Error && err.message.includes('ít nhất 2 ký tự')
+    );
+
+    // Thiếu cả phone và email
+    assert.throws(
+      () => {
+        validateStaffCreateInput({
+          fullName: 'Trần Thị Kho',
+          role: 'INVENTORY_STAFF',
+          locationIds: [LOC_A1],
+        });
+      },
+      (err: unknown) => err instanceof Error && err.message.includes('ít nhất số điện thoại hoặc email')
+    );
+
+    // Số điện thoại sai định dạng
+    assert.throws(
+      () => {
+        validateStaffCreateInput({
+          fullName: 'Lê Quản Lý',
+          role: 'MANAGER',
+          phone: 'abcxyz123',
+          locationIds: [LOC_A1],
+        });
+      },
+      (err: unknown) => err instanceof Error && err.message.includes('Số điện thoại không đúng định dạng')
+    );
+  });
+
+  // Test 16: Thẩm quyền khóa tài khoản và thu hồi nhân sự (canToggleStaffStatus & canRevokeStaff)
+  it('16. Thẩm quyền khóa/mở và thu hồi tài khoản nhân sự tuân thủ phân cấp', () => {
+    // Owner khóa/thu hồi được tất cả
+    assert.strictEqual(canToggleStaffStatus('OWNER', 'ADMIN'), true);
+    assert.strictEqual(canToggleStaffStatus('OWNER', 'MANAGER'), true);
+    assert.strictEqual(canRevokeStaff('OWNER', 'CASHIER'), true);
+
+    // Admin chỉ thao tác với Manager, Cashier, Inventory Staff; không thể khóa Owner hoặc Admin khác
+    assert.strictEqual(canToggleStaffStatus('ADMIN', 'MANAGER'), true);
+    assert.strictEqual(canToggleStaffStatus('ADMIN', 'CASHIER'), true);
+    assert.strictEqual(canToggleStaffStatus('ADMIN', 'ADMIN'), false);
+    assert.strictEqual(canRevokeStaff('ADMIN', 'OWNER'), false);
+
+    // Cashier không có thẩm quyền khóa hoặc thu hồi ai
+    assert.strictEqual(canToggleStaffStatus('CASHIER', 'CASHIER'), false);
+    assert.strictEqual(canRevokeStaff('CASHIER', 'INVENTORY_STAFF'), false);
   });
 });

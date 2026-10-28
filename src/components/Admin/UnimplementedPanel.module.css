@@ -1,0 +1,72 @@
+.wrap {
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 48px 32px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.iconWrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-family: var(--font-serif, serif);
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--sb-house, #1e3932);
+  margin: 0;
+}
+
+.desc {
+  max-width: 560px;
+  font-size: 0.9rem;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.metaCard {
+  max-width: 560px;
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-size: 0.8rem;
+  color: #475569;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.backBtn {
+  margin-top: 10px;
+  padding: 8px 18px;
+  background: var(--sb-green, #00754a);
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.backBtn:hover {
+  background: var(--sb-dark-green, #1e3932);
+}

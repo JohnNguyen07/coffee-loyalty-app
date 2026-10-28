@@ -1,0 +1,275 @@
+.header {
+  height: 64px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.leftSection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.menuToggleBtn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #334155;
+}
+
+.breadcrumbWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumbRoot {
+  font-weight: 700;
+  color: var(--sb-house, #1e3932);
+}
+
+.breadcrumbSep {
+  color: #cbd5e1;
+}
+
+.breadcrumbCurrent {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rightSection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ── Location Selector ── */
+.locationSelectorWrap {
+  position: relative;
+}
+
+.locationBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 9999px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 280px;
+}
+
+.locationBtn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.locationIcon {
+  color: var(--sb-green, #00754a);
+  flex-shrink: 0;
+}
+
+.locationName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevronIcon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.locationDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  min-width: 280px;
+  padding: 6px;
+  z-index: 60;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dropdownHeader {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 4px;
+}
+
+.locationOption {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 0.825rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  color: #334155;
+}
+
+.locationOption:hover {
+  background: #f8fafc;
+}
+
+.locationOptionActive {
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 600;
+}
+
+/* ── System Status ── */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #166534;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
+/* ── Account Section ── */
+.accountWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+}
+
+.userName {
+  font-size: 0.825rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.roleTag {
+  font-size: 0.675rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  align-self: flex-end;
+}
+
+.roleOwner {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.roleAdmin {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.roleManager {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.roleCashier {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.roleInventory {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.logoutBtn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.logoutBtn:hover {
+  background: #f8fafc;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding: 0 16px;
+    height: 56px;
+  }
+
+  .menuToggleBtn {
+    display: flex;
+  }
+
+  .statusBadge {
+    display: none;
+  }
+
+  .userMeta {
+    display: none;
+  }
+
+  .breadcrumbWrap {
+    font-size: 0.775rem;
+  }
+
+  .locationBtn {
+    max-width: 170px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+}

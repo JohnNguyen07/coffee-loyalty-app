@@ -166,6 +166,15 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     assignedLocationIds = [DEFAULT_LOCATION_ID];
   }
 
+  // Prioritize active selected location from cookie if authorized
+  const activeLocationCookie = cookieStore.get('ulab_active_location_id')?.value;
+  if (activeLocationCookie && assignedLocationIds.includes(activeLocationCookie)) {
+    assignedLocationIds = [
+      activeLocationCookie,
+      ...assignedLocationIds.filter((id) => id !== activeLocationCookie),
+    ];
+  }
+
   return buildUserRbacProfile({
     userId: resolvedUserId,
     fullName: resolvedFullName,

@@ -255,6 +255,80 @@ export function validateCreateLocationInput(input: CreateLocationInput): { code:
 }
 
 /**
+ * Check if a role has permission to see and access a sidebar menu tab.
+ */
+export function canAccessMenuTab(role: MvpRole, tab: string): boolean {
+  if (role === 'OWNER' || role === 'ADMIN') {
+    return true;
+  }
+
+  if (role === 'MANAGER') {
+    // Manager has operations, sales, inventory, revenue for assigned locations, but not settings/locations management
+    return tab !== 'settings' && tab !== 'locations';
+  }
+
+  if (role === 'CASHIER') {
+    // Cashier only accesses POS sales and order lookup
+    return tab === 'pos' || tab === 'orders';
+  }
+
+  if (role === 'INVENTORY_STAFF') {
+    // Inventory staff only accesses inventory and orders
+    return tab === 'inventory' || tab === 'orders';
+  }
+
+  return false;
+}
+
+export interface CreateStaffInput {
+  fullName: string;
+  role: MvpRole;
+  email?: string;
+  phone?: string;
+  locationIds: string[];
+}
+
+/**
+ * Validate staff creation input
+ */
+export function validateStaffCreateInput(input: CreateStaffInput): void {
+  const name = (input.fullName || '').trim();
+  if (!name || name.length < 2) {
+    throw new Error('Họ và tên nhân viên phải có ít nhất 2 ký tự.');
+  }
+
+  if (!ALL_ROLES.includes(input.role)) {
+    throw new Error('Vai trò nhân viên không hợp lệ.');
+  }
+
+  const email = (input.email || '').trim();
+  const phone = (input.phone || '').trim();
+
+  if (!email && !phone) {
+    throw new Error('Vui lòng cung cấp ít nhất số điện thoại hoặc email liên hệ cho nhân viên.');
+  }
+
+  if (phone && !/^[0-9+]{9,15}$/.test(phone.replace(/[\s\-()]/g, ''))) {
+    throw new Error('Số điện thoại không đúng định dạng.');
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Email không đúng định dạng.');
+  }
+}
+
+/**
+ * Check if actor role can toggle or revoke staff status
+ */
+export function canToggleStaffStatus(actorRole: MvpRole, targetRole: MvpRole): boolean {
+  return canAssignRole(actorRole, targetRole);
+}
+
+export function canRevokeStaff(actorRole: MvpRole, targetRole: MvpRole): boolean {
+  return canAssignRole(actorRole, targetRole);
+}
+
+/**
  * Build a structured UserRbacProfile from DB records
  */
 export function buildUserRbacProfile(params: {

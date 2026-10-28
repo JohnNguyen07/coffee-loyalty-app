@@ -11,6 +11,9 @@ import {
   canAssignLocations,
   validateCreateLocationInput,
   filterAccessibleLocations,
+  validateStaffCreateInput,
+  canRevokeStaff,
+  type CreateStaffInput,
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
 
@@ -446,4 +449,145 @@ export async function assignStaffRoleAndLocations(
       isActive: true,
     });
   }
+}
+
+/**
+ * Create a new staff member and assign initial role and locations.
+ */
+export async function createStaffMember(
+  actor: UserRbacProfile,
+  input: CreateStaffInput
+): Promise<StaffMemberDto> {
+  if (!canAssignRole(actor.role, input.role)) {
+    throw new Error(
+      `FORBIDDEN_CANNOT_ASSIGN_ROLE: Vai trò của bạn (${actor.role}) không được phép tạo nhân viên với vai trò (${input.role}).`
+    );
+  }
+
+  validateStaffCreateInput(input);
+
+  const newUserId = `usr-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const matchedLocations = fallbackLocations
+    .filter((l) => input.locationIds.includes(l.id))
+    .map((l) => ({
+      locationId: l.id,
+      locationCode: l.code,
+      locationName: l.name,
+    }));
+
+  const newStaff: StaffMemberDto = {
+    userId: newUserId,
+    fullName: input.fullName.trim(),
+    email: input.email?.trim() || null,
+    phone: input.phone?.trim() || null,
+    role: input.role,
+    assignedLocations: matchedLocations,
+    isActive: true,
+  };
+
+  try {
+    const adminClient = createAdminClient();
+
+    // 1. Try creating user record
+    await adminClient.from('users').insert({
+      id: newUserId,
+      full_name: newStaff.fullName,
+      email: newStaff.email,
+      phone: newStaff.phone,
+      business_id: actor.businessId,
+      staff_role: input.role,
+    });
+
+    // 2. Try creating membership
+    await adminClient.from('business_memberships').insert({
+      business_id: actor.businessId,
+      user_id: newUserId,
+      role: input.role,
+      is_active: true,
+    });
+
+    // 3. Try creating assignments
+    if (input.locationIds.length > 0) {
+      const assignments = input.locationIds.map((locId) => ({
+        business_id: actor.businessId,
+        user_id: newUserId,
+        location_id: locId,
+        is_active: true,
+      }));
+      await adminClient.from('user_location_assignments').insert(assignments);
+    }
+  } catch (err) {
+    console.warn('DB createStaffMember fallback to memory:', err);
+  }
+
+  fallbackStaffList.push(newStaff);
+  return newStaff;
+}
+
+/**
+ * Toggle active status of a staff member.
+ */
+export async function toggleStaffStatus(
+  actor: UserRbacProfile,
+  targetUserId: string,
+  isActive: boolean
+): Promise<void> {
+  const staff = fallbackStaffList.find((s) => s.userId === targetUserId);
+  if (!staff) {
+    throw new Error('Nhân viên không tồn tại.');
+  }
+
+  if (!canRevokeStaff(actor.role, staff.role)) {
+    throw new Error('Bạn không có quyền thay đổi trạng thái của nhân viên này.');
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    await adminClient
+      .from('business_memberships')
+      .update({ is_active: isActive, updated_at: new Date().toISOString() })
+      .eq('business_id', actor.businessId)
+      .eq('user_id', targetUserId);
+  } catch (err) {
+    console.warn('DB toggleStaffStatus fallback:', err);
+  }
+
+  staff.isActive = isActive;
+}
+
+/**
+ * Revoke/delete a staff member's access.
+ */
+export async function revokeStaffMember(
+  actor: UserRbacProfile,
+  targetUserId: string
+): Promise<void> {
+  const staffIdx = fallbackStaffList.findIndex((s) => s.userId === targetUserId);
+  if (staffIdx === -1) {
+    throw new Error('Nhân viên không tồn tại.');
+  }
+
+  const staff = fallbackStaffList[staffIdx];
+  if (!canRevokeStaff(actor.role, staff.role)) {
+    throw new Error('Bạn không có quyền xóa nhân viên này.');
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    await adminClient
+      .from('business_memberships')
+      .delete()
+      .eq('business_id', actor.businessId)
+      .eq('user_id', targetUserId);
+
+    await adminClient
+      .from('user_location_assignments')
+      .delete()
+      .eq('business_id', actor.businessId)
+      .eq('user_id', targetUserId);
+  } catch (err) {
+    console.warn('DB revokeStaffMember fallback:', err);
+  }
+
+  fallbackStaffList.splice(staffIdx, 1);
 }
