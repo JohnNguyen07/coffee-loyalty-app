@@ -1,34 +1,91 @@
 .panel {
-  max-width: 1160px;
+  max-width: 1280px;
 }
 
-.header {
-  margin-bottom: var(--space-5);
+/* ── Top Header & Mode Switch ── */
+.topHeaderBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
 }
 
 .title {
   font-family: var(--font-serif);
-  font-size: 1.625rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--sb-house);
-  margin-bottom: 4px;
+  margin: 0;
+}
+
+.locationBadge {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-mint);
+  color: var(--sb-green);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.roleBadge {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: #FEF3C7;
+  color: #92400E;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .subtitle {
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   color: var(--ink-muted);
-  line-height: 1.5;
+  line-height: 1.45;
+  margin: 0;
 }
 
-.subtitle code {
-  background: var(--sb-mint);
-  color: var(--sb-house);
-  padding: 2px 6px;
-  border-radius: 4px;
+.modeSwitchGroup {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+  gap: 4px;
+}
+
+.modeSwitchBtn {
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
   font-weight: 700;
+  color: var(--ink-muted);
+  background: transparent;
+  transition: all 0.15s ease;
 }
 
-/* ── Two-Column POS Layout ── */
+.modeSwitchActive {
+  background: var(--sb-house);
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(30, 57, 50, 0.2);
+}
+
+/* ── Primary POS Workspace Grid (Menu Left, Cart Right) ── */
+.posWorkspaceGrid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
 .posGrid {
   display: grid;
   grid-template-columns: 1.45fr 1fr;
@@ -39,19 +96,19 @@
 .leftCol {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .rightCol {
   position: sticky;
-  top: 20px;
+  top: 16px;
 }
 
 .cardBox {
   background: var(--surface-card);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 12px;
-  padding: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  padding: 16px;
   box-shadow: var(--shadow-card);
 }
 
@@ -65,13 +122,30 @@
 }
 
 .sectionTitle {
-  font-size: 0.9375rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 800;
   color: var(--sb-house);
   margin: 0;
 }
 
-/* Category Filter Pills */
+.sectionSubDesc {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  margin: 2px 0 0;
+}
+
+/* ── Menu Filter & Search Bar ── */
+.menuFilterBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
 .catFilterPills {
   display: flex;
   gap: 6px;
@@ -79,67 +153,164 @@
 }
 
 .catPill {
-  padding: 5px 12px;
+  padding: 7px 14px;
   border-radius: var(--radius-pill);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
   background: var(--surface);
   color: var(--ink-muted);
-  border: 1px solid transparent;
-  transition: all var(--duration-fast);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: all 0.15s ease;
+}
+
+.catPill:hover {
+  border-color: var(--sb-accent);
+  color: var(--sb-house);
 }
 
 .catPillActive {
   background: var(--sb-house);
   color: #FFFFFF;
+  border-color: var(--sb-house);
 }
 
-/* Menu Drink Quick Grid */
+.menuSearchWrap {
+  min-width: 210px;
+  flex: 1;
+  max-width: 280px;
+}
+
+.menuSearchInput {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8125rem;
+  color: var(--ink-deep);
+  outline: none;
+}
+
+.menuSearchInput:focus {
+  border-color: var(--sb-accent);
+  background: #FFFFFF;
+}
+
+.noticeBanner {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #FEF3C7;
+  color: #92400E;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.stateBox {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+}
+
+.categorySections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.categoryGroupHeader {
+  font-size: 0.8125rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sb-green);
+  margin-bottom: 8px;
+}
+
+/* ── Drink Cards Grid (Large Touch Targets for POS) ── */
 .menuDrinkGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 10px;
 }
 
 .posDrinkCard {
   background: var(--surface);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 12px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.posDrinkCard:hover {
+  border-color: rgba(0, 117, 74, 0.35);
+}
+
+.posDrinkTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .posDrinkName {
-  font-size: 0.8125rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 800;
   color: var(--ink-deep);
+  line-height: 1.3;
+}
+
+.sigTag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--sb-gold-wash);
+  color: #92400E;
+  white-space: nowrap;
+}
+
+.shelfLifeHint {
+  font-size: 0.7rem;
+  color: var(--ink-muted);
 }
 
 .posDrinkSizes {
   display: flex;
   gap: 6px;
+  margin-top: 2px;
 }
 
 .posSizeBtn {
   flex: 1;
+  min-height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 9px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: #FFFFFF;
-  border: 1px solid rgba(0, 117, 74, 0.25);
-  font-size: 0.75rem;
-  transition: all var(--duration-fast);
+  border: 1.5px solid rgba(0, 117, 74, 0.25);
+  font-size: 0.78rem;
+  color: var(--sb-house);
+  transition: all 0.12s ease;
 }
 
 .posSizeBtn:hover:not(:disabled) {
   background: var(--sb-accent);
   color: #FFFFFF;
   border-color: var(--sb-accent);
+  transform: translateY(-1px);
+}
+
+.posSizeBtn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .posSizeLabel {
@@ -147,36 +318,873 @@
 }
 
 .posSizePrice {
-  font-weight: 600;
+  font-weight: 700;
 }
 
-/* Batch Quantity Selector */
-.qtySelector {
+/* ── Right Column: POS Cart & Checkout Card ── */
+.checkoutCard {
+  background: var(--surface-card);
+  border: 1.5px solid rgba(30, 57, 50, 0.18);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cartHeaderBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.orderTypeToggle {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.orderTypeBtn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.orderTypeActive {
+  background: var(--sb-house);
+  color: #FFFFFF;
+}
+
+.clearCartTextBtn {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #DC2626;
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.emptyCartBox {
+  padding: 28px 16px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.emptyCartIcon {
+  font-size: 1.75rem;
+  margin-bottom: 4px;
+}
+
+.cartItemsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.cartLineCard {
+  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cartLineMain {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cartLineInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.cartLineTitleRow {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--ink-muted);
+  flex-wrap: wrap;
 }
 
-.qtyPill {
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  font-size: 0.75rem;
-  font-weight: 700;
+.cartLineName {
+  font-size: 0.85rem;
+  font-weight: 800;
   color: var(--ink-deep);
 }
 
-.qtyPillActive {
+.cartLineSizeBadge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--sb-mint);
+  color: var(--sb-green);
+}
+
+.cartLineOptSummary {
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+.cartLineControls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.qtyStepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 4px;
+}
+
+.qtyStepBtn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--sb-house);
+  font-size: 0.95rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qtyStepBtn:hover {
+  background: var(--sb-accent);
+  color: #FFFFFF;
+}
+
+.qtyStepVal {
+  min-width: 20px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.cartLinePrice {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--sb-green);
+}
+
+.cartLineFooterActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  padding-top: 6px;
+}
+
+.lineEditToggleBtn {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--sb-green);
+  background: transparent;
+}
+
+.lineRemoveBtn {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #DC2626;
+  background: transparent;
+}
+
+/* ── Expandable Item Options Panel ── */
+.itemOptionsPanel {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.optRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.optLabel {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+}
+
+.optChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.optChip {
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-deep);
+}
+
+.optChipActive {
+  background: var(--sb-house);
+  color: #FFFFFF;
+  border-color: var(--sb-house);
+}
+
+.lineNoteInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+
+.optUnitSummary {
+  font-size: 0.72rem;
+  color: var(--sb-green);
+  text-align: right;
+}
+
+/* ── Checkout Form Sections ── */
+.checkoutSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border-light);
+  padding-top: 10px;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.fieldLabel {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--sb-house);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.roleLimitHint {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+.compactInput {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--ink-deep);
+  outline: none;
+}
+
+.compactInput:focus {
+  border-color: var(--sb-accent);
+  background: #FFFFFF;
+}
+
+.quickNoteChips,
+.discountQuickRow,
+.cashQuickRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.miniChip {
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--sb-house);
+}
+
+.miniChip:hover {
+  border-color: var(--sb-accent);
+}
+
+.miniChipActive {
   background: var(--sb-accent);
   color: #FFFFFF;
   border-color: var(--sb-accent);
 }
 
-/* Quick Price Grid */
+.customerLookupRow {
+  display: grid;
+  grid-template-columns: 1.1fr auto 1fr;
+  gap: 6px;
+}
+
+.lookupBtn {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--sb-house);
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.customerLookupStatus {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--sb-green);
+}
+
+.pointsRedeemRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: var(--sb-gold-wash);
+  border: 1px solid var(--sb-gold-light);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
+.pointsRedeemControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pointsSmallInput {
+  width: 90px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+
+/* ── Discount Controls ── */
+.discountModeRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.discountTypeBtn {
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+.discountTypeActive {
+  background: var(--sb-house);
+  color: #FFFFFF;
+  border-color: var(--sb-house);
+}
+
+.discountInputsBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.discountInputPair {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 6px;
+}
+
+/* ── Payment Method Controls ── */
+.paymentMethodGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.paymentMethodBtn {
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-deep);
+}
+
+.paymentMethodActive {
+  background: var(--sb-accent);
+  color: #FFFFFF;
+  border-color: var(--sb-accent);
+}
+
+.cashTenderBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.cashTenderInputRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.cashTenderInputRow span {
+  white-space: nowrap;
+}
+
+/* ── Totals Box & Primary Pay CTA ── */
+.totalsSummaryBox {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sumRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.sumDiscount {
+  color: var(--sb-green);
+  font-weight: 700;
+}
+
+.sumTotalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: var(--sb-house);
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.sumChangeRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: #047857;
+}
+
+.errorAlert {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  color: #DC2626;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.payNowBtn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-accent);
+  color: #FFFFFF;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 117, 74, 0.25);
+  transition: all 0.15s ease;
+}
+
+.payNowBtn:hover:not(:disabled) {
+  background: var(--sb-green);
+  transform: translateY(-1px);
+}
+
+.payNowBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Recent POS Orders Table ── */
+.recentOrdersSection {
+  margin-top: 28px;
+}
+
+.orderItemsCell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.orderItemMiniLine {
+  line-height: 1.35;
+}
+
+.orderItemMiniOpt {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.orderNoteMini {
+  font-size: 0.72rem;
+  color: #B45309;
+  font-weight: 600;
+}
+
+.discountMiniTag {
+  font-size: 0.7rem;
+  color: #047857;
+  font-weight: 700;
+}
+
+.badgeCancelled {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+.cancelReasonText {
+  font-size: 0.68rem;
+  color: #991B1B;
+  margin-top: 3px;
+  max-width: 170px;
+}
+
+/* ── Modals (Print Preview & Cancel Order) ── */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modalCard {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  background: #FFFFFF;
+  border-radius: 18px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalCardSmall {
+  width: 100%;
+  max-width: 460px;
+  background: #FFFFFF;
+  border-radius: 16px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modalSuccessBadge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: #DCFCE7;
+  color: #166534;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.modalTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--sb-house);
+  margin: 0;
+}
+
+.modalCloseBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--ink-muted);
+}
+
+.modalTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--surface);
+  padding: 6px 20px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modalTabBtn {
+  height: 36px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.modalTabActive {
+  background: var(--sb-house);
+  color: #FFFFFF;
+}
+
+.modalBody {
+  padding: 18px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.receiptPreviewSheet {
+  border: 1.5px dashed var(--sb-house);
+  border-radius: 12px;
+  padding: 16px;
+  background: #FAFAFA;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheetHeader {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 10px;
+}
+
+.sheetItems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sheetItemRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sheetItemOpt {
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.sheetTotals {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sheetSumRow {
+  display: flex;
+  justify-content: space-between;
+}
+
+.sheetGrandTotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--sb-house);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+  margin: 4px 0;
+}
+
+.sheetQrSection {
+  text-align: center;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+.sheetQrSection img {
+  width: 120px;
+  height: 120px;
+}
+
+.baristaTicketsPreviewList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.baristaTicketCard {
+  border: 1.5px solid var(--sb-house);
+  border-radius: 10px;
+  padding: 12px;
+  background: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.baristaTicketTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 6px;
+}
+
+.cupCountBadge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--sb-house);
+  color: #FFFFFF;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.baristaDrinkTitle {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.baristaDrinkOpts {
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--surface);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.baristaOrderNote {
+  font-size: 0.75rem;
+  color: #B45309;
+  font-weight: 700;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface);
+}
+
+.printActionBtn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--sb-house);
+  background: #FFFFFF;
+  color: var(--sb-house);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.printActionBtnPrimary {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--sb-house);
+  color: #FFFFFF;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.modalDoneBtn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: #FFFFFF;
+  color: var(--ink-deep);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* ── Legacy QR Generator Styles (Preserved) ── */
 .priceGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
@@ -192,13 +1200,6 @@
   color: var(--ink-deep);
   font-size: 0.85rem;
   font-weight: 700;
-  transition: all var(--duration-fast);
-}
-
-.priceBtn:hover:not(:disabled) {
-  border-color: var(--sb-accent);
-  color: var(--sb-green);
-  background: #F4F9F6;
 }
 
 .priceBtn.priceActive {
@@ -224,11 +1225,6 @@
   outline: none;
 }
 
-.input:focus {
-  border-color: var(--sb-accent);
-  background: #FFFFFF;
-}
-
 .generateBtn {
   min-height: 42px;
   padding: 0 20px;
@@ -237,19 +1233,6 @@
   color: #FFFFFF;
   font-size: 0.85rem;
   font-weight: 700;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.generateBtn:hover:not(:disabled) {
-  background: var(--sb-green);
-}
-
-.generateBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .spinner {
@@ -267,7 +1250,6 @@
   }
 }
 
-/* ── Right Column: QR Sticker & Link Preview Card ── */
 .qrPreviewCard {
   background: var(--surface-card);
   border: 1.5px solid rgba(0, 98, 65, 0.2);
@@ -288,14 +1270,12 @@
   color: var(--sb-green);
   font-size: 0.6875rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
 }
 
 .qrDrinkLabel {
   font-size: 0.9375rem;
   font-weight: 700;
   color: var(--sb-house);
-  margin-top: 2px;
 }
 
 .qrPrice {
@@ -321,70 +1301,6 @@
   font-weight: 700;
 }
 
-.cashbackHintBox {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--sb-gold-wash);
-  border: 1px solid var(--sb-gold-light);
-  font-size: 0.75rem;
-  color: var(--sb-house);
-}
-
-.linkPreviewBox {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  text-align: left;
-  margin-top: 4px;
-}
-
-.linkPreviewLabel {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--ink-muted);
-}
-
-.linkPreviewUrl {
-  font-family: monospace;
-  font-size: 0.72rem;
-  color: var(--sb-house);
-  word-break: break-all;
-  background: #FFFFFF;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.linkPreviewActions {
-  display: flex;
-  gap: 8px;
-}
-
-.secondaryActionBtn {
-  flex: 1;
-  text-align: center;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  background: #FFFFFF;
-  border: 1px solid var(--border);
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--sb-house);
-  text-decoration: none;
-  transition: all var(--duration-fast);
-}
-
-.secondaryActionBtn:hover {
-  border-color: var(--sb-accent);
-  color: var(--sb-green);
-}
-
 .printBtn {
   width: 100%;
   min-height: 44px;
@@ -394,11 +1310,6 @@
   color: #FFFFFF;
   font-size: 0.875rem;
   font-weight: 700;
-  transition: all var(--duration-fast);
-}
-
-.printBtn:hover {
-  background: var(--sb-green);
 }
 
 .emptyPreview {
@@ -422,18 +1333,6 @@
   justify-content: center;
 }
 
-.emptyPreview h3 {
-  font-size: 1rem;
-  color: var(--sb-house);
-  margin: 4px 0 0;
-}
-
-.emptyPreview p {
-  font-size: 0.8125rem;
-  line-height: 1.5;
-}
-
-/* ── Section 3: QR Tokens Table ── */
 .section {
   margin-top: 28px;
 }
@@ -447,26 +1346,6 @@
   margin-bottom: 12px;
 }
 
-.statsBadges {
-  display: flex;
-  gap: 8px;
-  font-size: 0.75rem;
-}
-
-.statBadgeActive {
-  padding: 3px 10px;
-  border-radius: var(--radius-pill);
-  background: #DCFCE7;
-  color: #166534;
-}
-
-.statBadgeUsed {
-  padding: 3px 10px;
-  border-radius: var(--radius-pill);
-  background: #FEF3C7;
-  color: #92400E;
-}
-
 .tableFilterActions {
   display: flex;
   gap: 8px;
@@ -474,21 +1353,13 @@
   flex-wrap: wrap;
 }
 
-.batchPrintBtn {
-  padding: 7px 14px;
-  border-radius: var(--radius-pill);
-  background: var(--sb-house);
-  color: #FFFFFF;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
 .batchDeleteBtn {
-  padding: 7px 14px;
+  height: 40px;
+  padding: 0 16px;
   border-radius: var(--radius-pill);
   background: #DC2626;
   color: #FFFFFF;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -598,27 +1469,25 @@
   color: var(--ink-muted);
 }
 
-.mutedDash {
-  color: var(--ink-light);
-}
-
 .dateCell {
   color: var(--ink-muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 
 .rowActions {
   display: inline-flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .rowBtn {
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: #FFFFFF;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--sb-house);
 }
 
@@ -628,20 +1497,27 @@
 }
 
 .rowDeleteBtn {
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
   border: 1px solid #FCA5A5;
   background: #FEF2F2;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #DC2626;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 980px) {
+
+  .posWorkspaceGrid,
   .posGrid {
     grid-template-columns: 1fr;
   }
+
   .rightCol {
     position: static;
+  }
+
+  .customerLookupRow {
+    grid-template-columns: 1fr;
   }
 }
