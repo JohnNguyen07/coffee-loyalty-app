@@ -11,7 +11,7 @@ import {
   ShoppingBagIcon,
 } from '@/components/Icons/LabIcons';
 
-export type AdminTab = 'pos' | 'revenue' | 'customers' | 'orders' | 'products' | 'loyalty';
+export type AdminTab = 'pos' | 'revenue' | 'inventory' | 'customers' | 'orders' | 'products' | 'loyalty';
 
 export interface AdminNavSelection {
   mainTab: AdminTab;
@@ -51,7 +51,7 @@ export default function AdminSidebar({
       </div>
 
       <nav className={styles.nav} aria-label="Điều hướng Quản trị">
-        {/* GROUP 1: COUNTER POS & ORDERS */}
+        {/* GROUP 1: COUNTER POS, REVENUE & INVENTORY */}
         <div className={styles.groupHeader}>
           <ShoppingBagIcon size={13} />
           <span>Vận hành tại quầy</span>
@@ -87,6 +87,29 @@ export default function AdminSidebar({
             <path d="M6 12h.01M18 12h.01" />
           </svg>
           <span className={styles.navLabel}>Doanh Thu &amp; Sổ Quỹ</span>
+        </button>
+        <button
+          type="button"
+          className={`${styles.navItem} ${currentTab === 'inventory' ? styles.active : ''}`}
+          onClick={() => onSelect({ mainTab: 'inventory' })}
+          id="nav-inventory"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+            <path d="m3.3 7 8.7 5 8.7-5" />
+            <path d="M12 22V12" />
+          </svg>
+          <span className={styles.navLabel}>Kho &amp; Nguyên Liệu</span>
         </button>
         <button
           type="button"

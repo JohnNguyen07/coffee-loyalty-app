@@ -1,0 +1,370 @@
+.panel {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Top Header ── */
+.headerBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-family: var(--font-serif, serif);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sb-house, #1e3932);
+  margin: 0;
+}
+
+.locationBadge {
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: var(--sb-mint, #d4e9e2);
+  color: var(--sb-green, #00754a);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.actionBtnsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primaryBtn {
+  padding: 8px 16px;
+  background: var(--sb-green, #00754a);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.primaryBtn:hover {
+  opacity: 0.9;
+}
+
+.secondaryBtn {
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  background: #f1f5f9;
+}
+
+/* ── Metrics Grid (4 Cards) ── */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .metricsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metricCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.metricLabel {
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.metricValRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.metricNumber {
+  font-size: 1.625rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.metricUnit {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.metricSubText {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.textWarning {
+  color: #d97706;
+  font-weight: 700;
+}
+
+.textDanger {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* ── Navigation Tabs ── */
+.tabsBar {
+  display: flex;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.tabBtn {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.tabBtn:hover {
+  color: var(--sb-house, #1e3932);
+  background: #f8fafc;
+}
+
+.tabBtnActive {
+  background: var(--sb-house, #1e3932) !important;
+  color: #ffffff !important;
+}
+
+/* ── Card Container ── */
+.cardContainer {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cardTitle {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+/* ── Table Styling ── */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+}
+
+.invTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.invTable th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.invTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.invTable tr:hover td {
+  background: #f8fafc;
+}
+
+/* ── Badges ── */
+.badgeTypeRaw {
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badgeTypePkg {
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badgeTypeFg {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badgeStatusIn {
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badgeStatusLow {
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badgeStatusOut {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* ── Form Layout ── */
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 640px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formGroup label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.formInput {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: #ffffff;
+  outline: none;
+}
+
+.formInput:focus {
+  border-color: var(--sb-green, #00754a);
+}
+
+/* ── Banners ── */
+.errorBanner {
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+}
+
+.successBanner {
+  padding: 12px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.loadingEmpty {
+  padding: 40px 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}

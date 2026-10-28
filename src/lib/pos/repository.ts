@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { escapeFilterInput, type PosStaffContext } from '@/lib/auth-utils';
 import { menuData, allMenuItems, type MenuCategory, type MenuItem } from '@/data/menu';
+import { processPosOrderInventory, reversePosOrderInventory } from '@/lib/inventory/pos-integration';
 import {
   ADDON_OPTIONS,
   ICE_OPTIONS,
@@ -542,6 +543,33 @@ export async function createPosOrder(
     // Ignore if order_audit_logs table is not yet migrated
   }
 
+  // 10. Record payment in PAYMENTS table & Deduct Inventory via Recipe/FEFO/FIFO
+  try {
+    await adminClient.from('payments').insert({
+      business_id: staff.businessId,
+      location_id: staff.locationId,
+      order_id: String(insertedOrder!.id),
+      payment_method: payload.paymentMethod || 'CASH',
+      amount: totals.totalDue,
+      status: 'COMPLETED',
+      reference_code: String(insertedOrder!.order_code),
+    });
+  } catch {
+    // Ignore if payments table is not yet migrated
+  }
+
+  try {
+    await processPosOrderInventory(
+      String(insertedOrder!.id),
+      staff.businessId,
+      staff.locationId,
+      totals.items,
+      staff.dbUserId
+    );
+  } catch {
+    // Fallback gracefully if inventory tables/recipes are still being initialized
+  }
+
   const record = mapOrderRowToPosRecord(
     {
       ...insertedOrder,
@@ -746,6 +774,18 @@ export async function cancelPosOrder(params: {
     });
   } catch {
     // Ignore if order_audit_logs table is not yet migrated
+  }
+
+  // Reverse payment in PAYMENTS table & reverse inventory deductions back to original lot & layer
+  try {
+    await adminClient
+      .from('payments')
+      .update({ status: 'REFUNDED' })
+      .eq('order_id', params.orderId);
+
+    await reversePosOrderInventory(params.orderId, params.staff.businessId, params.staff.dbUserId);
+  } catch {
+    // Fallback gracefully if inventory reversal is not configured
   }
 
   return {
