@@ -267,3 +267,4 @@ BEGIN
     rbac_user_has_business_role(business_id, ARRAY['OWNER', 'ADMIN'])
   );
 END $$;
+

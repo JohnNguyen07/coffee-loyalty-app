@@ -8,6 +8,7 @@ export async function GET() {
   try {
     const user = await resolveUserRbac();
     if (!user) {
+      console.warn('GET /api/rbac/profile: No user resolved');
       return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
     }
 
@@ -19,6 +20,7 @@ export async function GET() {
       locations,
     });
   } catch (error: unknown) {
+    console.error('GET /api/rbac/profile ERROR:', error);
     const msg = error instanceof Error ? error.message : 'Lỗi kiểm tra thông tin phân quyền';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

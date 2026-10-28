@@ -281,3 +281,4 @@ export function buildUserRbacProfile(params: {
     isInventoryStaff: params.role === 'INVENTORY_STAFF',
   };
 }
+

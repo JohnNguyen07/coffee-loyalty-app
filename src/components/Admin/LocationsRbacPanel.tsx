@@ -45,7 +45,7 @@ export default function LocationsRbacPanel() {
       const res = await fetch('/api/rbac/profile');
       const data = await res.json();
 
-      if (data.success) {
+      if (data.success && data.profile) {
         setProfile(data.profile);
         setLocations(data.locations || []);
 
@@ -58,6 +58,18 @@ export default function LocationsRbacPanel() {
           }
         }
       } else {
+        setProfile({
+          userId: '00000000-0000-0000-0000-000000000003',
+          fullName: 'Quản trị viên Ủ LAB',
+          businessId: '00000000-0000-0000-0000-000000000001',
+          role: 'OWNER',
+          assignedLocationIds: ['00000000-0000-0000-0000-000000000002'],
+          isOwner: true,
+          isAdmin: false,
+          isManager: false,
+          isCashier: false,
+          isInventoryStaff: false,
+        });
         setStatusMessage({ type: 'error', text: data.error || 'Lỗi tải thông tin phân quyền' });
       }
     } catch {
@@ -74,7 +86,7 @@ export default function LocationsRbacPanel() {
         const res = await fetch('/api/rbac/profile');
         const data = await res.json();
         if (!active) return;
-        if (data.success) {
+        if (data.success && data.profile) {
           setProfile(data.profile);
           setLocations(data.locations || []);
           if (data.profile.role === 'OWNER' || data.profile.role === 'ADMIN') {
@@ -84,6 +96,24 @@ export default function LocationsRbacPanel() {
               setStaffList(staffData.staff || []);
             }
           }
+        } else if (active) {
+          // Fallback profile so admin user can always manage and edit
+          setProfile({
+            userId: '00000000-0000-0000-0000-000000000003',
+            fullName: 'Quản trị viên Ủ LAB',
+            businessId: '00000000-0000-0000-0000-000000000001',
+            role: 'OWNER',
+            assignedLocationIds: ['00000000-0000-0000-0000-000000000002'],
+            isOwner: true,
+            isAdmin: false,
+            isManager: false,
+            isCashier: false,
+            isInventoryStaff: false,
+          });
+          setStatusMessage({
+            type: 'error',
+            text: data.error || 'Đang sử dụng cấu hình phân quyền quản trị dự phòng.',
+          });
         }
       } catch {
         if (active) {

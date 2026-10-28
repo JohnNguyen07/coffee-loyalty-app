@@ -9,9 +9,15 @@ import {
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
 
+export const DEFAULT_LOCATIONS_SEED_IDS = [
+  DEFAULT_LOCATION_ID,
+  '00000000-0000-0000-0000-000000000012',
+];
+
 /**
  * Resolve the current authenticated user's RBAC profile on the server.
  * Never trusts client headers or query parameters for permissions or business scope.
+ * Resilient against unmigrated database tables or schema cache delays.
  */
 export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
   const supabase = await createClient();
@@ -26,7 +32,7 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
   const cookieUid = cookieStore.get('ulab_uid')?.value;
 
   let resolvedUserId: string | null = null;
-  let resolvedFullName = 'Người dùng';
+  let resolvedFullName = 'Quản trị viên Ủ LAB';
   let resolvedEmail: string | null = null;
   let resolvedPhone: string | null = null;
   let fallbackIsAdmin = false;
@@ -47,77 +53,116 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     fallbackIsAdmin = true;
   }
 
+  // If no session found at all, return null
   if (!resolvedUserId) {
     return null;
   }
 
-  // 1. Fetch user's active membership from business_memberships
-  const { data: membershipData } = await adminClient
-    .from('business_memberships')
-    .select('business_id, role, is_active')
-    .eq('user_id', resolvedUserId)
-    .eq('is_active', true)
-    .maybeSingle();
+  // 1. Fetch user's active membership from business_memberships (try-catch for unmigrated DB)
+  let membershipRole: MvpRole | null = null;
+  let membershipBusinessId: string | null = null;
 
-  // 2. Fetch user's profile from users table
-  const { data: dbUser } = await adminClient
-    .from('users')
-    .select('id, full_name, email, phone, business_id, staff_role')
-    .eq('id', resolvedUserId)
-    .maybeSingle();
+  try {
+    const { data: membershipData, error: memError } = await adminClient
+      .from('business_memberships')
+      .select('business_id, role, is_active')
+      .eq('user_id', resolvedUserId)
+      .eq('is_active', true)
+      .maybeSingle();
 
-  if (dbUser) {
-    resolvedFullName = dbUser.full_name || resolvedFullName;
-    resolvedEmail = dbUser.email || resolvedEmail;
-    resolvedPhone = dbUser.phone || resolvedPhone;
+    if (!memError && membershipData) {
+      membershipRole = membershipData.role as MvpRole;
+      membershipBusinessId = membershipData.business_id;
+    }
+  } catch (err) {
+    console.warn('business_memberships fetch fallback:', err);
+  }
+
+  // 2. Fetch user profile from users table (safely query basic fields)
+  let dbStaffRole: string | null = null;
+  let dbBusinessId: string | null = null;
+
+  try {
+    const { data: dbUser, error: userErr } = await adminClient
+      .from('users')
+      .select('id, full_name, email, phone, role')
+      .eq('id', resolvedUserId)
+      .maybeSingle();
+
+    if (!userErr && dbUser) {
+      resolvedFullName = dbUser.full_name || resolvedFullName;
+      resolvedEmail = dbUser.email || resolvedEmail;
+      resolvedPhone = dbUser.phone || resolvedPhone;
+      if (dbUser.role === 'ADMIN') {
+        fallbackIsAdmin = true;
+      }
+      const rawUser = dbUser as Record<string, unknown>;
+      if (typeof rawUser.staff_role === 'string') {
+        dbStaffRole = rawUser.staff_role;
+      }
+      if (typeof rawUser.business_id === 'string') {
+        dbBusinessId = rawUser.business_id;
+      }
+    }
+  } catch (err) {
+    console.warn('users table fetch fallback:', err);
   }
 
   // 3. Determine business_id and role
-  const businessId = membershipData?.business_id || dbUser?.business_id || DEFAULT_BUSINESS_ID;
-  let role: MvpRole = 'CASHIER';
+  const businessId = membershipBusinessId || dbBusinessId || DEFAULT_BUSINESS_ID;
+  let role: MvpRole = 'OWNER'; // Default admin to OWNER
 
-  if (membershipData?.role) {
-    role = membershipData.role as MvpRole;
-  } else if (fallbackIsAdmin || dbUser?.staff_role === 'ADMIN') {
-    // Bootstrap: default system admin is treated as OWNER of the primary business
+  if (membershipRole) {
+    role = membershipRole;
+  } else if (fallbackIsAdmin) {
     role = 'OWNER';
-  } else if (dbUser?.staff_role === 'MANAGER') {
+  } else if (dbStaffRole === 'MANAGER') {
     role = 'MANAGER';
-  } else if (dbUser?.staff_role === 'INVENTORY_STAFF') {
+  } else if (dbStaffRole === 'INVENTORY_STAFF') {
     role = 'INVENTORY_STAFF';
-  } else {
+  } else if (dbStaffRole === 'CASHIER') {
     role = 'CASHIER';
+  } else {
+    // If user has admin cookie/role, ensure they have OWNER access
+    role = fallbackIsAdmin ? 'OWNER' : 'CASHIER';
   }
 
   // 4. Fetch assigned locations from user_location_assignments
   let assignedLocationIds: string[] = [];
 
-  const { data: assignments } = await adminClient
-    .from('user_location_assignments')
-    .select('location_id')
-    .eq('business_id', businessId)
-    .eq('user_id', resolvedUserId)
-    .eq('is_active', true);
-
-  if (assignments && assignments.length > 0) {
-    assignedLocationIds = assignments.map((a: { location_id: string }) => a.location_id);
-  }
-
-  // If Owner or Admin, they automatically have access to all locations of this business
-  if (role === 'OWNER' || role === 'ADMIN') {
-    const { data: allBizLocations } = await adminClient
-      .from('locations')
-      .select('id')
+  try {
+    const { data: assignments, error: assignErr } = await adminClient
+      .from('user_location_assignments')
+      .select('location_id')
       .eq('business_id', businessId)
+      .eq('user_id', resolvedUserId)
       .eq('is_active', true);
 
-    if (allBizLocations && allBizLocations.length > 0) {
-      assignedLocationIds = allBizLocations.map((l: { id: string }) => l.id);
-    } else {
-      assignedLocationIds = [DEFAULT_LOCATION_ID];
+    if (!assignErr && assignments && assignments.length > 0) {
+      assignedLocationIds = assignments.map((a: { location_id: string }) => a.location_id);
+    }
+  } catch (err) {
+    console.warn('user_location_assignments fetch fallback:', err);
+  }
+
+  // If Owner or Admin, they automatically have access to all locations
+  if (role === 'OWNER' || role === 'ADMIN') {
+    try {
+      const { data: allBizLocations, error: locErr } = await adminClient
+        .from('locations')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('is_active', true);
+
+      if (!locErr && allBizLocations && allBizLocations.length > 0) {
+        assignedLocationIds = allBizLocations.map((l: { id: string }) => l.id);
+      } else {
+        assignedLocationIds = DEFAULT_LOCATIONS_SEED_IDS;
+      }
+    } catch {
+      assignedLocationIds = DEFAULT_LOCATIONS_SEED_IDS;
     }
   } else if (assignedLocationIds.length === 0) {
-    // If cashier/manager has no assignments in the table yet, fall back to default location
     assignedLocationIds = [DEFAULT_LOCATION_ID];
   }
 
