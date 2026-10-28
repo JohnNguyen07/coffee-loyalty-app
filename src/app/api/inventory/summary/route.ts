@@ -10,6 +10,12 @@ export async function GET(request: NextRequest) {
       { status: 403 }
     );
   }
+  if (staff.staffRole === 'CASHIER') {
+    return NextResponse.json(
+      { error: 'Thu ngân không có quyền truy cập quản trị kho hàng.' },
+      { status: 403 }
+    );
+  }
 
   try {
     const { searchParams } = new URL(request.url);
@@ -31,3 +37,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+

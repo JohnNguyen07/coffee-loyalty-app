@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     if (!staff) {
       return NextResponse.json({ error: 'Không có quyền truy cập POS.' }, { status: 403 });
     }
+    if (staff.staffRole === 'INVENTORY_STAFF') {
+      return NextResponse.json({ error: 'Nhân viên kho không có quyền truy cập đơn bán hàng POS.' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'ALL';
@@ -30,6 +33,9 @@ export async function POST(request: NextRequest) {
     const staff = await verifyPosStaff();
     if (!staff) {
       return NextResponse.json({ error: 'Không có quyền tạo đơn POS.' }, { status: 403 });
+    }
+    if (staff.staffRole === 'INVENTORY_STAFF') {
+      return NextResponse.json({ error: 'Nhân viên kho không có quyền tạo đơn bán hàng POS.' }, { status: 403 });
     }
 
     const body = (await request.json()) as CreatePosOrderPayload;

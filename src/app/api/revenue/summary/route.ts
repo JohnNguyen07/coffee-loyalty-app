@@ -17,6 +17,12 @@ export async function GET(request: NextRequest) {
         { status: 403 }
       );
     }
+    if (staff.staffRole === 'CASHIER' || staff.staffRole === 'INVENTORY_STAFF') {
+      return NextResponse.json(
+        { error: 'Vai trò của bạn không được phép xem báo cáo doanh thu tài chính.' },
+        { status: 403 }
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const preset = (searchParams.get('preset') || 'TODAY') as DateRangePreset;

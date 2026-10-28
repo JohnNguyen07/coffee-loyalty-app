@@ -4,7 +4,7 @@ export const DEFAULT_BUSINESS_ID = '00000000-0000-0000-0000-000000000001';
 export const DEFAULT_LOCATION_ID = '00000000-0000-0000-0000-000000000002';
 export const DEFAULT_LOCATION_NAME = 'Ủ LAB — Quầy Chính';
 
-export type StaffRole = 'CASHIER' | 'MANAGER' | 'ADMIN';
+export type StaffRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'INVENTORY_STAFF';
 export type OrderType = 'TAKEAWAY' | 'DINE_IN' | 'DELIVERY';
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'EWALLET';
 export type DiscountType = 'NONE' | 'PERCENT' | 'FIXED';

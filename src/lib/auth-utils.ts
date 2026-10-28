@@ -7,6 +7,7 @@ import {
   DEFAULT_LOCATION_NAME,
   type StaffRole,
 } from '@/lib/pos/domain';
+import { resolveUserRbac } from '@/lib/rbac/server-guard';
 
 export interface PosStaffContext {
   id: string;
@@ -103,9 +104,26 @@ export async function verifyAdmin() {
 
 /**
  * Verify POS Staff context on the server.
+ * Integrates with RBAC multi-location assignments.
  * Never trusts client-supplied business_id, location_id, or role.
  */
 export async function verifyPosStaff(): Promise<PosStaffContext | null> {
+  const rbac = await resolveUserRbac();
+  if (rbac) {
+    return {
+      id: rbac.userId,
+      dbUserId: rbac.userId,
+      fullName: rbac.fullName,
+      email: rbac.email || null,
+      phone: rbac.phone || null,
+      role: 'ADMIN',
+      staffRole: rbac.role,
+      businessId: rbac.businessId,
+      locationId: rbac.assignedLocationIds[0] || DEFAULT_LOCATION_ID,
+      locationName: DEFAULT_LOCATION_NAME,
+    };
+  }
+
   const admin = await verifyAdmin();
   const adminClient = createAdminClient();
 
@@ -120,11 +138,15 @@ export async function verifyPosStaff(): Promise<PosStaffContext | null> {
     const staffRow = dbUser as StaffDbRow | null;
     const rawStaffRole = String(staffRow?.staff_role || 'ADMIN').toUpperCase();
     const staffRole: StaffRole =
-      rawStaffRole === 'CASHIER'
+      rawStaffRole === 'OWNER'
+        ? 'OWNER'
+        : rawStaffRole === 'CASHIER'
         ? 'CASHIER'
         : rawStaffRole === 'MANAGER'
           ? 'MANAGER'
-          : 'ADMIN';
+          : rawStaffRole === 'INVENTORY_STAFF'
+            ? 'INVENTORY_STAFF'
+            : 'ADMIN';
 
     return {
       id: admin.id,
