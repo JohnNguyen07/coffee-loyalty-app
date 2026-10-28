@@ -152,3 +152,4 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(custom.label, '2026-10-01 đến 2026-10-15');
   });
 });
+
