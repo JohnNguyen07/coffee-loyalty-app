@@ -15,6 +15,7 @@ export interface MenuItem {
   isSignature?: boolean;
   shelfLife?: string; // For bottled products
   tag?: string;
+  isAvailable?: boolean;
 }
 
 export interface MenuCategory {

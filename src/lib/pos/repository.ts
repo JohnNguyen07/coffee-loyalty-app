@@ -89,6 +89,91 @@ export interface PosOrderRecord {
 // Track recent idempotency keys in memory as a secondary guard when DB column is not migrated yet
 const recentIdempotencyCache = new Map<string, PosOrderRecord>();
 
+// Global in-memory cache for product availability and price overrides
+const globalProductAvailability = new Map<string, boolean>();
+const globalProductPriceOverrides = new Map<string, Map<string, number>>();
+
+export function getProductAvailabilityMap(): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  globalProductAvailability.forEach((v, k) => {
+    result[k] = v;
+  });
+  return result;
+}
+
+export function isProductAvailable(productId: string): boolean {
+  if (globalProductAvailability.has(productId)) {
+    return globalProductAvailability.get(productId) === true;
+  }
+  return true;
+}
+
+export async function setProductAvailability(
+  productId: string,
+  isAvailable: boolean
+): Promise<boolean> {
+  globalProductAvailability.set(productId, isAvailable);
+
+  try {
+    const adminClient = createAdminClient();
+    const staticItem = allMenuItems.find((m) => m.id === productId);
+    if (staticItem) {
+      await adminClient
+        .from('menu_items')
+        .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
+        .ilike('name', staticItem.name);
+    }
+  } catch (err) {
+    console.warn('DB menu_items availability update fallback:', err);
+  }
+
+  return true;
+}
+
+export async function setProductPrices(
+  productId: string,
+  sizes: { label: string; price: number }[]
+): Promise<boolean> {
+  const sizeMap = new Map<string, number>();
+  sizes.forEach((s) => sizeMap.set(s.label, s.price));
+  globalProductPriceOverrides.set(productId, sizeMap);
+
+  try {
+    const adminClient = createAdminClient();
+    const staticItem = allMenuItems.find((m) => m.id === productId);
+    if (staticItem) {
+      const { data: dbItem } = await adminClient
+        .from('menu_items')
+        .select('id')
+        .ilike('name', staticItem.name)
+        .maybeSingle();
+
+      if (dbItem?.id) {
+        for (const s of sizes) {
+          await adminClient
+            .from('menu_item_sizes')
+            .update({ price: s.price })
+            .match({ menu_item_id: dbItem.id, size_label: s.label });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('DB menu_item_sizes price update fallback:', err);
+  }
+
+  return true;
+}
+
+export function getProductPriceOverridesMap(): Record<string, { label: string; price: number }[]> {
+  const result: Record<string, { label: string; price: number }[]> = {};
+  globalProductPriceOverrides.forEach((map, pid) => {
+    const arr: { label: string; price: number }[] = [];
+    map.forEach((price, label) => arr.push({ label, price }));
+    result[pid] = arr;
+  });
+  return result;
+}
+
 /**
  * Fetch POS menu categories, items, sizes, and customization options.
  */
@@ -110,11 +195,12 @@ export async function getPosMenuCatalog() {
       const categories: MenuCategory[] = dbCategories.map((cat) => {
         const staticCat = menuData.find((c) => c.slug === cat.slug);
         const catItems: MenuItem[] = dbItems
-          .filter((item) => item.category_id === cat.id && item.is_available !== false)
+          .filter((item) => item.category_id === cat.id)
           .map((item) => {
             const staticMatch = allMenuItems.find(
               (m) => m.name.toLowerCase() === item.name.toLowerCase()
             );
+            const pid = staticMatch?.id || item.id;
             const rawSizes = Array.isArray(item.sizes) ? (item.sizes as DbSizeRow[]) : [];
             const sortedSizes = rawSizes
               .filter((s) => s.is_available !== false)
@@ -124,15 +210,26 @@ export async function getPosMenuCatalog() {
                 price: Number(s.price) || 0,
               }));
 
+            const priceMap = globalProductPriceOverrides.get(pid);
+            const finalSizes = (sortedSizes.length > 0 ? sortedSizes : staticMatch?.sizes || [{ label: 'M', price: 34000 }]).map((sz) => ({
+              label: sz.label,
+              price: priceMap?.get(sz.label) ?? sz.price,
+            }));
+
+            const isAvailable = globalProductAvailability.has(pid)
+              ? globalProductAvailability.get(pid)!
+              : item.is_available !== false;
+
             return {
-              id: staticMatch?.id || item.id,
+              id: pid,
               name: item.name,
               category: cat.name,
               categorySlug: cat.slug,
               isSignature: Boolean(item.is_signature ?? staticMatch?.isSignature),
               tag: staticMatch?.tag,
               shelfLife: staticMatch?.shelfLife || item.description || undefined,
-              sizes: sortedSizes.length > 0 ? sortedSizes : staticMatch?.sizes || [{ label: 'M', price: 34000 }],
+              sizes: finalSizes,
+              isAvailable,
             };
           });
 
@@ -157,8 +254,31 @@ export async function getPosMenuCatalog() {
     console.warn('POS menu DB fetch fallback to static catalog:', err);
   }
 
+  const mappedCategories: MenuCategory[] = menuData.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) => {
+      const priceMap = globalProductPriceOverrides.get(item.id);
+      const sizes = priceMap
+        ? item.sizes.map((s) => ({
+            label: s.label,
+            price: priceMap.get(s.label) ?? s.price,
+          }))
+        : item.sizes;
+
+      const isAvailable = globalProductAvailability.has(item.id)
+        ? globalProductAvailability.get(item.id)!
+        : true;
+
+      return {
+        ...item,
+        sizes,
+        isAvailable,
+      };
+    }),
+  }));
+
   return {
-    categories: menuData,
+    categories: mappedCategories,
     optionsConfig: {
       sweetness: SWEETNESS_OPTIONS,
       ice: ICE_OPTIONS,

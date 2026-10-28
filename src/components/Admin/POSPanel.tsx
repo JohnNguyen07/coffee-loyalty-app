@@ -191,6 +191,17 @@ export default function POSPanel() {
     }
   }, []);
 
+  // Listen for menu availability & price updates from Products tab
+  useEffect(() => {
+    const handleMenuChanged = () => {
+      fetchPosMenu();
+    };
+    window.addEventListener('ulab:menu-changed', handleMenuChanged);
+    return () => {
+      window.removeEventListener('ulab:menu-changed', handleMenuChanged);
+    };
+  }, [fetchPosMenu]);
+
   // 2. Load Recent POS Orders
   const fetchRecentOrders = useCallback(async () => {
     setLoadingOrders(true);
@@ -336,6 +347,10 @@ export default function POSPanel() {
 
   // Add item + size to cart
   const handleAddDrinkToCart = (item: MenuItem, sizeLabel: string, price: number) => {
+    if (item.isAvailable === false) {
+      setCheckoutError(`Món "${item.name}" hiện đang tạm hết hàng tại quầy.`);
+      return;
+    }
     setCheckoutError(null);
     const isBottled = sizeLabel === 'Chai';
     const defaultSweetness = isBottled ? 'Nguyên bản (Chai)' : '100% đường';
@@ -950,39 +965,50 @@ export default function POSPanel() {
                           </span>
                         </div>
                         <div className={styles.menuDrinkGrid}>
-                          {cat.items.map((item) => (
-                            <div key={item.id} className={styles.posDrinkCard}>
-                              <div className={styles.posDrinkTop}>
-                                <span className={styles.posDrinkName}>{item.name}</span>
-                                {item.isSignature && (
-                                  <span className={styles.sigTag}>★ Signature</span>
+                          {cat.items.map((item) => {
+                            const isOut = item.isAvailable === false;
+                            return (
+                              <div
+                                key={item.id}
+                                className={`${styles.posDrinkCard} ${isOut ? styles.posDrinkCardOut : ''}`}
+                              >
+                                <div className={styles.posDrinkTop}>
+                                  <span className={styles.posDrinkName}>{item.name}</span>
+                                  {item.isSignature && (
+                                    <span className={styles.sigTag}>★ Signature</span>
+                                  )}
+                                  {isOut && (
+                                    <span className={styles.outTag}>Hết hàng</span>
+                                  )}
+                                </div>
+                                {item.shelfLife && (
+                                  <span className={styles.shelfLifeHint}>{item.shelfLife}</span>
                                 )}
+                                <div className={styles.posDrinkSizes}>
+                                  {item.sizes.map((sz) => (
+                                    <button
+                                      key={sz.label}
+                                      type="button"
+                                      disabled={isOut}
+                                      className={`${styles.posSizeBtn} ${isOut ? styles.posSizeBtnDisabled : ''}`}
+                                      onClick={() => {
+                                        if (isOut) return;
+                                        handleAddDrinkToCart(item, sz.label, sz.price);
+                                      }}
+                                      aria-label={`Thêm ${item.name} size ${sz.label} giá ${formatVND(sz.price)}`}
+                                    >
+                                      <span className={styles.posSizeLabel}>
+                                        {sz.label === 'Chai' ? 'Chai' : `Size ${sz.label}`}
+                                      </span>
+                                      <span className={styles.posSizePrice}>
+                                        {isOut ? 'Tạm hết' : `+${formatVND(sz.price)}`}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                              {item.shelfLife && (
-                                <span className={styles.shelfLifeHint}>{item.shelfLife}</span>
-                              )}
-                              <div className={styles.posDrinkSizes}>
-                                {item.sizes.map((sz) => (
-                                  <button
-                                    key={sz.label}
-                                    type="button"
-                                    className={styles.posSizeBtn}
-                                    onClick={() =>
-                                      handleAddDrinkToCart(item, sz.label, sz.price)
-                                    }
-                                    aria-label={`Thêm ${item.name} size ${sz.label} giá ${formatVND(sz.price)}`}
-                                  >
-                                    <span className={styles.posSizeLabel}>
-                                      {sz.label === 'Chai' ? 'Chai' : `Size ${sz.label}`}
-                                    </span>
-                                    <span className={styles.posSizePrice}>
-                                      +{formatVND(sz.price)}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}

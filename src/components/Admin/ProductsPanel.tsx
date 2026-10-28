@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styles from './ProductsPanel.module.css';
 import { menuData, allMenuItems, formatVND, MenuItem } from '@/data/menu';
 import { CategorySvgIcon, StarSolidIcon } from '@/components/Icons/LabIcons';
@@ -12,11 +12,99 @@ export default function ProductsPanel() {
   const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [editSizes, setEditSizes] = useState<{ label: string; price: number }[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const toggleAvailability = (id: string) => {
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  // Fetch products and availability state from server on mount
+  useEffect(() => {
+    let active = true;
+    const loadProducts = async () => {
+      try {
+        const res = await fetch('/api/admin/products');
+        if (res.ok) {
+          const data = await res.json();
+          if (active && Array.isArray(data.products) && data.products.length > 0) {
+            setItems(data.products);
+            const outIds: string[] = data.products
+              .filter((p: MenuItem & { is_available?: boolean }) => p.is_available === false)
+              .map((p: MenuItem) => p.id);
+            setUnavailableIds(outIds);
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback loading menu products:', err);
+      }
+    };
+
+    loadProducts();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Toggle availability (Báo hết / Mở bán lại)
+  const toggleAvailability = async (item: MenuItem) => {
+    const isCurrentlyOut = unavailableIds.includes(item.id);
+    const nextIsOut = !isCurrentlyOut;
+
+    // Optimistic UI update
     setUnavailableIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+      nextIsOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
     );
+    setUpdatingId(item.id);
+
+    try {
+      const res = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TOGGLE_AVAILABILITY',
+          productId: item.id,
+          isAvailable: !nextIsOut,
+        }),
+      });
+
+      if (res.ok) {
+        setToastMessage(
+          nextIsOut
+            ? `Đã báo hết món "${item.name}". Quầy POS sẽ tạm ngưng bán món này.`
+            : `Đã mở bán lại món "${item.name}". Quầy POS đã sẵn sàng phục vụ.`
+        );
+
+        // Broadcast to POS and other panels
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('ulab:menu-changed', {
+              detail: { productId: item.id, isAvailable: !nextIsOut },
+            })
+          );
+        }
+      } else {
+        // Rollback on error
+        setUnavailableIds((prev) =>
+          isCurrentlyOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
+        );
+        setToastMessage('Lỗi cập nhật trạng thái món. Vui lòng thử lại.');
+      }
+    } catch (err) {
+      console.error('Error toggling product availability:', err);
+      // Rollback on error
+      setUnavailableIds((prev) =>
+        isCurrentlyOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
+      );
+      setToastMessage('Không thể kết nối đến máy chủ.');
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   const openEditModal = (item: MenuItem) => {
@@ -24,23 +112,45 @@ export default function ProductsPanel() {
     setEditSizes(item.sizes.map((s) => ({ ...s })));
   };
 
-  const handleSavePrices = (e: React.FormEvent) => {
+  const handleSavePrices = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
+
+    const newSizes = editSizes.map((s) => ({
+      label: s.label,
+      price: Math.max(1000, Number(s.price) || 0),
+    }));
+
+    // Optimistic update
     setItems((prev) =>
-      prev.map((it) =>
-        it.id === editingItem.id
-          ? {
-              ...it,
-              sizes: editSizes.map((s) => ({
-                label: s.label,
-                price: Math.max(1000, Number(s.price) || 0),
-              })),
-            }
-          : it
-      )
+      prev.map((it) => (it.id === editingItem.id ? { ...it, sizes: newSizes } : it))
     );
+    const savedName = editingItem.name;
+    const savedId = editingItem.id;
     setEditingItem(null);
+
+    try {
+      const res = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_PRICES',
+          productId: savedId,
+          sizes: newSizes,
+        }),
+      });
+
+      if (res.ok) {
+        setToastMessage(`Đã cập nhật bảng giá mới cho món "${savedName}".`);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('ulab:menu-changed', { detail: { productId: savedId } })
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error saving prices:', err);
+    }
   };
 
   const filteredItems = items.filter((item) => {
@@ -55,7 +165,7 @@ export default function ProductsPanel() {
         <div>
           <h1 className={styles.title}>Quản lý Thực Đơn &amp; Giá Bán</h1>
           <p className={styles.subtitle}>
-             Quản lý danh sách thức uống, điều chỉnh giá theo cỡ ly (Size M, L, Chai) và bật/tắt trạng thái còn hàng.
+            Điều chỉnh giá theo cỡ ly (Size M, L, Chai) và tức thì bật/tắt báo hết hàng đồng bộ sang quầy POS.
           </p>
         </div>
       </div>
@@ -69,8 +179,10 @@ export default function ProductsPanel() {
         </div>
         <div className={styles.statCard}>
           <span className={styles.statLabel}>Đang mở bán</span>
-          <span className={styles.statValue}>{items.length - unavailableIds.length}</span>
-          <span className={styles.statChange}>Hiển thị trên menu khách</span>
+          <span className={styles.statValue} style={{ color: '#15803d' }}>
+            {items.length - unavailableIds.length}
+          </span>
+          <span className={styles.statChange}>Hiển thị sẵn sàng phục vụ tại POS</span>
         </div>
         <div className={styles.statCard}>
           <span className={styles.statLabel}>Món Signature</span>
@@ -81,8 +193,10 @@ export default function ProductsPanel() {
         </div>
         <div className={styles.statCard}>
           <span className={styles.statLabel}>Tạm hết hàng</span>
-          <span className={styles.statValue}>{unavailableIds.length}</span>
-          <span className={styles.statChange}>Có thể bật lại bất cứ lúc nào</span>
+          <span className={styles.statValue} style={{ color: unavailableIds.length > 0 ? '#dc2626' : '#64748b' }}>
+            {unavailableIds.length}
+          </span>
+          <span className={styles.statChange}>Bị khóa tại quầy POS</span>
         </div>
       </div>
 
@@ -123,8 +237,9 @@ export default function ProductsPanel() {
           <tbody>
             {filteredItems.map((item) => {
               const isOut = unavailableIds.includes(item.id);
+              const isBusy = updatingId === item.id;
               return (
-                <tr key={item.id}>
+                <tr key={item.id} className={`${styles.tableRow} ${isOut ? styles.tableRowOut : ''}`}>
                   <td>
                     <div className={styles.itemName}>{item.name}</div>
                     {item.shelfLife && (
@@ -132,7 +247,7 @@ export default function ProductsPanel() {
                     )}
                   </td>
                   <td>
-                    <span className={styles.badge} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span className={styles.badge}>
                       <CategorySvgIcon slug={item.categorySlug} size={13} />
                       <span>{item.category}</span>
                     </span>
@@ -148,7 +263,7 @@ export default function ProductsPanel() {
                   </td>
                   <td>
                     {item.isSignature ? (
-                      <span className={`${styles.badge} ${styles.badgeGold}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span className={`${styles.badge} ${styles.badgeGold}`}>
                         <StarSolidIcon size={11} />
                         <span>Signature</span>
                       </span>
@@ -158,26 +273,33 @@ export default function ProductsPanel() {
                   </td>
                   <td>
                     <span
-                      className={`${styles.statusDot} ${isOut ? styles.statusOut : styles.statusIn}`}
+                      className={`${styles.statusBadge} ${isOut ? styles.statusOut : styles.statusIn}`}
                     >
-                      {isOut ? 'Tạm hết' : 'Đang bán'}
+                      <span
+                        className={`${styles.statusDot} ${isOut ? styles.dotOut : styles.dotIn}`}
+                      />
+                      {isOut ? 'Tạm hết hàng' : 'Đang mở bán'}
                     </span>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className={styles.actionGroup}>
                       <button
                         type="button"
-                        className={styles.actionLink}
+                        className={`${styles.actionBtn} ${styles.actionBtnEdit}`}
                         onClick={() => openEditModal(item)}
                       >
                         Sửa giá
                       </button>
                       <button
                         type="button"
-                        className={styles.actionLink}
-                        onClick={() => toggleAvailability(item.id)}
+                        disabled={isBusy}
+                        className={`${styles.actionBtn} ${
+                          isOut ? styles.actionBtnReopen : styles.actionBtnReportOut
+                        }`}
+                        onClick={() => toggleAvailability(item)}
+                        title={isOut ? 'Mở bán lại tại quầy POS' : 'Báo hết món này tại quầy POS'}
                       >
-                        {isOut ? 'Mở bán lại' : 'Báo hết'}
+                        {isBusy ? 'Đang xử lý...' : isOut ? '✓ Mở bán lại' : 'Báo hết'}
                       </button>
                     </div>
                   </td>
@@ -187,6 +309,14 @@ export default function ProductsPanel() {
           </tbody>
         </table>
       </div>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className={styles.toast}>
+          <span className={styles.toastIcon}>✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Edit Price Modal */}
       {editingItem && (
@@ -243,7 +373,7 @@ export default function ProductsPanel() {
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
-                  className={styles.actionLink}
+                  className={`${styles.actionBtn} ${styles.actionBtnEdit}`}
                 >
                   Hủy
                 </button>
