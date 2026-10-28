@@ -11,7 +11,7 @@ import {
   ShoppingBagIcon,
 } from '@/components/Icons/LabIcons';
 
-export type AdminTab = 'pos' | 'customers' | 'orders' | 'products' | 'loyalty';
+export type AdminTab = 'pos' | 'revenue' | 'customers' | 'orders' | 'products' | 'loyalty';
 
 export interface AdminNavSelection {
   mainTab: AdminTab;
@@ -64,6 +64,29 @@ export default function AdminSidebar({
         >
           <QrScanIcon size={16} />
           <span className={styles.navLabel}>POS &amp; Tạo Tem QR</span>
+        </button>
+        <button
+          type="button"
+          className={`${styles.navItem} ${currentTab === 'revenue' ? styles.active : ''}`}
+          onClick={() => onSelect({ mainTab: 'revenue' })}
+          id="nav-revenue"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <rect width="20" height="12" x="2" y="6" rx="2" />
+            <circle cx="12" cy="12" r="2" />
+            <path d="M6 12h.01M18 12h.01" />
+          </svg>
+          <span className={styles.navLabel}>Doanh Thu &amp; Sổ Quỹ</span>
         </button>
         <button
           type="button"

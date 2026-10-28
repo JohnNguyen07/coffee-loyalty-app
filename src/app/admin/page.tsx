@@ -8,6 +8,7 @@ import OrdersPanel from '@/components/Admin/OrdersPanel';
 import CustomersPanel, { CustomerSubTab } from '@/components/Admin/CustomersPanel';
 import ProductsPanel from '@/components/Admin/ProductsPanel';
 import LoyaltyPanel, { LoyaltySubTab } from '@/components/Admin/LoyaltyPanel';
+import RevenuePanel from '@/components/Admin/RevenuePanel';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('pos');
@@ -84,6 +85,7 @@ export default function AdminPage() {
 
       <main className={styles.content}>
         {activeTab === 'pos' && <POSPanel />}
+        {activeTab === 'revenue' && <RevenuePanel />}
         {activeTab === 'orders' && <OrdersPanel />}
         {activeTab === 'customers' && (
           <CustomersPanel
