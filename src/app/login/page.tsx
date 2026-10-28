@@ -39,7 +39,8 @@ function LoginContent() {
     const res = await login({ account: account.trim(), password });
 
     if (res.success) {
-      const targetUrl = (res.user?.role === 'ADMIN' && redirect === '/') ? '/admin' : redirect;
+      const isStaffOrAdmin = res.user?.role === 'ADMIN' || String(res.user?.role) !== 'USER';
+      const targetUrl = (isStaffOrAdmin && redirect === '/') ? '/admin' : redirect;
       window.location.href = targetUrl;
     } else {
       setErrorMsg(res.error || 'Số điện thoại hoặc mật khẩu không chính xác');

@@ -126,17 +126,35 @@ export async function POST(request: NextRequest) {
 
     const isAdminEmail = targetEmail.toLowerCase() === 'admin@coffeehouse.vn';
 
+    const { findStaffByPhoneOrEmail, findStaffByUserId } = await import('@/lib/rbac/repository');
+    const matchedStaff =
+      (profile ? findStaffByUserId(profile.id) : null) ||
+      findStaffByPhoneOrEmail(cleanAccount, targetEmail) ||
+      (profile?.phone ? findStaffByPhoneOrEmail(profile.phone, null) : null);
+
+    const isStaffElevated =
+      isAdminEmail ||
+      profile?.role === 'ADMIN' ||
+      matchedStaff?.role === 'OWNER' ||
+      matchedStaff?.role === 'ADMIN';
+
+    const effectiveRole = isStaffElevated
+      ? 'ADMIN'
+      : (matchedStaff?.role || profile?.role || 'USER');
+
     const fullUser = profile ? {
       ...profile,
-      role: isAdminEmail ? 'ADMIN' : profile.role,
+      role: effectiveRole,
+      staff_role: matchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
       next_tier: nextTier || null,
       recent_transactions: recentTransactions || [],
     } : {
       id: authData.user.id,
       email: authData.user.email,
-      full_name: authData.user.user_metadata?.full_name || (isAdminEmail ? 'Quản trị viên' : 'Khách hàng'),
+      full_name: authData.user.user_metadata?.full_name || (isStaffElevated ? 'Quản trị viên' : 'Khách hàng'),
       phone: authData.user.user_metadata?.phone || cleanAccount,
-      role: isAdminEmail ? 'ADMIN' : 'USER',
+      role: effectiveRole,
+      staff_role: matchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
       point_balance: 10000,
       total_spending: 0,
       tier: { code: 'MEMBER', name: 'Member', cashback_rate: 3 },
@@ -155,10 +173,10 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     };
     res.cookies.set('ulab_uid', String(fullUser.id), cookieOpts);
-    res.cookies.set('ulab_role', String(fullUser.role || 'USER'), cookieOpts);
+    res.cookies.set('ulab_role', String(effectiveRole), cookieOpts);
 
     return res;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Login error:', err);
     return NextResponse.json({ error: 'Lỗi đăng nhập hệ thống' }, { status: 500 });
   }

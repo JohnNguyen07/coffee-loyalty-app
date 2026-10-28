@@ -76,7 +76,47 @@ const fallbackStaffList: StaffMemberDto[] = [
     ],
     isActive: true,
   },
+  {
+    userId: '0ad4fd98-d28e-4b8c-9a44-80be3c52a12b',
+    fullName: 'Nguyễn cao Hoàng Minh',
+    email: 'nguyencaohoangminh1@gmail.com',
+    phone: '0947038325',
+    role: 'ADMIN',
+    assignedLocations: [
+      {
+        locationId: DEFAULT_LOCATION_ID,
+        locationCode: 'ULAB-MAIN',
+        locationName: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
+      },
+      {
+        locationId: '00000000-0000-0000-0000-000000000012',
+        locationCode: 'ULAB-Q1',
+        locationName: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
+      },
+    ],
+    isActive: true,
+  },
 ];
+
+export function findStaffByPhoneOrEmail(
+  phone?: string | null,
+  email?: string | null
+): StaffMemberDto | null {
+  const normPhone = phone ? phone.trim().replace(/[\s\-()]/g, '') : null;
+  const normEmail = email ? email.trim().toLowerCase() : null;
+
+  return (
+    fallbackStaffList.find((s) => {
+      const sp = s.phone ? s.phone.replace(/[\s\-()]/g, '') : null;
+      const se = s.email ? s.email.toLowerCase() : null;
+      return (normPhone && sp === normPhone) || (normEmail && se === normEmail);
+    }) || null
+  );
+}
+
+export function findStaffByUserId(userId: string): StaffMemberDto | null {
+  return fallbackStaffList.find((s) => s.userId === userId) || null;
+}
 
 /**
  * List locations accessible to the given user based on their business and role.
@@ -466,7 +506,36 @@ export async function createStaffMember(
 
   validateStaffCreateInput(input);
 
-  const newUserId = `usr-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const cleanPhone = (input.phone || '').trim().replace(/[\s\-()]/g, '');
+  const cleanEmail = (input.email || '').trim().toLowerCase();
+  const adminClient = createAdminClient();
+
+  let resolvedUserId: string | null = null;
+
+  // Check if user already exists in users table by phone or email
+  try {
+    if (cleanPhone) {
+      const { data: byPhone } = await adminClient
+        .from('users')
+        .select('id, role')
+        .eq('phone', cleanPhone)
+        .maybeSingle();
+      if (byPhone?.id) resolvedUserId = byPhone.id;
+    }
+    if (!resolvedUserId && cleanEmail) {
+      const { data: byEmail } = await adminClient
+        .from('users')
+        .select('id, role')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+      if (byEmail?.id) resolvedUserId = byEmail.id;
+    }
+  } catch (err) {
+    console.warn('Check existing user for staff member fallback:', err);
+  }
+
+  const finalUserId = resolvedUserId || crypto.randomUUID();
+
   const matchedLocations = fallbackLocations
     .filter((l) => input.locationIds.includes(l.id))
     .map((l) => ({
@@ -476,51 +545,74 @@ export async function createStaffMember(
     }));
 
   const newStaff: StaffMemberDto = {
-    userId: newUserId,
+    userId: finalUserId,
     fullName: input.fullName.trim(),
-    email: input.email?.trim() || null,
-    phone: input.phone?.trim() || null,
+    email: cleanEmail || null,
+    phone: cleanPhone || null,
     role: input.role,
     assignedLocations: matchedLocations,
     isActive: true,
   };
 
   try {
-    const adminClient = createAdminClient();
+    const isElevatedRole = input.role === 'OWNER' || input.role === 'ADMIN';
 
-    // 1. Try creating user record
-    await adminClient.from('users').insert({
-      id: newUserId,
-      full_name: newStaff.fullName,
-      email: newStaff.email,
-      phone: newStaff.phone,
-      business_id: actor.businessId,
-      staff_role: input.role,
-    });
+    if (resolvedUserId) {
+      // User exists, update role to ADMIN if elevated and sync name
+      await adminClient
+        .from('users')
+        .update({
+          full_name: newStaff.fullName,
+          role: isElevatedRole ? 'ADMIN' : 'USER',
+        })
+        .eq('id', resolvedUserId);
+    } else {
+      // Insert new user record
+      await adminClient.from('users').insert({
+        id: finalUserId,
+        full_name: newStaff.fullName,
+        email: cleanEmail || (cleanPhone ? `${cleanPhone}@coffeehouse.vn` : null),
+        phone: cleanPhone || null,
+        role: isElevatedRole ? 'ADMIN' : 'USER',
+        current_tier_id: '5311a256-9362-4718-bbf5-6d70e9c100a8',
+      });
+    }
 
-    // 2. Try creating membership
-    await adminClient.from('business_memberships').insert({
+    // Try creating membership and assignments if tables exist
+    await adminClient.from('business_memberships').upsert({
       business_id: actor.businessId,
-      user_id: newUserId,
+      user_id: finalUserId,
       role: input.role,
       is_active: true,
     });
 
-    // 3. Try creating assignments
     if (input.locationIds.length > 0) {
       const assignments = input.locationIds.map((locId) => ({
         business_id: actor.businessId,
-        user_id: newUserId,
+        user_id: finalUserId,
         location_id: locId,
         is_active: true,
       }));
-      await adminClient.from('user_location_assignments').insert(assignments);
+      await adminClient.from('user_location_assignments').upsert(assignments);
     }
   } catch (err) {
-    console.warn('DB createStaffMember fallback to memory:', err);
+    console.warn('DB createStaffMember sync fallback to memory:', err);
   }
 
-  fallbackStaffList.push(newStaff);
+  // Update or insert into fallbackStaffList
+  const existingIdx = fallbackStaffList.findIndex(
+    (s) =>
+      s.userId === finalUserId ||
+      (cleanPhone && s.phone?.replace(/[\s\-()]/g, '') === cleanPhone) ||
+      (cleanEmail && s.email?.toLowerCase() === cleanEmail)
+  );
+
+  if (existingIdx !== -1) {
+    fallbackStaffList[existingIdx] = newStaff;
+  } else {
+    fallbackStaffList.push(newStaff);
+  }
+
   return newStaff;
 }
 

@@ -8,6 +8,7 @@ import {
   validateServerLocationAccess,
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
+import { findStaffByUserId, findStaffByPhoneOrEmail } from './repository';
 
 export const DEFAULT_LOCATIONS_SEED_IDS = [
   DEFAULT_LOCATION_ID,
@@ -108,14 +109,27 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     console.warn('users table fetch fallback:', err);
   }
 
+  // 2b. Check in-memory / persistent staff registry by user ID, phone, or email
+  const staffMember =
+    findStaffByUserId(resolvedUserId) ||
+    findStaffByPhoneOrEmail(resolvedPhone, resolvedEmail);
+
+  if (staffMember) {
+    if (staffMember.role === 'OWNER' || staffMember.role === 'ADMIN') {
+      fallbackIsAdmin = true;
+    }
+  }
+
   // 3. Determine business_id and role
   const businessId = membershipBusinessId || dbBusinessId || DEFAULT_BUSINESS_ID;
-  let role: MvpRole = 'OWNER'; // Default admin to OWNER
+  let role: MvpRole = 'ADMIN';
 
   if (membershipRole) {
     role = membershipRole;
+  } else if (staffMember?.role) {
+    role = staffMember.role;
   } else if (fallbackIsAdmin) {
-    role = 'OWNER';
+    role = 'ADMIN';
   } else if (dbStaffRole === 'MANAGER') {
     role = 'MANAGER';
   } else if (dbStaffRole === 'INVENTORY_STAFF') {
@@ -123,8 +137,7 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
   } else if (dbStaffRole === 'CASHIER') {
     role = 'CASHIER';
   } else {
-    // If user has admin cookie/role, ensure they have OWNER access
-    role = fallbackIsAdmin ? 'OWNER' : 'CASHIER';
+    role = fallbackIsAdmin ? 'ADMIN' : 'CASHIER';
   }
 
   // 4. Fetch assigned locations from user_location_assignments
