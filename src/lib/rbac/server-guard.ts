@@ -46,11 +46,20 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     if (authUser.email?.toLowerCase() === 'admin@coffeehouse.vn') {
       fallbackIsAdmin = true;
     }
-  } else if (cookieRole === 'ADMIN' && cookieUid) {
+  } else if (cookieUid) {
     resolvedUserId = cookieUid;
-    fallbackIsAdmin = true;
-  } else if (cookieRole === 'ADMIN') {
+    if (cookieRole === 'ADMIN' || cookieRole === 'OWNER') {
+      fallbackIsAdmin = true;
+    }
+  } else if (cookieRole === 'ADMIN' || cookieRole === 'OWNER') {
     resolvedUserId = '00000000-0000-0000-0000-000000000003';
+    fallbackIsAdmin = true;
+  } else if (process.env.NODE_ENV === 'development') {
+    // In local development or preview environments, gracefully default to Owner admin
+    // so administrators and developers are not locked out with an uninitialized blank state
+    resolvedUserId = '00000000-0000-0000-0000-000000000003';
+    resolvedFullName = 'Quản trị viên Ủ LAB';
+    resolvedEmail = 'admin@coffeehouse.vn';
     fallbackIsAdmin = true;
   }
 
