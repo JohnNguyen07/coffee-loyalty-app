@@ -210,4 +210,70 @@ describe('M01 POS Domain Logic', () => {
     assert.match(receiptHtml, /72\.000đ/);
     assert.match(receiptHtml, /28\.000đ/);
   });
+
+  it('correctly prices Cold Brew Chanh Vang Chai at 74.000đ without colliding with Cup size M 29.000đ', () => {
+    // 1. Bottled version with sizeLabel Chai and id cold-brew-chanh-vang-chai
+    const bottleResult = calculatePosOrderTotals({
+      items: [
+        {
+          itemId: 'cold-brew-chanh-vang-chai',
+          productName: 'Cold Brew Chanh Vàng',
+          sizeLabel: 'Chai',
+          quantity: 1,
+        },
+      ],
+      paymentMethod: 'CASH',
+      amountReceived: 100000,
+      staffRole: 'CASHIER',
+    });
+    assert.equal(bottleResult.validation.valid, true);
+    assert.equal(bottleResult.totals.items[0].unitPrice, 74000);
+    assert.equal(bottleResult.totals.items[0].sizeLabel, 'Chai');
+    assert.equal(bottleResult.totals.subtotal, 74000);
+
+    // 2. Resilient resolution: even if itemId was loosely cold-brew-chanh-vang but size is Chai
+    const resilientBottleResult = calculatePosOrderTotals({
+      items: [
+        {
+          itemId: 'cold-brew-chanh-vang',
+          productName: 'Cold Brew Chanh Vàng',
+          sizeLabel: 'Chai',
+          quantity: 2,
+          unitPriceOverride: 74000,
+        },
+      ],
+      paymentMethod: 'CASH',
+      amountReceived: 200000,
+      staffRole: 'CASHIER',
+    });
+    assert.equal(resilientBottleResult.validation.valid, true);
+    assert.equal(resilientBottleResult.totals.items[0].unitPrice, 74000);
+    assert.equal(resilientBottleResult.totals.items[0].sizeLabel, 'Chai');
+    assert.equal(resilientBottleResult.totals.subtotal, 148000);
+
+    // 3. Cup version size M (29,000đ) and size L (34,000đ)
+    const cupResult = calculatePosOrderTotals({
+      items: [
+        {
+          itemId: 'cold-brew-chanh-vang',
+          productName: 'Cold Brew Chanh Vàng',
+          sizeLabel: 'M',
+          quantity: 1,
+        },
+        {
+          itemId: 'cold-brew-chanh-vang',
+          productName: 'Cold Brew Chanh Vàng',
+          sizeLabel: 'L',
+          quantity: 1,
+        },
+      ],
+      paymentMethod: 'CASH',
+      amountReceived: 100000,
+      staffRole: 'CASHIER',
+    });
+    assert.equal(cupResult.validation.valid, true);
+    assert.equal(cupResult.totals.items[0].unitPrice, 29000);
+    assert.equal(cupResult.totals.items[1].unitPrice, 34000);
+    assert.equal(cupResult.totals.subtotal, 63000);
+  });
 });

@@ -129,15 +129,44 @@ export function normalizePosItems(
     .filter((it) => it && (it.itemId || it.productName) && Number(it.quantity) > 0)
     .map((it) => {
       const qty = Math.max(1, Math.floor(Number(it.quantity) || 1));
-      const matchedItem = catalog.find(
-        (m) => m.id === it.itemId || m.name.toLowerCase() === (it.productName || '').trim().toLowerCase()
+      const cleanName = (it.productName || '').trim().toLowerCase();
+
+      // 1. Precise match: ID and has requested size
+      let matchedItem = catalog.find(
+        (m) => m.id === it.itemId && (!it.sizeLabel || m.sizes.some((s) => s.label === it.sizeLabel))
       );
-      const sizeObj = matchedItem?.sizes.find((s) => s.label === it.sizeLabel) || matchedItem?.sizes[0];
+
+      // 2. Fallback: match by ID only
+      if (!matchedItem) {
+        matchedItem = catalog.find((m) => m.id === it.itemId);
+      }
+
+      // 3. Fallback: match by name AND has requested size (handles cup vs bottle sharing the same name!)
+      if (!matchedItem || (it.sizeLabel && !matchedItem.sizes.some((s) => s.label === it.sizeLabel))) {
+        const byNameAndSize = catalog.find(
+          (m) => m.name.toLowerCase() === cleanName && m.sizes.some((s) => s.label === it.sizeLabel)
+        );
+        if (byNameAndSize) {
+          matchedItem = byNameAndSize;
+        }
+      }
+
+      // 4. Fallback: match by name only
+      if (!matchedItem) {
+        matchedItem = catalog.find((m) => m.name.toLowerCase() === cleanName);
+      }
+
+      const sizeObj = matchedItem?.sizes.find((s) => s.label === it.sizeLabel);
       const basePrice = sizeObj
         ? sizeObj.price
-        : Math.max(0, Math.floor(Number(it.unitPriceOverride) || 0));
+        : typeof it.unitPriceOverride === 'number' && it.unitPriceOverride > 0
+          ? Math.max(0, Math.floor(it.unitPriceOverride))
+          : matchedItem?.sizes[0]?.price || 0;
 
-      const isBottled = (sizeObj?.label || it.sizeLabel) === 'Chai';
+      const isBottled =
+        (sizeObj?.label || it.sizeLabel) === 'Chai' ||
+        matchedItem?.categorySlug === 'cold-brew-chai' ||
+        matchedItem?.category === 'Cold Brew Chai';
       const sweetness = isBottled
         ? 'Nguyên bản (Chai)'
         : it.options?.sweetness || '100% đường';

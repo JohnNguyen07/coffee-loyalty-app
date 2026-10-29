@@ -118,10 +118,22 @@ export async function setProductAvailability(
     const adminClient = createAdminClient();
     const staticItem = allMenuItems.find((m) => m.id === productId);
     if (staticItem) {
-      await adminClient
+      const { data: dbCat } = await adminClient
+        .from('menu_categories')
+        .select('id')
+        .eq('slug', staticItem.categorySlug)
+        .maybeSingle();
+
+      let query = adminClient
         .from('menu_items')
         .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
         .ilike('name', staticItem.name);
+
+      if (dbCat?.id) {
+        query = query.eq('category_id', dbCat.id);
+      }
+
+      await query;
     }
   } catch (err) {
     console.warn('DB menu_items availability update fallback:', err);
@@ -142,11 +154,23 @@ export async function setProductPrices(
     const adminClient = createAdminClient();
     const staticItem = allMenuItems.find((m) => m.id === productId);
     if (staticItem) {
-      const { data: dbItem } = await adminClient
+      const { data: dbCat } = await adminClient
+        .from('menu_categories')
+        .select('id')
+        .eq('slug', staticItem.categorySlug)
+        .maybeSingle();
+
+      let query = adminClient
         .from('menu_items')
         .select('id')
-        .ilike('name', staticItem.name)
-        .maybeSingle();
+        .ilike('name', staticItem.name);
+
+      if (dbCat?.id) {
+        query = query.eq('category_id', dbCat.id);
+      }
+
+      const { data: dbItems } = await query;
+      const dbItem = dbItems?.[0];
 
       if (dbItem?.id) {
         for (const s of sizes) {
@@ -197,9 +221,15 @@ export async function getPosMenuCatalog() {
         const catItems: MenuItem[] = dbItems
           .filter((item) => item.category_id === cat.id)
           .map((item) => {
-            const staticMatch = allMenuItems.find(
-              (m) => m.name.toLowerCase() === item.name.toLowerCase()
-            );
+            const staticMatch =
+              staticCat?.items.find((m) => m.name.toLowerCase() === item.name.toLowerCase()) ||
+              allMenuItems.find(
+                (m) => m.name.toLowerCase() === item.name.toLowerCase() && m.categorySlug === cat.slug
+              ) ||
+              allMenuItems.find((m) => m.id === item.id) ||
+              allMenuItems.find(
+                (m) => m.name.toLowerCase() === item.name.toLowerCase()
+              );
             const pid = staticMatch?.id || item.id;
             const rawSizes = Array.isArray(item.sizes) ? (item.sizes as DbSizeRow[]) : [];
             const sortedSizes = rawSizes
