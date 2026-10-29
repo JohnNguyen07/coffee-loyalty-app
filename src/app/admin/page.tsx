@@ -58,6 +58,21 @@ export default function AdminPage() {
     };
   }, []);
 
+  // Listen for navigation events from panels (e.g. Nạp vào POS)
+  useEffect(() => {
+    const handleNavChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const tab = customEvent.detail?.tab as AdminTab | undefined;
+      if (tab) {
+        handleNavSelect({ mainTab: tab });
+      }
+    };
+    window.addEventListener('ulab:nav-change', handleNavChange);
+    return () => {
+      window.removeEventListener('ulab:nav-change', handleNavChange);
+    };
+  }, []);
+
   const handleNavSelect = (selection: AdminNavSelection) => {
     setActiveTab(selection.mainTab);
     if (selection.subTab) {

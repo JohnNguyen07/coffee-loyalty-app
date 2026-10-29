@@ -191,14 +191,45 @@ export default function POSPanel() {
     }
   }, []);
 
-  // Listen for menu availability & price updates from Products tab
+  // Listen for menu availability & price updates from Products tab and order imports from Orders tab
   useEffect(() => {
     const handleMenuChanged = () => {
       fetchPosMenu();
     };
+    const handleLoadOrder = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const order = customEvent.detail?.order;
+      if (!order) return;
+      setActiveMode('pos');
+      if (order.customer_phone && order.customer_phone !== '—') {
+        setCustomerPhoneInput(order.customer_phone);
+        setCustomerNameInput(order.customer_name);
+      }
+      if (order.note) {
+        setOrderNote(`[Đơn #${order.order_code}] ${order.note}`);
+      }
+      if (Array.isArray(order.items) && order.items.length > 0) {
+        const lines: PosCartLine[] = order.items.map((it: { item_name: string; size_label: string; unit_price: number; quantity: number }, idx: number) => ({
+          lineId: `line-import-${Date.now()}-${idx}`,
+          itemId: `import-${idx}`,
+          productName: it.item_name,
+          sizeLabel: it.size_label || 'M',
+          basePrice: it.unit_price,
+          quantity: it.quantity,
+          sweetness: '100% đường',
+          ice: '100% đá',
+          addons: [],
+          itemNote: '',
+        }));
+        setCartLines(lines);
+      }
+    };
+
     window.addEventListener('ulab:menu-changed', handleMenuChanged);
+    window.addEventListener('ulab:load-pos-order', handleLoadOrder);
     return () => {
       window.removeEventListener('ulab:menu-changed', handleMenuChanged);
+      window.removeEventListener('ulab:load-pos-order', handleLoadOrder);
     };
   }, [fetchPosMenu]);
 

@@ -12,11 +12,15 @@ import {
   CheckCircleIcon,
   FlaskIcon,
 } from '@/components/Icons/LabIcons';
+import { buildVietQrImageUrl, DEFAULT_VIETQR_CONFIG } from '@/lib/vietqr';
 
 interface CartDrawerProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+export type FulfillmentType = 'DELIVERY' | 'PICKUP';
+export type PaymentPreference = 'FLEXIBLE' | 'QR' | 'CASH';
 
 interface OrderSuccessInfo {
   code: string;
@@ -24,9 +28,13 @@ interface OrderSuccessInfo {
   messengerUrl: string;
   webMessengerUrl: string;
   pageUrl: string;
+  totalDue: number;
+  paymentPreference: PaymentPreference;
+  vietQrUrl: string;
+  bankName: string;
+  accountNo: string;
+  accountName: string;
 }
-
-export type FulfillmentType = 'DELIVERY' | 'PICKUP';
 
 const FANPAGE_ID = process.env.NEXT_PUBLIC_MESSENGER_FANPAGE_ID || '61595629718216';
 const FACEBOOK_PAGE_URL =
@@ -75,7 +83,8 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { profile, spendPoints } = useAuth();
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('DELIVERY');
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('PICKUP');
+  const [paymentPreference, setPaymentPreference] = useState<PaymentPreference>('FLEXIBLE');
   const [customerName, setCustomerName] = useState(profile?.full_name || '');
   const [customerPhone, setCustomerPhone] = useState(profile?.phone || '');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -84,6 +93,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const [orderSuccess, setOrderSuccess] = useState<OrderSuccessInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const subtotal = getSubtotal();
   const userPointBalance = profile?.point_balance || 0;
@@ -127,12 +137,20 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     }
   };
 
+  const handleCopyField = async (text: string, fieldName: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000);
+    }
+  };
+
   const handleSendOrder = async () => {
     if (items.length === 0) return;
 
     const cleanName = customerName.trim();
     const cleanPhone = customerPhone.trim().replace(/[\s\-()]/g, '');
-    const cleanAddress = customerAddress.trim();
+    let cleanAddress = customerAddress.trim();
 
     if (!cleanName) {
       setFormError('Vui lòng nhập họ và tên người đặt hàng.');
@@ -144,14 +162,18 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       return;
     }
 
-    if (!cleanAddress) {
-      setFormError('Vui lòng nhập địa chỉ của bạn.');
+    if (!cleanAddress && fulfillmentType === 'DELIVERY') {
+      setFormError('Vui lòng nhập địa chỉ giao hàng chi tiết.');
       return;
+    }
+
+    if (!cleanAddress && fulfillmentType === 'PICKUP') {
+      cleanAddress = 'Ghé lấy trực tiếp tại quầy';
     }
 
     setFormError('');
 
-    const orderCode = `ULAB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderCode = `CF-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const orderItemsText = items
       .map(
@@ -162,6 +184,14 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
     const fulfillmentLabel =
       fulfillmentType === 'DELIVERY' ? '🛵 Giao tới nhà' : '🏪 Lấy tại cửa hàng';
+
+    const paymentLabel =
+      paymentPreference === 'QR'
+        ? '📲 Quét mã QR ngân hàng'
+        : paymentPreference === 'CASH'
+        ? (fulfillmentType === 'DELIVERY' ? '💵 Tiền mặt khi nhận (COD)' : '💵 Tiền mặt tại quầy')
+        : (fulfillmentType === 'DELIVERY' ? '🔄 Tiền mặt hoặc Chuyển khoản khi giao' : '🔄 Linh hoạt tại quầy (Tiền mặt hoặc Quét QR)');
+
     const customerInfo = `${cleanName} - ${cleanPhone}`;
     const tierInfo = profile?.tier?.name
       ? `${profile.tier.name} (Hoàn ${profile.tier.cashback_rate}%)`
@@ -173,8 +203,9 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     const fullText = [
       `🧪 Ủ LAB - ĐƠN ĐẶT HÀNG [#${orderCode}]`,
       `📦 Hình thức nhận: ${fulfillmentLabel}`,
+      `💳 Thanh toán: ${paymentLabel}`,
       `👤 Khách hàng: ${customerInfo}`,
-      `📍 Địa chỉ: ${cleanAddress}`,
+      `📍 Địa chỉ / Giờ lấy: ${cleanAddress}`,
       tierInfo ? `⭐ Hạng thành viên: ${tierInfo}` : null,
       `---------------------------------`,
       orderItemsText,
@@ -204,6 +235,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
     const combinedOrderNote = [
       `[${fulfillmentType === 'DELIVERY' ? 'Giao tới nhà' : 'Lấy tại cửa hàng'}]`,
+      `Thanh toán: ${paymentLabel}`,
       `KH: ${cleanName} (${cleanPhone})`,
       `Đ/c: ${cleanAddress}`,
       customerNote.trim() ? `Ghi chú: ${customerNote.trim()}` : null,
@@ -228,8 +260,14 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         customer_phone: cleanPhone,
         customer_address: cleanAddress,
         fulfillment_type: fulfillmentType,
+        payment_method: paymentPreference === 'QR' ? 'BANK_TRANSFER' : paymentPreference === 'CASH' ? 'CASH' : 'FLEXIBLE',
       }),
     }).catch((err) => console.warn('Order DB sync:', err));
+
+    const vietQrUrl = buildVietQrImageUrl({
+      amount: totalDue,
+      description: `ULAB ${orderCode}`,
+    });
 
     setOrderSuccess({
       code: orderCode,
@@ -237,6 +275,12 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       messengerUrl,
       webMessengerUrl,
       pageUrl: FACEBOOK_PAGE_URL,
+      totalDue,
+      paymentPreference,
+      vietQrUrl,
+      bankName: DEFAULT_VIETQR_CONFIG.bankName,
+      accountNo: DEFAULT_VIETQR_CONFIG.accountNo,
+      accountName: DEFAULT_VIETQR_CONFIG.accountName,
     });
 
     clearCart();
@@ -304,6 +348,63 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 Nội dung đơn đã được <strong>sao chép tự động</strong>. Nếu hộp thoại Messenger chưa tự điền, bạn chỉ cần nhấn <strong>Dán (Paste / Ctrl+V)</strong> và gửi!
               </p>
             </div>
+
+            {/* Dynamic VietQR Payment Card if user wants to scan QR or flexible */}
+            {orderSuccess.vietQrUrl && orderSuccess.totalDue > 0 && (
+              <div className={styles.vietQrBox}>
+                <div className={styles.vietQrHeader}>
+                  <span className={styles.vietQrTitle}>📲 Quét mã QR thanh toán (VietQR)</span>
+                  <span className={styles.vietQrBadge}>Đúng số tiền</span>
+                </div>
+                <div className={styles.vietQrImageWrap}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={orderSuccess.vietQrUrl}
+                    alt="VietQR Thanh Toán Ủ LAB"
+                    className={styles.vietQrImg}
+                  />
+                </div>
+                <div className={styles.vietQrDetails}>
+                  <div className={styles.vietQrRow}>
+                    <span>Ngân hàng:</span>
+                    <strong>{orderSuccess.bankName}</strong>
+                  </div>
+                  <div className={styles.vietQrRow}>
+                    <span>Số tài khoản:</span>
+                    <strong style={{ fontFamily: 'monospace' }}>{orderSuccess.accountNo}</strong>
+                    <button
+                      type="button"
+                      className={styles.miniCopyBtn}
+                      onClick={() => handleCopyField(orderSuccess.accountNo, 'stk')}
+                    >
+                      {copiedField === 'stk' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                  <div className={styles.vietQrRow}>
+                    <span>Chủ tài khoản:</span>
+                    <strong>{orderSuccess.accountName}</strong>
+                  </div>
+                  <div className={styles.vietQrRow}>
+                    <span>Số tiền cần thu:</span>
+                    <strong style={{ color: '#006241', fontSize: '1.05rem' }}>{formatVND(orderSuccess.totalDue)}</strong>
+                  </div>
+                  <div className={styles.vietQrRow}>
+                    <span>Nội dung chuyển khoản:</span>
+                    <strong style={{ fontFamily: 'monospace' }}>ULAB {orderSuccess.code}</strong>
+                    <button
+                      type="button"
+                      className={styles.miniCopyBtn}
+                      onClick={() => handleCopyField(`ULAB ${orderSuccess.code}`, 'memo')}
+                    >
+                      {copiedField === 'memo' ? '✓ Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </div>
+                <p className={styles.vietQrNote}>
+                  💡 <em>Quý khách có thể quét mã chuyển khoản ngay hoặc ghé quầy quét trực tiếp khi nhận đồ uống.</em>
+                </p>
+              </div>
+            )}
 
             <div className={styles.successActions}>
               <a
@@ -379,31 +480,33 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                         className={styles.itemThumbSvg}
                       />
                     </div>
-                    <div className={styles.itemMain}>
-                      <div className={styles.itemTopRow}>
-                        <span className={styles.itemName}>{ci.menuItem.name}</span>
+
+                    <div className={styles.itemInfo}>
+                      <div className={styles.itemTop}>
+                        <h4 className={styles.itemName}>{ci.menuItem.name}</h4>
                         <button
                           type="button"
                           className={styles.removeBtn}
                           onClick={() => removeItem(ci.menuItem.id, ci.sizeIndex)}
-                          aria-label={`Xóa ${ci.menuItem.name}`}
+                          aria-label={`Xóa ${ci.menuItem.name} khỏi giỏ`}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
+                          ✕
                         </button>
                       </div>
-                      <span className={styles.itemSizeBadge}>Cỡ: {ci.sizeLabel}</span>
 
-                      <div className={styles.itemBottomRow}>
-                        {/* Starbucks PDP Circular Numeric Stepper */}
+                      <span className={styles.sizeBadge}>Size {ci.sizeLabel}</span>
+
+                      <div className={styles.itemBottom}>
                         <div className={styles.qtyControl}>
                           <button
                             type="button"
                             className={styles.qtyBtn}
                             onClick={() =>
-                              updateQuantity(ci.menuItem.id, ci.sizeIndex, ci.quantity - 1)
+                              updateQuantity(
+                                ci.menuItem.id,
+                                ci.sizeIndex,
+                                ci.quantity - 1
+                              )
                             }
                             aria-label="Giảm số lượng"
                           >
@@ -414,7 +517,11 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                             type="button"
                             className={styles.qtyBtn}
                             onClick={() =>
-                              updateQuantity(ci.menuItem.id, ci.sizeIndex, ci.quantity + 1)
+                              updateQuantity(
+                                ci.menuItem.id,
+                                ci.sizeIndex,
+                                ci.quantity + 1
+                              )
                             }
                             aria-label="Tăng số lượng"
                           >
@@ -432,18 +539,10 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
               {/* Customer Info, Fulfillment Type & Customization Notes */}
               <div className={styles.customerForm}>
-                <span className={styles.sectionSmallTitle}>HÌNH THỨC NHẬN MÓN &amp; THÔNG TIN BẮT BUỘC *</span>
+                <span className={styles.sectionSmallTitle}>1. HÌNH THỨC NHẬN MÓN *</span>
 
                 {/* Fulfillment Option Selector */}
                 <div className={styles.fulfillmentToggle} role="radiogroup" aria-label="Chọn hình thức nhận món">
-                  <button
-                    type="button"
-                    className={`${styles.fulfillmentBtn} ${fulfillmentType === 'DELIVERY' ? styles.fulfillmentBtnActive : ''}`}
-                    onClick={() => setFulfillmentType('DELIVERY')}
-                    aria-pressed={fulfillmentType === 'DELIVERY'}
-                  >
-                    <span>🛵 Giao tới nhà</span>
-                  </button>
                   <button
                     type="button"
                     className={`${styles.fulfillmentBtn} ${fulfillmentType === 'PICKUP' ? styles.fulfillmentBtnActive : ''}`}
@@ -452,6 +551,75 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   >
                     <span>🏪 Lấy tại cửa hàng</span>
                   </button>
+                  <button
+                    type="button"
+                    className={`${styles.fulfillmentBtn} ${fulfillmentType === 'DELIVERY' ? styles.fulfillmentBtnActive : ''}`}
+                    onClick={() => setFulfillmentType('DELIVERY')}
+                    aria-pressed={fulfillmentType === 'DELIVERY'}
+                  >
+                    <span>🛵 Giao tới nhà</span>
+                  </button>
+                </div>
+
+                <span className={styles.paymentSectionTitle}>2. HÌNH THỨC THANH TOÁN DỰ KIẾN *</span>
+                <div className={styles.paymentToggle} role="radiogroup" aria-label="Chọn hình thức thanh toán">
+                  {fulfillmentType === 'PICKUP' ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'FLEXIBLE' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('FLEXIBLE')}
+                        aria-pressed={paymentPreference === 'FLEXIBLE'}
+                      >
+                        <span>🔄 Linh hoạt tại quầy (Tiền mặt hoặc Quét QR)</span>
+                        <span className={styles.paymentBtnBadge}>Khuyên dùng</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'QR' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('QR')}
+                        aria-pressed={paymentPreference === 'QR'}
+                      >
+                        <span>📲 Quét mã QR chuyển khoản</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'CASH' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('CASH')}
+                        aria-pressed={paymentPreference === 'CASH'}
+                      >
+                        <span>💵 Tiền mặt khi lấy món</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'CASH' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('CASH')}
+                        aria-pressed={paymentPreference === 'CASH'}
+                      >
+                        <span>💵 Tiền mặt khi nhận (COD)</span>
+                        <span className={styles.paymentBtnBadge}>Phổ biến</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'QR' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('QR')}
+                        aria-pressed={paymentPreference === 'QR'}
+                      >
+                        <span>📲 Quét mã QR chuyển khoản</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.paymentBtn} ${paymentPreference === 'FLEXIBLE' ? styles.paymentBtnActive : ''}`}
+                        onClick={() => setPaymentPreference('FLEXIBLE')}
+                        aria-pressed={paymentPreference === 'FLEXIBLE'}
+                      >
+                        <span>🔄 Tiền mặt hoặc Chuyển khoản khi giao</span>
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 {formError && (
@@ -460,6 +628,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   </div>
                 )}
 
+                <span className={styles.paymentSectionTitle} style={{ marginTop: 10 }}>3. THÔNG TIN KHÁCH HÀNG *</span>
                 <div className={styles.formRow}>
                   <input
                     type="text"
@@ -492,7 +661,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   placeholder={
                     fulfillmentType === 'DELIVERY'
                       ? 'Địa chỉ giao hàng chi tiết (Số nhà, đường, phường/xã) *'
-                      : 'Địa chỉ của bạn / Ghi chú thời gian ghé lấy tại quán *'
+                      : 'Thời gian dự kiến ghé lấy (VD: 8h30 sáng nay, chiều nay...)'
                   }
                   value={customerAddress}
                   onChange={(e) => {
@@ -500,13 +669,12 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                     if (formError) setFormError('');
                   }}
                   className={styles.formInput}
-                  aria-label="Địa chỉ khách hàng"
-                  required
+                  aria-label="Địa chỉ hoặc thời gian ghé lấy"
                 />
 
                 <input
                   type="text"
-                  placeholder="Ghi chú khẩu vị: Ít ngọt, đá riêng, giao giờ nghỉ trưa..."
+                  placeholder="Ghi chú khẩu vị: Ít ngọt, đá riêng, nhiều đá..."
                   value={customerNote}
                   onChange={(e) => setCustomerNote(e.target.value)}
                   className={styles.noteInput}
@@ -574,6 +742,16 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   <span>Hình thức nhận</span>
                   <strong>
                     {fulfillmentType === 'DELIVERY' ? '🛵 Giao tới nhà' : '🏪 Lấy tại cửa hàng'}
+                  </strong>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Thanh toán</span>
+                  <strong style={{ color: '#006241' }}>
+                    {paymentPreference === 'QR'
+                      ? '📲 Quét mã QR'
+                      : paymentPreference === 'CASH'
+                      ? '💵 Tiền mặt'
+                      : '🔄 Linh hoạt tại quầy'}
                   </strong>
                 </div>
                 <div className={styles.summaryRow}>
