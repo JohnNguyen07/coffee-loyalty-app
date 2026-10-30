@@ -100,6 +100,15 @@ Xây dựng phiên bản MVP đầu tiên hoàn chỉnh, tinh gọn cho chuỗi 
 
 ---
 
+### Module G — Thanh Toán Linh Hoạt & Khắc Phục Định Giá POS
+| Tính năng | Trạng thái | Đánh giá hiện trạng |
+| :--- | :---: | :--- |
+| Đơn [Lấy tại cửa hàng] hỗ trợ VietQR & Tiền mặt | ✅ Hoàn thành | Khách đặt web chọn Lấy tại cửa hàng có thể chọn thanh toán Tiền mặt hoặc Quét mã VietQR động khi nhận hàng. Thu ngân POS/Orders có nút hiển thị mã QR chuẩn NAPAS 247 kèm số tiền chính xác. |
+| Khắc phục định giá món chai Cold Brew Chanh Vàng (74k) | ✅ Hoàn thành | Xử lý triệt để va chạm tên món giữa ly (M 29k / L 34k) và chai (74k) trong `getPosMenuCatalog` và `normalizePosItems`. Đảm bảo giá món chai luôn giữ đúng 74.000đ cả trong giỏ hàng POS và tính toán thanh toán. |
+| Phân quyền Quản trị viên (0947038325) & Fallback điểm bán | ✅ Hoàn thành | Đảm bảo tài khoản SĐT 0947038325 nhận role ADMIN, tự động gán toàn quyền chuỗi điểm bán và vận hành POS. |
+
+---
+
 ## 3. Tiến Độ Thực Hiện Các Bước Triển Khai
 - [x] **Bước 1: Kiểm tra repository và báo cáo kế hoạch** ✅ (Đã nghiệm thu)
 - [x] **Bước 2: Thiết kế database và migration** ✅ (9 file migration `0001` đến `0009`)
@@ -109,4 +118,6 @@ Xây dựng phiên bản MVP đầu tiên hoàn chỉnh, tinh gọn cho chuỗi 
 - [x] **Bước 6: Xây Business, Locations & RBAC (Module D)** ✅ (5 roles, multi-location, RLS, UI LocationsRbacPanel)
 - [x] **Bước 7: Xây Admin Layout, Header & Navigation (Module E)** ✅ (Sidebar 9 menu, Header selector, Breadcrumb, Mobile)
 - [x] **Bước 8: Quản lý Sản phẩm, Báo Hết & Đồng bộ POS (Module F)** ✅ (Tồn tại bền vững, CSS chuẩn, POS khóa tức thì)
-- [x] **Bước 9: Kiểm thử toàn bộ hệ thống** ✅ (44 unit tests pass 100%, TypeScript 0 error, ESLint 0 error)
+- [x] **Bước 9: Thanh toán linh hoạt đơn nhận tại quán (VietQR/Cash)** ✅ (Hỗ trợ VietQR động và tiền mặt tại quầy/web)
+- [x] **Bước 10: Tối ưu hóa khớp giá POS cho các sản phẩm chai đặc thù** ✅ (Bảo vệ giá 74k Cold Brew Chai không bị fallback)
+- [x] **Bước 11: Kiểm thử toàn bộ hệ thống** ✅ (45 unit tests pass 100%, TypeScript 0 error, ESLint 0 error)
