@@ -1,6 +1,14 @@
 export type DateRangePreset = 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'CUSTOM';
 export type VarianceStatus = 'BALANCED' | 'SURPLUS' | 'SHORTAGE';
 
+export interface RawOrderItem {
+  product_name?: string;
+  size?: string;
+  quantity?: number;
+  subtotal?: number;
+  unit_price?: number;
+}
+
 export interface RawOrderForRevenue {
   id: string;
   order_code: string;
@@ -18,6 +26,7 @@ export interface RawOrderForRevenue {
   customer_phone?: string;
   cancel_reason?: string;
   note?: string;
+  items?: RawOrderItem[];
 }
 
 export interface CashReconciliationInput {
@@ -67,16 +76,210 @@ export interface CashReconciliationBreakdown {
   varianceStatus: VarianceStatus;
 }
 
+export interface BestSellerItem {
+  productName: string;
+  categoryName: string;
+  quantitySold: number;
+  totalRevenue: number;
+}
+
+export interface HourlySalesBucket {
+  hourLabel: string;
+  orderCount: number;
+  revenue: number;
+}
+
 export interface RevenueSummaryResult {
   metrics: RevenueMetricCardData;
   orderRevenue: OrderRevenueBreakdown;
   collection: PaymentCollectionBreakdown;
   refunds: RefundBreakdown;
   cashReconciliation: CashReconciliationBreakdown;
+  bestSellers: BestSellerItem[];
+  hourlySales: HourlySalesBucket[];
   totalOrdersPlaced: number;
   completedOrdersCount: number;
   pendingOrdersCount: number;
   cancelledOrdersCount: number;
+}
+
+// ── Vietnamese Denominations for Cash Drawer Count ──
+export type DenominationKey = '500k' | '200k' | '100k' | '50k' | '20k' | '10k' | '5k' | '2k' | '1k';
+
+export const DENOMINATION_VALUES: Record<DenominationKey, number> = {
+  '500k': 500000,
+  '200k': 200000,
+  '100k': 100000,
+  '50k': 50000,
+  '20k': 20000,
+  '10k': 10000,
+  '5k': 5000,
+  '2k': 2000,
+  '1k': 1000,
+};
+
+export function calculateDenominationsTotal(counts: Partial<Record<DenominationKey, number>>): number {
+  let total = 0;
+  for (const [key, val] of Object.entries(counts)) {
+    const denom = DENOMINATION_VALUES[key as DenominationKey];
+    if (denom && typeof val === 'number' && val > 0) {
+      total += denom * Math.floor(val);
+    }
+  }
+  return total;
+}
+
+// ── Cash Transactions & Cashbook (Sổ Quỹ) ──
+export type CashTransactionType = 'RECEIPT' | 'PAYMENT';
+
+export type CashTransactionCategory =
+  | 'RAW_MATERIAL'     // Mua đá bi, sữa, chanh sả, nguyên liệu khẩn cấp
+  | 'PACKAGING'        // Ly, nắp, ống hút, túi chữ T
+  | 'UTILITIES'        // Tiền điện, nước, rác, internet, gửi xe
+  | 'SALARY_ADVANCE'   // Tạm ứng lương nhân viên
+  | 'SHIPPING'         // Tiền trả shipper ngoài
+  | 'BANK_DEPOSIT'     // Rút tiền két nộp vào tài khoản ngân hàng (chuyển quỹ)
+  | 'OPENING_FLOAT'    // Rót tiền thối đầu ca từ chủ quán
+  | 'OTHER';           // Chi phí khác
+
+export const CASH_CATEGORY_LABELS: Record<CashTransactionCategory, string> = {
+  RAW_MATERIAL: 'Nguyên liệu mua ngoài (Đá, sữa, chanh...)',
+  PACKAGING: 'Bao bì & Công cụ (Ly, ống hút, túi...)',
+  UTILITIES: 'Sinh hoạt & Tiện ích (Điện, nước, rác, xe...)',
+  SALARY_ADVANCE: 'Tạm ứng lương nhân viên',
+  SHIPPING: 'Chi phí giao hàng (Shipper ngoài)',
+  BANK_DEPOSIT: 'Nộp tiền vào ngân hàng (Chuyển quỹ)',
+  OPENING_FLOAT: 'Nạp tiền thối quầy (Rót quỹ)',
+  OTHER: 'Chi phí khác',
+};
+
+export interface CashTransaction {
+  id: string;
+  code: string;
+  shiftId?: string | null;
+  type: CashTransactionType;
+  category: CashTransactionCategory;
+  amount: number;
+  paymentMethod: 'CASH' | 'BANK_TRANSFER';
+  recipientPayer: string;
+  notes?: string;
+  createdByName: string;
+  createdAt: string;
+  runningBalance?: number;
+}
+
+export interface CashbookSummary {
+  openingBalance: number;
+  totalIn: number;
+  totalOut: number;
+  closingBalance: number;
+  transactions: CashTransaction[];
+  categoryBreakdown: Record<string, number>;
+}
+
+export function calculateCashbookSummary(
+  openingBalance: number,
+  transactions: CashTransaction[]
+): CashbookSummary {
+  let totalIn = 0;
+  let totalOut = 0;
+  let currentBalance = Math.max(0, openingBalance);
+
+  // Sort chronologically ascending to calculate running balance
+  const sorted = [...transactions].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const categoryBreakdown: Record<string, number> = {};
+
+  const withRunning = sorted.map((tx) => {
+    if (tx.type === 'RECEIPT') {
+      totalIn += tx.amount;
+      currentBalance += tx.amount;
+    } else {
+      totalOut += tx.amount;
+      currentBalance -= tx.amount;
+      categoryBreakdown[tx.category] = (categoryBreakdown[tx.category] || 0) + tx.amount;
+    }
+    return {
+      ...tx,
+      runningBalance: currentBalance,
+    };
+  });
+
+  // Reverse back to newest first for display
+  withRunning.reverse();
+
+  return {
+    openingBalance,
+    totalIn,
+    totalOut,
+    closingBalance: currentBalance,
+    transactions: withRunning,
+    categoryBreakdown,
+  };
+}
+
+// ── Shift Session (Quản lý ca bán hàng) ──
+export interface ShiftSession {
+  id: string;
+  code: string;
+  shiftName: string;
+  status: 'OPEN' | 'CLOSED';
+  openedAt: string;
+  closedAt?: string | null;
+  openedByName: string;
+  closedByName?: string | null;
+  openingCash: number;
+  cashSales: number;
+  cashRefunds: number;
+  cashIn: number;
+  cashOut: number;
+  expectedCash: number;
+  actualCash?: number | null;
+  cashVariance?: number;
+  varianceStatus?: VarianceStatus;
+  cashRetained?: number;
+  cashHandedOver?: number;
+  notes?: string | null;
+  denominations?: Partial<Record<DenominationKey, number>>;
+}
+
+export function calculateShiftReconciliation(params: {
+  openingCash: number;
+  cashSales: number;
+  cashRefunds: number;
+  cashIn: number;
+  cashOut: number;
+  actualCash: number;
+  cashRetained?: number;
+}): {
+  expectedCash: number;
+  cashVariance: number;
+  varianceStatus: VarianceStatus;
+  cashHandedOver: number;
+} {
+  const opening = Math.max(0, params.openingCash);
+  const sales = Math.max(0, params.cashSales);
+  const refunds = Math.max(0, params.cashRefunds);
+  const cin = Math.max(0, params.cashIn);
+  const cout = Math.max(0, params.cashOut);
+  const actual = Math.max(0, params.actualCash);
+
+  const expectedCash = opening + sales - refunds + cin - cout;
+  const cashVariance = actual - expectedCash;
+  const varianceStatus: VarianceStatus =
+    cashVariance === 0 ? 'BALANCED' : cashVariance > 0 ? 'SURPLUS' : 'SHORTAGE';
+
+  const retained = Math.max(0, params.cashRetained || 0);
+  const cashHandedOver = Math.max(0, actual - retained);
+
+  return {
+    expectedCash,
+    cashVariance,
+    varianceStatus,
+    cashHandedOver,
+  };
 }
 
 /**
@@ -87,6 +290,78 @@ export function normalizePaymentMethod(method?: string): 'CASH' | 'BANK_TRANSFER
   if (m === 'BANK_TRANSFER' || m === 'TRANSFER' || m === 'QR') return 'BANK_TRANSFER';
   if (m === 'EWALLET' || m === 'WALLET') return 'EWALLET';
   return 'CASH';
+}
+
+/**
+ * Calculates Best Sellers ranking.
+ */
+export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 8): BestSellerItem[] {
+  const map = new Map<string, { quantity: number; revenue: number; category: string }>();
+
+  for (const ord of orders) {
+    if (ord.status !== 'CONFIRMED') continue;
+    const items = ord.items || [];
+    for (const it of items) {
+      const rawName = String(it.product_name || 'Món');
+      const cleanName = rawName.replace(/\s*\[.*\]$/, '');
+      const qty = Number(it.quantity) || 1;
+      const subtotal = Number(it.subtotal) || (Number(it.unit_price || 0) * qty) || 0;
+
+      let cat = 'Khác';
+      const lower = cleanName.toLowerCase();
+      if (lower.includes('cam sả') || lower.includes('chanh vàng') || lower.includes('cold brew')) {
+        cat = 'Cold Brew';
+      } else if (lower.includes('matcha')) {
+        cat = 'Matcha Fuji';
+      } else if (lower.includes('chai')) {
+        cat = 'Đóng Chai';
+      } else if (lower.includes('cà phê') || lower.includes('espresso') || lower.includes('latte')) {
+        cat = 'Pha Máy';
+      }
+
+      const existing = map.get(cleanName) || { quantity: 0, revenue: 0, category: cat };
+      existing.quantity += qty;
+      existing.revenue += subtotal;
+      map.set(cleanName, existing);
+    }
+  }
+
+  const list: BestSellerItem[] = Array.from(map.entries()).map(([name, data]) => ({
+    productName: name,
+    categoryName: data.category,
+    quantitySold: data.quantity,
+    totalRevenue: data.revenue,
+  }));
+
+  list.sort((a, b) => b.totalRevenue - a.totalRevenue);
+  return list.slice(0, limit);
+}
+
+/**
+ * Calculates hourly sales from 06:00 to 22:00.
+ */
+export function calculateHourlySales(orders: RawOrderForRevenue[]): HourlySalesBucket[] {
+  const hours = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+  const map = new Map<number, { count: number; rev: number }>();
+  hours.forEach((h) => map.set(h, { count: 0, rev: 0 }));
+
+  for (const ord of orders) {
+    if (ord.status !== 'CONFIRMED') continue;
+    const d = new Date(ord.created_at);
+    // Convert to VN hour (+7 UTC)
+    const vnHour = (d.getUTCHours() + 7) % 24;
+    if (map.has(vnHour)) {
+      const curr = map.get(vnHour)!;
+      curr.count++;
+      curr.rev += ord.total_due;
+    }
+  }
+
+  return hours.map((h) => ({
+    hourLabel: `${String(h).padStart(2, '0')}:00`,
+    orderCount: map.get(h)?.count || 0,
+    revenue: map.get(h)?.rev || 0,
+  }));
 }
 
 /**
@@ -139,7 +414,6 @@ export function calculateRevenueSummary(
       cancelledOrdersCount++;
       pointsRefunded += pointsUsed;
 
-      // If order was cancelled after being collected or marked, record refund amount
       if (totalDue > 0) {
         if (method === 'CASH') {
           cashRefunded += totalDue;
@@ -167,6 +441,9 @@ export function calculateRevenueSummary(
   const cashVariance = actualCash - expectedCash;
   const varianceStatus: VarianceStatus =
     cashVariance === 0 ? 'BALANCED' : cashVariance > 0 ? 'SURPLUS' : 'SHORTAGE';
+
+  const bestSellers = calculateBestSellers(orders);
+  const hourlySales = calculateHourlySales(orders);
 
   return {
     metrics: {
@@ -205,6 +482,8 @@ export function calculateRevenueSummary(
       cashVariance,
       varianceStatus,
     },
+    bestSellers,
+    hourlySales,
     totalOrdersPlaced: orders.length,
     completedOrdersCount,
     pendingOrdersCount,
@@ -221,7 +500,6 @@ export function getDateRangeBoundaries(
   customTo?: string,
   now: Date = new Date()
 ): { from: string; to: string; label: string } {
-  // Convert now to Vietnam day parts
   const vnOffsetMs = 7 * 60 * 60 * 1000;
   const vnDate = new Date(now.getTime() + vnOffsetMs);
   const year = vnDate.getUTCFullYear();
@@ -229,7 +507,6 @@ export function getDateRangeBoundaries(
   const date = vnDate.getUTCDate();
 
   const createIsoUtcFromVnDate = (y: number, m: number, d: number, hour: number, min: number, sec: number, ms: number) => {
-    // Return UTC ISO string matching VN local time
     const localMs = Date.UTC(y, m, d, hour, min, sec, ms);
     return new Date(localMs - vnOffsetMs).toISOString();
   };
@@ -267,7 +544,6 @@ export function getDateRangeBoundaries(
           label: `${customFrom} đến ${customTo}`,
         };
       }
-      // fallback to today if invalid
       return {
         from: createIsoUtcFromVnDate(year, month, date, 0, 0, 0, 0),
         to: createIsoUtcFromVnDate(year, month, date, 23, 59, 59, 999),

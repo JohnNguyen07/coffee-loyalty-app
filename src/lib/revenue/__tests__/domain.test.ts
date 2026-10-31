@@ -2,9 +2,15 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculateRevenueSummary,
+  calculateDenominationsTotal,
+  calculateCashbookSummary,
+  calculateShiftReconciliation,
+  calculateBestSellers,
+  calculateHourlySales,
   getDateRangeBoundaries,
   normalizePaymentMethod,
   type RawOrderForRevenue,
+  type CashTransaction,
 } from '../domain';
 
 describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
@@ -21,6 +27,9 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
         total_due: 80000,
         payment_method: 'CASH',
         created_at: '2026-10-29T02:00:00Z',
+        items: [
+          { product_name: 'Cold Brew Cam Sả', size: 'M', quantity: 2, subtotal: 90000 },
+        ],
       },
       // 2. Order 2: Paid BANK_TRANSFER 60k (subtotal 70k, points 10k)
       {
@@ -33,6 +42,9 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
         total_due: 60000,
         payment_method: 'BANK_TRANSFER',
         created_at: '2026-10-29T02:30:00Z',
+        items: [
+          { product_name: 'Matcha Fuji MK4', size: 'L', quantity: 1, subtotal: 70000 },
+        ],
       },
       // 3. Order 3: Cancelled CASH order 40k (refunded cash to customer)
       {
@@ -91,11 +103,15 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(result.refunds.cancelledOrderCount, 1);
 
     // 5. Cash Reconciliation & Variance
-    // Expected cash = 500k (opening) + 80k (cash sales) - 40k (cash refund) - 5k (payout) = 535,000đ
     assert.equal(result.cashReconciliation.expectedCash, 535000);
     assert.equal(result.cashReconciliation.actualCash, 535000);
     assert.equal(result.cashReconciliation.cashVariance, 0);
     assert.equal(result.cashReconciliation.varianceStatus, 'BALANCED');
+
+    // 6. Best Sellers & Hourly Sales
+    assert.equal(result.bestSellers.length, 2);
+    assert.equal(result.bestSellers[0].productName, 'Cold Brew Cam Sả');
+    assert.equal(result.bestSellers[0].quantitySold, 2);
   });
 
   it('correctly calculates cash shortage and surplus', () => {
@@ -131,6 +147,88 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(surplus.cashReconciliation.varianceStatus, 'SURPLUS');
   });
 
+  it('calculates cash denominations total accurately', () => {
+    // 2 tờ 500k, 3 tờ 200k, 5 tờ 50k, 10 tờ 10k
+    // 2*500k = 1,000,000 + 3*200k = 600,000 + 5*50k = 250,000 + 10*10k = 100,000 = 1,950,000đ
+    const total = calculateDenominationsTotal({
+      '500k': 2,
+      '200k': 3,
+      '50k': 5,
+      '10k': 10,
+    });
+    assert.equal(total, 1950000);
+  });
+
+  it('calculates cashbook ledger running balance and categories correctly', () => {
+    const openingBalance = 500000; // 500k đầu kỳ
+    const txs: CashTransaction[] = [
+      {
+        id: '1',
+        code: 'PC-01',
+        type: 'PAYMENT',
+        category: 'RAW_MATERIAL',
+        amount: 30000, // Chi mua đá bi
+        paymentMethod: 'CASH',
+        recipientPayer: 'Chú Tư đá',
+        createdByName: 'Thu ngân',
+        createdAt: '2026-10-29T08:00:00Z',
+      },
+      {
+        id: '2',
+        code: 'PT-01',
+        type: 'RECEIPT',
+        category: 'OPENING_FLOAT',
+        amount: 200000, // Quản lý rót thêm tiền thối
+        paymentMethod: 'CASH',
+        recipientPayer: 'Quản lý',
+        createdByName: 'Thu ngân',
+        createdAt: '2026-10-29T09:00:00Z',
+      },
+      {
+        id: '3',
+        code: 'PC-02',
+        type: 'PAYMENT',
+        category: 'PACKAGING',
+        amount: 50000, // Mua thêm bao bì ly
+        paymentMethod: 'CASH',
+        recipientPayer: 'Đại lý bao bì',
+        createdByName: 'Thu ngân',
+        createdAt: '2026-10-29T10:00:00Z',
+      },
+    ];
+
+    const book = calculateCashbookSummary(openingBalance, txs);
+    // Total in = 200,000
+    assert.equal(book.totalIn, 200000);
+    // Total out = 30k + 50k = 80,000
+    assert.equal(book.totalOut, 80000);
+    // Closing balance = 500k + 200k - 80k = 620,000
+    assert.equal(book.closingBalance, 620000);
+
+    // Category breakdown
+    assert.equal(book.categoryBreakdown['RAW_MATERIAL'], 30000);
+    assert.equal(book.categoryBreakdown['PACKAGING'], 50000);
+  });
+
+  it('calculates shift reconciliation and cash handover correctly', () => {
+    const shift = calculateShiftReconciliation({
+      openingCash: 500000,  // 500k thối ban đầu
+      cashSales: 1200000,   // Bán được 1.2M
+      cashRefunds: 50000,   // Hoàn trả 50k
+      cashIn: 0,
+      cashOut: 30000,       // Chi mua đá 30k
+      actualCash: 1620000,  // Đếm được 1.62M
+      cashRetained: 500000, // Giữ lại 500k cho ca sau
+    });
+
+    // Expected = 500k + 1.2M - 50k - 30k = 1,620,000đ
+    assert.equal(shift.expectedCash, 1620000);
+    assert.equal(shift.cashVariance, 0);
+    assert.equal(shift.varianceStatus, 'BALANCED');
+    // Handed over = 1.62M - 500k = 1,120,000đ
+    assert.equal(shift.cashHandedOver, 1120000);
+  });
+
   it('normalizes payment methods correctly', () => {
     assert.equal(normalizePaymentMethod('cash'), 'CASH');
     assert.equal(normalizePaymentMethod('BANK_TRANSFER'), 'BANK_TRANSFER');
@@ -143,7 +241,7 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     const refDate = new Date('2026-10-29T10:00:00+07:00');
     const today = getDateRangeBoundaries('TODAY', undefined, undefined, refDate);
     assert.equal(today.label, 'Hôm nay');
-    assert.ok(today.from.startsWith('2026-10-28T17:00:00')); // 00:00 VN = 17:00 UTC previous day
+    assert.ok(today.from.startsWith('2026-10-28T17:00:00'));
 
     const last7 = getDateRangeBoundaries('LAST_7_DAYS', undefined, undefined, refDate);
     assert.equal(last7.label, '7 ngày qua');
@@ -152,4 +250,3 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(custom.label, '2026-10-01 đến 2026-10-15');
   });
 });
-

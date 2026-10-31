@@ -11,7 +11,7 @@
   align-items: flex-start;
   gap: 16px;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .titleRow {
@@ -98,7 +98,7 @@
 }
 
 .channelSelect:focus {
-  border-color: var(--sb-green, #00754a);
+  border-color: var(--sb-accent, #00754a);
 }
 
 .refreshBtn {
@@ -106,509 +106,532 @@
   border-radius: 8px;
   border: 1px solid var(--border, #e2e8f0);
   background: #ffffff;
-  color: #1e293b;
+  color: #334155;
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
 }
 
-.refreshBtn:hover {
-  background: #f1f5f9;
+.refreshBtn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 
-.customDateBar {
+/* ── Shift Banner Indicator ── */
+.shiftBannerBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.shiftStatusGroup {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
-  padding: 10px 14px;
-  background: #f8fafc;
-  border: 1px dashed var(--border, #cbd5e1);
-  border-radius: 8px;
   font-size: 0.8125rem;
+  color: #334155;
+}
+
+.shiftOpenBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.shiftClosedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.shiftActionBtns {
+  display: flex;
+  gap: 8px;
+}
+
+.openShiftBtn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: #00754a;
+  color: #ffffff;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.openShiftBtn:hover {
+  background: #006241;
+}
+
+.closeShiftBtn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: #d97706;
+  color: #ffffff;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.closeShiftBtn:hover {
+  background: #b45309;
+}
+
+/* ── 3 Main Navigation Tabs ── */
+.mainNavTabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 20px;
+}
+
+.navTabBtn {
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: -2px;
+}
+
+.navTabBtn:hover {
+  color: #0f172a;
+}
+
+.navTabBtnActive {
+  color: #006241 !important;
+  border-bottom-color: #006241 !important;
+}
+
+/* ── Custom Date Range Bar ── */
+.customDateBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  background: #f8fafc;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+  flex-wrap: wrap;
 }
 
 .dateInput {
-  padding: 6px 10px;
-  border: 1px solid var(--border, #e2e8f0);
+  padding: 5px 10px;
   border-radius: 6px;
+  border: 1px solid #cbd5e1;
   font-size: 0.8125rem;
-  outline: none;
 }
 
 .applyDateBtn {
-  padding: 6px 14px;
-  background: var(--sb-green, #00754a);
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: #006241;
   color: #ffffff;
   border: none;
-  border-radius: 6px;
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
 }
 
+/* ── Banners ── */
 .errorBanner {
-  padding: 12px 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
   background: #fef2f2;
   border: 1px solid #fecaca;
   color: #b91c1c;
-  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
   margin-bottom: 16px;
-  font-size: 0.875rem;
 }
 
 .successBanner {
-  padding: 12px 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   color: #15803d;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+  margin-bottom: 16px;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   PRIMARY 4 METRICS CARDS (EXACT MATCH TO USER SPEC & MOCKUP)
-   ══════════════════════════════════════════════════════════════ */
+/* ── Metric Cards Grid ── */
 .metricsGrid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-@media (max-width: 768px) {
-  .metricsGrid {
-    grid-template-columns: 1fr;
-  }
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
 }
 
 .metricCard {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  border-radius: 12px;
+  padding: 16px;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 128px;
+  gap: 14px;
+  align-items: flex-start;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .metricCard:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
 .metricIconWrap {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
-  background: #f8fafc;
-  color: #334155;
+  background: #f0fdf4;
+  color: #00754a;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.metricIconWrapRed {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.metricIconWrapBlue {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.metricIconWrapGold {
+  background: #fefce8;
+  color: #ca8a04;
 }
 
 .metricBody {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .metricLabel {
-  font-size: 0.9375rem;
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: #64748b;
-  font-weight: 500;
+  margin-bottom: 4px;
 }
 
 .metricValueRow {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px;
+  margin-bottom: 4px;
 }
 
 .metricNum {
-  font-size: 1.875rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: #0f172a;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
 }
 
 .metricUnit {
-  font-size: 1.125rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #94a3b8;
 }
 
 .metricSubInfo {
-  font-size: 0.775rem;
-  color: #94a3b8;
-  margin-top: 4px;
-  font-weight: 500;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
-.varianceSurplus {
-  color: #16a34a;
-  font-weight: 700;
-}
-
-.varianceShortage {
-  color: #dc2626;
-  font-weight: 700;
-}
-
-/* ══════════════════════════════════════════════════════════════
-   SECTION GRID: RECONCILIATION & CASH DRAWER BOX
-   ══════════════════════════════════════════════════════════════ */
-.sectionGrid {
+/* ── Analytics Visual Section (Charts & Best Sellers) ── */
+.analyticsRow {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
-@media (max-width: 1024px) {
-  .sectionGrid {
+@media (max-width: 900px) {
+  .analyticsRow {
     grid-template-columns: 1fr;
   }
 }
 
-.reconcileCard,
-.cashDrawerCard {
+.chartCard,
+.bestSellerCard {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .cardHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f1f5f9;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin-bottom: 14px;
 }
 
 .cardTitle {
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #0f172a;
   margin: 0;
 }
 
 .cardBadge {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
   background: #f1f5f9;
   color: #475569;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-weight: 600;
 }
 
-.reconcileRows {
+/* Hourly Bar Chart Visual */
+.hourlyChartWrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 160px;
+  padding-top: 20px;
+  overflow-x: auto;
+}
+
+.hourlyBarCol {
+  flex: 1;
+  min-width: 28px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
 }
 
-.reconcileRow {
+.hourlyBar {
+  width: 100%;
+  max-width: 18px;
+  background: #00754a;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease, background 0.15s ease;
+}
+
+.hourlyBar:hover {
+  background: #006241;
+}
+
+.hourlyBarLabel {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin-top: 6px;
+  white-space: nowrap;
+}
+
+.hourlyBarVal {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #00754a;
+  margin-bottom: 3px;
+}
+
+/* Best Sellers List */
+.bestSellerList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bestSellerRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  gap: 16px;
+  font-size: 0.8125rem;
 }
 
-.reconcileLabelGroup {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.stepBadge {
-  width: 26px;
-  height: 26px;
+.rankBadge {
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--sb-house, #1e3932);
+  background: #00754a;
   color: #ffffff;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 800;
-  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-right: 8px;
 }
 
-.reconcileLabelGroup strong {
+.bestSellerName {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.bestSellerCategory {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-left: 6px;
+}
+
+.bestSellerNumbers {
+  text-align: right;
+}
+
+.bestSellerQty {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bestSellerRev {
   display: block;
-  font-size: 0.9375rem;
-  color: #0f172a;
-  margin-bottom: 2px;
-}
-
-.reconcileLabelGroup p {
-  margin: 0;
   font-size: 0.75rem;
-  color: #64748b;
-  line-height: 1.4;
-}
-
-.reconcileAmount {
-  font-size: 1.125rem;
-  font-weight: 800;
-  color: #0f172a;
-  white-space: nowrap;
-}
-
-.greenAmount {
-  color: #16a34a;
-}
-
-.redAmount {
-  color: #dc2626;
-}
-
-.varianceRowHighlight {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.varianceBadgeWrap {
-  white-space: nowrap;
-}
-
-.badgeBalanced {
-  background: #dcfce7;
-  color: #15803d;
-  font-size: 0.8125rem;
+  color: #00754a;
   font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 9999px;
 }
 
-.badgeSurplus {
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 9999px;
-}
-
-.badgeShortage {
-  background: #fee2e2;
-  color: #b91c1c;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 9999px;
-}
-
-/* ── Cash Drawer Form ── */
-.drawerDesc {
-  font-size: 0.8125rem;
-  color: #64748b;
-  line-height: 1.5;
-  margin-top: 0;
-  margin-bottom: 16px;
-}
-
-.drawerForm {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.formRow {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.formRow label {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #334155;
-}
-
-.formInput {
-  padding: 9px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  background: #ffffff;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.formInput:focus {
-  border-color: var(--sb-green, #00754a);
-}
-
-.formInputBold {
-  padding: 10px 14px;
-  border: 2px solid #0f172a;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 800;
-  background: #ffffff;
-  color: #0f172a;
-  outline: none;
-}
-
-.computedValueText {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: #16a34a;
-  padding: 4px 0;
-}
-
-.computedValueTextRed {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: #dc2626;
-  padding: 4px 0;
-}
-
-.formRowHighlight {
-  background: #eff6ff;
-  border: 1px dashed #93c5fd;
-  border-radius: 8px;
-  padding: 10px 14px;
+/* ── TAB 2: CASHBOOK STYLES ── */
+.cashbookActionRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.formRowHighlight label {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: #1e40af;
+.actionBtnGroup {
+  display: flex;
+  gap: 8px;
 }
 
-.formRowHighlight strong {
-  font-size: 1.125rem;
-  color: #1e40af;
-  font-weight: 800;
-}
-
-.saveDrawerBtn {
-  margin-top: 8px;
-  padding: 12px 18px;
-  background: var(--sb-house, #1e3932);
+.createReceiptBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #15803d;
   color: #ffffff;
   border: none;
-  border-radius: 10px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: all 0.15s ease;
 }
 
-.saveDrawerBtn:hover {
-  background: #142621;
+.createReceiptBtn:hover {
+  background: #166534;
 }
 
-.saveDrawerBtn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.createPaymentBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   TRANSACTIONS TABLE
-   ══════════════════════════════════════════════════════════════ */
+.createPaymentBtn:hover {
+  background: #b91c1c;
+}
+
+/* ── Tables ── */
 .tableSection {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 24px;
 }
 
 .tableHeaderBar {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  gap: 12px;
 }
 
 .tableSectionTitle {
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #0f172a;
   margin: 0;
 }
 
 .tableSectionSub {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: #64748b;
   margin: 2px 0 0 0;
 }
 
 .tableFilters {
   display: flex;
+  gap: 8px;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .searchInput {
-  padding: 8px 14px;
+  padding: 6px 12px;
+  border-radius: 6px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
   font-size: 0.8125rem;
-  width: 240px;
   outline: none;
-}
-
-.searchInput:focus {
-  border-color: var(--sb-green, #00754a);
-}
-
-.tableCard {
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.tableEmpty {
-  padding: 40px 20px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.875rem;
 }
 
 .revenueTable {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
-  text-align: left;
 }
 
 .revenueTable th {
   background: #f8fafc;
   color: #475569;
   font-weight: 700;
-  padding: 12px 14px;
+  text-align: left;
+  padding: 10px 14px;
   border-bottom: 1px solid #e2e8f0;
   white-space: nowrap;
 }
@@ -616,21 +639,12 @@
 .revenueTable td {
   padding: 12px 14px;
   border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
   vertical-align: middle;
 }
 
-.revenueTable tr:last-child td {
-  border-bottom: none;
-}
-
 .revenueTable tr:hover td {
-  background: #f8fafc;
-}
-
-.codeCell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  background: #fbfcfe;
 }
 
 .codeMono {
@@ -640,91 +654,272 @@
 }
 
 .dateCell {
+  display: block;
   font-size: 0.72rem;
   color: #94a3b8;
 }
 
-.customerCell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.customerCell strong {
-  color: #1e293b;
-}
-
-.customerCell span {
-  font-size: 0.72rem;
-  color: #64748b;
-}
-
-.itemsSummaryText {
-  color: #334155;
-  max-width: 260px;
-  white-space: normal;
-  line-height: 1.35;
-}
-
-.discountText {
-  color: #dc2626;
-  font-weight: 600;
-}
-
-.mutedDash {
-  color: #cbd5e1;
-}
-
-.netAmountText {
-  font-size: 0.9375rem;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.paymentMethodBadge {
-  background: #f1f5f9;
-  color: #334155;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.badgeCancelled {
+.receiptBadge {
   display: inline-block;
-  background: #fee2e2;
-  color: #b91c1c;
-  padding: 3px 8px;
+  padding: 2px 8px;
   border-radius: 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.cancelReasonMini {
-  font-size: 0.68rem;
-  color: #dc2626;
-  margin-top: 2px;
-  max-width: 140px;
-}
-
-.badgePending {
-  display: inline-block;
-  background: #fef3c7;
-  color: #92400e;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.badgeConfirmed {
-  display: inline-block;
   background: #dcfce7;
   color: #15803d;
-  padding: 3px 8px;
-  border-radius: 6px;
+  font-weight: 700;
   font-size: 0.72rem;
+}
+
+.paymentBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.tableEmpty {
+  padding: 32px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+/* ── TAB 3: SHIFT STYLES ── */
+.activeShiftCard {
+  background: #ffffff;
+  border: 2px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 6px rgba(0, 117, 74, 0.08);
+}
+
+.activeShiftHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.shiftStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.shiftStatBox {
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.shiftStatBox strong {
+  display: block;
+  font-size: 1.15rem;
+  color: #0f172a;
+  margin-top: 4px;
+}
+
+.expectedBox {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.expectedBox strong {
+  color: #006241;
+}
+
+/* ── MODALS (General, Voucher, Shift Close & Denomination Counter) ── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modalCard {
+  background: #ffffff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.modalHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modalTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.modalCloseBtn {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modalBody {
+  padding: 20px;
+}
+
+.formGroup {
+  margin-bottom: 14px;
+}
+
+.formGroup label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 5px;
+}
+
+.formInput,
+.formSelect {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  outline: none;
+  background: #ffffff;
+}
+
+.formInput:focus,
+.formSelect:focus {
+  border-color: #00754a;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.submitBtn {
+  padding: 9px 20px;
+  border-radius: 8px;
+  background: #00754a;
+  color: #ffffff;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cancelModalBtn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Denominations Table Counter ── */
+.denominationTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 16px 0;
+}
+
+.denominationTable th,
+.denominationTable td {
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+}
+
+.denominationTable th {
+  background: #f8fafc;
+  color: #475569;
   font-weight: 700;
 }
 
+.denomCountInput {
+  width: 70px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+/* ── Thermal Receipt Z-Report Modal Preview ── */
+.thermalReceipt {
+  background: #ffffff;
+  border: 1px dashed #94a3b8;
+  padding: 16px;
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #000000;
+  max-width: 320px;
+  margin: 0 auto;
+  line-height: 1.4;
+}
+
+.thermalReceiptHeader {
+  text-align: center;
+  border-bottom: 1px dashed #000000;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.thermalReceiptHeader h4 {
+  margin: 0 0 2px 0;
+  font-size: 1rem;
+}
+
+.thermalRow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.thermalDivider {
+  border-top: 1px dashed #000000;
+  margin: 6px 0;
+}
+
+.printBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: #006241;
+  color: #ffffff;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 14px;
+}
