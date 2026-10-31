@@ -14,13 +14,58 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { action, payment_method } = body; // 'confirm' | 'cancel' | 'mark_paid'
+  const { action, payment_method, shipping_fee } = body; // 'confirm' | 'cancel' | 'mark_paid' | 'update_shipping'
 
-  if (!['confirm', 'cancel', 'mark_paid'].includes(action)) {
+  if (!['confirm', 'cancel', 'mark_paid', 'update_shipping'].includes(action)) {
     return NextResponse.json({ error: 'Hành động không hợp lệ' }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
+
+  if (action === 'update_shipping') {
+    const fee = Math.max(0, Number(shipping_fee) || 0);
+
+    const { data: currentOrder } = await adminClient
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!currentOrder) {
+      return NextResponse.json({ error: 'Không tìm thấy đơn hàng' }, { status: 404 });
+    }
+
+    const subtotal = Number(currentOrder.subtotal) || 0;
+    const pointsUsed = Number(currentOrder.points_used) || 0;
+    const newTotalDue = Math.max(0, subtotal + fee - pointsUsed);
+
+    const existingNote = String(currentOrder.note || '');
+    let updatedNote = existingNote;
+    const shipTag = `[Phí ship: ${fee.toLocaleString('vi-VN')}đ]`;
+
+    if (updatedNote.includes('[Phí ship:')) {
+      updatedNote = updatedNote.replace(/\[Phí ship:\s*[^\]]+\]/gi, shipTag);
+    } else {
+      updatedNote = `${updatedNote} | ${shipTag}`.trim();
+    }
+
+    const { data: updatedOrder, error: updateErr } = await adminClient
+      .from('orders')
+      .update({
+        total_due: newTotalDue,
+        note: updatedNote,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      return NextResponse.json({ error: 'Lỗi cập nhật phí ship' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, order: updatedOrder });
+  }
 
   if (action === 'mark_paid') {
     const method = payment_method === 'BANK_TRANSFER' ? 'BANK_TRANSFER' : 'CASH';

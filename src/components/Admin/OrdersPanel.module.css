@@ -7,22 +7,22 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-4, 16px);
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: var(--space-3, 12px);
 }
 
 .title {
   font-family: var(--font-serif);
-  font-size: var(--text-2xl);
+  font-size: var(--text-2xl, 1.5rem);
   font-weight: 700;
-  color: var(--ink-deep);
+  color: var(--ink-deep, #0f172a);
   margin: 0 0 4px 0;
 }
 
 .subtitle {
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--ink-muted, #64748b);
   margin: 0;
 }
 
@@ -31,7 +31,7 @@
   border-radius: 8px;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--ink-deep);
+  color: var(--ink-deep, #0f172a);
   background: #ffffff;
   border: 1px solid #e2e8f0;
   cursor: pointer;
@@ -43,11 +43,42 @@
   border-color: #cbd5e1;
 }
 
-/* ── Filter Tabs ── */
+/* ── Channel Filters ── */
+.channelFilters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.channelBtn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.channelBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.channelBtnActive {
+  background: #006241;
+  border-color: #006241;
+  color: #ffffff;
+}
+
+/* ── Status Filter Tabs ── */
 .filters {
   display: flex;
   gap: 8px;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-4, 16px);
   overflow-x: auto;
   padding-bottom: 4px;
 }
@@ -58,9 +89,9 @@
   gap: 8px;
   padding: 8px 14px;
   border-radius: 999px;
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
-  color: var(--ink-muted);
+  color: var(--ink-muted, #64748b);
   background: #ffffff;
   border: 1.5px solid #e2e8f0;
   cursor: pointer;
@@ -71,12 +102,12 @@
 
 .filterBtn:hover {
   border-color: #94a3b8;
-  color: var(--ink-deep);
+  color: var(--ink-deep, #0f172a);
 }
 
 .filterBtnActive {
-  background: var(--ink-deep);
-  border-color: var(--ink-deep);
+  background: var(--ink-deep, #0f172a);
+  border-color: var(--ink-deep, #0f172a);
   color: #ffffff;
 }
 
@@ -135,7 +166,7 @@
 .orderCode {
   font-size: 1.05rem;
   font-weight: 800;
-  color: var(--ink-deep);
+  color: var(--ink-deep, #0f172a);
   font-family: monospace;
   letter-spacing: 0.5px;
 }
@@ -150,6 +181,12 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.orderStatusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ── Status & Info Badges ── */
@@ -181,6 +218,18 @@
   border: 1px solid #fecaca;
 }
 
+.badgePos {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #d8b4fe;
+}
+
+.badgeWeb {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
 .badgePickup {
   background: #f0fdf4;
   color: #166534;
@@ -191,6 +240,12 @@
   background: #fffbeb;
   color: #b45309;
   border: 1px solid #fde68a;
+}
+
+.badgeDineIn {
+  background: #fdf4ff;
+  color: #a21caf;
+  border: 1px solid #f0abfc;
 }
 
 .badgePayQr {
@@ -223,22 +278,119 @@
   border: 1px solid #fed7aa;
 }
 
-/* ── Customer Info ── */
-.customer {
+/* ── Customer Row & Actions ── */
+.customerRow {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 16px;
   flex-wrap: wrap;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.customer span {
+.customerInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.custName {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.custPhone {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #2563eb;
+}
+
+.cashierBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+/* Quick Contact Actions */
+.contactActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.contactBtn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.zaloBtn {
+  background: #0068ff;
+  color: #ffffff;
+}
+
+.zaloBtn:hover {
+  background: #0056d6;
+}
+
+.smsBtn {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.smsBtn:hover {
+  background: #bae6fd;
+}
+
+.callBtn {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.callBtn:hover {
+  background: #bbf7d0;
+}
+
+/* Address & Cancellation Box */
+.addressBox {
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-left: 3px solid #d97706;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.825rem;
+  color: #78350f;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cancelBox {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  border-left: 3px solid #dc2626;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.825rem;
+  color: #991b1b;
+  margin-bottom: 12px;
 }
 
 /* ── Items List ── */
@@ -304,6 +456,72 @@
   font-weight: 600;
 }
 
+/* Shipping Fee Row & Edit */
+.shippingRow {
+  align-items: center;
+  padding: 4px 0;
+}
+
+.shippingDisplay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editShipBtn {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editShipBtn:hover {
+  background: #dbeafe;
+}
+
+.shippingInputGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shippingInput {
+  width: 110px;
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid #006241;
+  border-radius: 6px;
+  outline: none;
+}
+
+.saveShipBtn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #006241;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cancelShipBtn {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 .total {
   font-size: 1.05rem;
   font-weight: 800;
@@ -313,8 +531,10 @@
   border-top: 1px solid #f1f5f9;
 }
 
-.total span:last-child {
-  color: var(--sb-accent, #006241);
+.totalValue {
+  color: #006241;
+  font-size: 1.15rem;
+  font-weight: 800;
 }
 
 /* ── Order Actions Bar ── */

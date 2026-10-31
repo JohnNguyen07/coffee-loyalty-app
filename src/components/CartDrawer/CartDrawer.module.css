@@ -571,30 +571,131 @@
   max-width: 320px;
 }
 
-.clipTipBox {
+.orderCodeBadge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.noticeDeliveryBox,
+.noticePickupBox {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
-  background: var(--sb-gold-wash);
-  border: 1px solid var(--sb-gold);
+  gap: 12px;
+  padding: 14px 16px;
   border-radius: 12px;
   margin-bottom: var(--space-4);
   text-align: left;
-  max-width: 340px;
+  width: 100%;
+  max-width: 360px;
 }
 
-.clipTipIcon {
-  color: var(--sb-gold);
+.noticeDeliveryBox {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+}
+
+.noticePickupBox {
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+}
+
+.noticeIcon {
+  font-size: 1.4rem;
+  line-height: 1;
   flex-shrink: 0;
   margin-top: 2px;
 }
 
-.clipTipText {
-  font-size: 0.8125rem;
+.noticeBoxText strong {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 700;
   color: var(--sb-house);
-  line-height: 1.45;
+  margin-bottom: 4px;
 }
+
+.noticeBoxText p {
+  font-size: 0.8125rem;
+  color: var(--ink-deep);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.quickContactRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 8px;
+}
+
+.contactZaloBtn,
+.contactCallBtn,
+.contactFbBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all var(--duration-fast);
+}
+
+.contactZaloBtn {
+  background: #0068ff;
+  color: #ffffff;
+}
+
+.contactZaloBtn:hover {
+  background: #0052cc;
+}
+
+.contactCallBtn {
+  background: #059669;
+  color: #ffffff;
+}
+
+.contactCallBtn:hover {
+  background: #047857;
+}
+
+.contactFbBtn {
+  grid-column: span 2;
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.contactFbBtn:hover {
+  background: #f1f5f9;
+}
+
+.shipNoticeFooter {
+  font-size: 0.75rem;
+  color: #065f46;
+  background: #ecfdf5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed #6ee7b7;
+  text-align: center;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.clipTipBox { display: none; }
+.clipTipIcon { display: none; }
+.clipTipText { display: none; }
 
 .successActions {
   display: flex;

@@ -25,6 +25,9 @@ export type PaymentPreference = 'FLEXIBLE' | 'QR' | 'CASH';
 interface OrderSuccessInfo {
   code: string;
   text: string;
+  customerName?: string;
+  customerPhone?: string;
+  fulfillmentType?: FulfillmentType;
   messengerUrl: string;
   webMessengerUrl: string;
   pageUrl: string;
@@ -221,13 +224,11 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       .filter(Boolean)
       .join('\n');
 
-    const copyPromise = copyToClipboard(fullText);
     const messengerUrl = `https://m.me/${FANPAGE_ID}?ref=${orderCode}`;
     const webMessengerUrl = `https://www.facebook.com/messages/t/${FANPAGE_ID}`;
-    window.open(messengerUrl, '_blank');
 
-    const copyOk = await copyPromise;
-    setCopied(copyOk);
+    // Silently copy order details for convenience if customer wishes to paste
+    void copyToClipboard(fullText);
 
     if (pointsToUse > 0) {
       spendPoints(pointsToUse, orderCode);
@@ -272,6 +273,9 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     setOrderSuccess({
       code: orderCode,
       text: fullText,
+      customerName: cleanName,
+      customerPhone: cleanPhone,
+      fulfillmentType,
       messengerUrl,
       webMessengerUrl,
       pageUrl: FACEBOOK_PAGE_URL,
@@ -337,17 +341,34 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             <div className={styles.successBadgeWrap}>
               <CheckCircleIcon size={36} />
             </div>
-            <h3 className={styles.successTitle}>Đã tạo đơn #{orderSuccess.code}</h3>
+            <h3 className={styles.successTitle}>Đặt Đơn Thành Công!</h3>
+            <span className={styles.orderCodeBadge}>Mã đơn hàng: #{orderSuccess.code}</span>
             <p className={styles.successDesc}>
-              Đang chuyển sang Facebook Messenger để gửi đơn đến quầy pha chế <strong>Ủ LAB</strong>.
+              Hệ thống Ủ LAB đã tiếp nhận đơn của bạn và gửi ngay tới quầy pha chế.
             </p>
 
-            <div className={styles.clipTipBox}>
-              <StarSolidIcon size={15} className={styles.clipTipIcon} />
-              <p className={styles.clipTipText}>
-                Nội dung đơn đã được <strong>sao chép tự động</strong>. Nếu hộp thoại Messenger chưa tự điền, bạn chỉ cần nhấn <strong>Dán (Paste / Ctrl+V)</strong> và gửi!
-              </p>
-            </div>
+            {/* Delivery vs Pickup Notice */}
+            {orderSuccess.fulfillmentType === 'DELIVERY' ? (
+              <div className={styles.noticeDeliveryBox}>
+                <span className={styles.noticeIcon}>🛵</span>
+                <div className={styles.noticeBoxText}>
+                  <strong>Đơn Hàng Giao Tận Nơi</strong>
+                  <p>
+                    Quán sẽ liên hệ SĐT <strong>{orderSuccess.customerPhone}</strong> trong ít phút để kiểm tra khoảng cách và báo phí ship chính xác trước khi giao hàng.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className={styles.noticePickupBox}>
+                <span className={styles.noticeIcon}>🏪</span>
+                <div className={styles.noticeBoxText}>
+                  <strong>Lấy Trực Tiếp Tại Quầy</strong>
+                  <p>
+                    Đơn hàng đang được chuẩn bị tại quầy Ủ LAB (Hồ Con Rùa). Bạn có thể ghé quầy nhận đồ uống theo thời gian đã hẹn!
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Dynamic VietQR Payment Card if user wants to scan QR or flexible */}
             {orderSuccess.vietQrUrl && orderSuccess.totalDue > 0 && (
@@ -394,50 +415,51 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                     <button
                       type="button"
                       className={styles.miniCopyBtn}
-                      onClick={() => handleCopyField(`ULAB ${orderSuccess.code}`, 'memo')}
+                      onClick={() => handleCopyField('ULAB ' + orderSuccess.code, 'memo')}
                     >
                       {copiedField === 'memo' ? '✓ Đã chép' : 'Sao chép'}
                     </button>
                   </div>
                 </div>
                 <p className={styles.vietQrNote}>
-                  💡 <em>Quý khách có thể quét mã chuyển khoản ngay hoặc ghé quầy quét trực tiếp khi nhận đồ uống.</em>
+                  💡 <em>Quý khách có thể quét mã chuyển khoản ngay hoặc thanh toán trực tiếp khi nhận đồ uống.</em>
                 </p>
               </div>
             )}
 
+            {/* Direct Contact Channels */}
+            <div className={styles.quickContactRow}>
+              <a
+                href="https://zalo.me/0947038325"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.contactZaloBtn}
+              >
+                💬 Chat Zalo Quán
+              </a>
+              <a
+                href="tel:0947038325"
+                className={styles.contactCallBtn}
+              >
+                📞 Hotline: 0947.038.325
+              </a>
+              <a
+                href="https://m.me/ulabbrew"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.contactFbBtn}
+              >
+                💬 Nhắn tin Facebook Messenger
+              </a>
+            </div>
+
             <div className={styles.successActions}>
-              <a
-                href={orderSuccess.messengerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.openMessengerBtn}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.513 3.738 7.202V22l3.376-1.853c.913.253 1.884.39 2.886.39 5.523 0 10-4.145 10-9.279C22 6.145 17.523 2 12 2zm1.066 12.477l-2.545-2.715-4.968 2.715 5.464-5.803 2.607 2.715 4.906-2.715-5.464 5.803z" />
-                </svg>
-                <span>Mở Messenger gửi Ủ LAB</span>
-              </a>
-
-              <a
-                href={orderSuccess.webMessengerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.openWebBtn}
-              >
-                <span>Mở hộp thư Facebook Web</span>
-              </a>
-
-              <button type="button" className={styles.copyBtn} onClick={handleCopyAgain}>
-                {copied ? '✓ Đã sao chép nội dung đơn!' : 'Sao chép lại nội dung đơn'}
-              </button>
-
               <button
                 type="button"
                 className={styles.previewToggleBtn}
                 onClick={() => setShowPreview(!showPreview)}
               >
-                {showPreview ? 'Ẩn xem trước tin nhắn ▲' : 'Xem chi tiết nội dung đơn ▼'}
+                {showPreview ? 'Ẩn tóm tắt đơn ▲' : 'Xem tóm tắt đơn đã đặt ▼'}
               </button>
 
               {showPreview && (
@@ -445,7 +467,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               )}
 
               <button type="button" className={styles.doneBtn} onClick={onClose}>
-                Đóng &amp; Tiếp tục chọn món
+                Hoàn tất &amp; Tiếp tục xem thực đơn
               </button>
             </div>
           </div>
@@ -771,16 +793,19 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               </div>
 
               <div className={styles.actions}>
+                {fulfillmentType === 'DELIVERY' && (
+                  <div className={styles.shipNoticeFooter}>
+                    🛵 Phí ship sẽ được quán kiểm tra khoảng cách và báo lại qua SĐT / Zalo khi nhận đơn.
+                  </div>
+                )}
                 <button
                   type="button"
                   className={styles.sendBtn}
                   onClick={handleSendOrder}
                   id="cart-send-order-btn"
                 >
-                  <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.513 3.738 7.202V22l3.376-1.853c.913.253 1.884.39 2.886.39 5.523 0 10-4.145 10-9.279C22 6.145 17.523 2 12 2zm1.066 12.477l-2.545-2.715-4.968 2.715 5.464-5.803 2.607 2.715 4.906-2.715-5.464 5.803z" />
-                  </svg>
-                  <span>Đặt món qua Messenger</span>
+                  <CheckCircleIcon size={19} />
+                  <span>Xác Nhận Đặt Đơn</span>
                 </button>
                 <button type="button" className={styles.clearBtn} onClick={clearCart}>
                   Xóa toàn bộ giỏ hàng
