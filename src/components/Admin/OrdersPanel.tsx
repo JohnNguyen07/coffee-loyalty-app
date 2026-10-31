@@ -1,16 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import styles from './OrdersPanel.module.css';
 import { formatVND } from '@/data/menu';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { extractPosOrderMetadata } from '@/lib/pos/domain';
+import { buildBaristaTicketHtml, buildCustomerReceiptHtml } from '@/lib/pos/print-templates';
+import type { PosOrderRecord } from '@/lib/pos/repository';
 
 interface OrderItem {
   item_name: string;
   size_label: string;
   unit_price: number;
   quantity: number;
+  options_summary?: string;
 }
 
 export interface DemoOrder {
@@ -20,6 +23,8 @@ export interface DemoOrder {
   customer_phone: string;
   items: OrderItem[];
   subtotal: number;
+  discount_amount?: number;
+  discount_percent?: number;
   points_used: number;
   shipping_fee: number;
   total_due: number;
@@ -35,9 +40,9 @@ export interface DemoOrder {
   cancel_reason?: string | null;
   cancelled_by?: string | null;
   created_at: string;
+  raw_created_at?: string;
 }
 
-// Retain only #CF-0001 as required by user
 const defaultSingleOrder: DemoOrder[] = [
   {
     id: '00000000-0000-0000-0000-000000000001',
@@ -63,25 +68,40 @@ const defaultSingleOrder: DemoOrder[] = [
     cancel_reason: null,
     cancelled_by: null,
     created_at: '00:12 - 29/10',
+    raw_created_at: '2026-10-29T00:12:00+07:00',
   },
+];
+
+const QUICK_CANCEL_REASONS = [
+  'Khách báo hủy đơn',
+  'Bấm nhầm món / Tạo lại đơn mới',
+  'Hết nguyên liệu phục vụ',
+  'Khách đổi ý / Không liên lạc được',
 ];
 
 export default function OrdersPanel() {
   const [orders, setOrders] = useState<DemoOrder[]>(defaultSingleOrder);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [channelFilter, setChannelFilter] = useState<'ALL' | 'WEB' | 'POS'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [dateFilter, setDateFilter] = useState<string>(''); // YYYY-MM-DD
   const [loading, setLoading] = useState<boolean>(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [actionBanner, setActionBanner] = useState<{ text: string; isError?: boolean } | null>(null);
 
   // Inline Shipping Fee Editing State
   const [editingShippingId, setEditingShippingId] = useState<string | null>(null);
   const [shippingInputVal, setShippingInputVal] = useState<string>('');
 
+  // Cancel Order Modal State
+  const [cancellingOrder, setCancellingOrder] = useState<DemoOrder | null>(null);
+  const [cancelReasonInput, setCancelReasonInput] = useState<string>('');
+
   const fetchOrders = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/orders?limit=50', { cache: 'no-store' });
+      const res = await fetch('/api/orders?limit=100', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.orders) && data.orders.length > 0) {
@@ -96,7 +116,6 @@ export default function OrdersPanel() {
             const cleanRawNote = rawNote.replace(/\[\[ULAB_POS_META:[\s\S]*?\]\]/g, '').trim();
 
             let cleanNote = meta.userNote || '';
-            // If userNote also accidentally contains the meta tag or raw string, clean it
             cleanNote = cleanNote.replace(/\[\[ULAB_POS_META:[\s\S]*?\]\]/g, '').trim();
 
             let address: string | null = null;
@@ -104,7 +123,6 @@ export default function OrdersPanel() {
             let parsedPhone = '';
             let shippingFee = 0;
 
-            // Extract shipping fee if recorded in note
             const shipMatch = cleanRawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
             if (shipMatch) {
               shippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
@@ -114,7 +132,6 @@ export default function OrdersPanel() {
               parsedName = meta.customerName || 'Khách lẻ tại quầy';
               parsedPhone = meta.customerPhone || '';
             } else {
-              // Web order: Parse KH, Phone, Address, Note
               parsedName = String(userObj.full_name || 'Khách đặt web');
               parsedPhone = String(userObj.phone || userObj.email || '—');
 
@@ -135,7 +152,6 @@ export default function OrdersPanel() {
               } else if (!cleanNote && !cleanRawNote.startsWith('[')) {
                 cleanNote = cleanRawNote;
               } else if (cleanNote && cleanNote.includes('|')) {
-                // If cleanNote was userNote containing the entire piped string
                 const innerMatch = cleanNote.match(/Ghi chú:\s*([^|]+)/);
                 if (innerMatch) {
                   cleanNote = innerMatch[1].trim();
@@ -143,7 +159,6 @@ export default function OrdersPanel() {
               }
             }
 
-            // Determine order type (DELIVERY vs TAKEAWAY vs DINE_IN)
             let orderType: 'DELIVERY' | 'TAKEAWAY' | 'DINE_IN' = meta.orderType || 'TAKEAWAY';
             if (!isPos) {
               if (rawNote.includes('Giao tới nhà') || rawNote.includes('DELIVERY')) {
@@ -162,13 +177,21 @@ export default function OrdersPanel() {
               channel: isPos ? 'POS' : 'WEB',
               order_type: orderType,
               customer_address: address,
-              items: itemsArr.map((it: Record<string, unknown>) => ({
-                item_name: String(it.product_name || it.item_name || it.name || 'Món nước'),
-                size_label: String(it.size || it.size_label || 'M'),
-                unit_price: Number(it.unit_price) || 0,
-                quantity: Number(it.quantity) || 1,
-              })),
+              items: itemsArr.map((it: Record<string, unknown>) => {
+                const rawItemName = String(it.product_name || it.item_name || it.name || 'Món nước');
+                const optMatch = rawItemName.match(/\[(.*?)\]$/);
+                const cleanItemName = rawItemName.replace(/\s*\[.*?\]$/, '').trim();
+                return {
+                  item_name: cleanItemName,
+                  size_label: String(it.size || it.size_label || 'M'),
+                  unit_price: Number(it.unit_price) || 0,
+                  quantity: Number(it.quantity) || 1,
+                  options_summary: optMatch ? optMatch[1] : undefined,
+                };
+              }),
               subtotal: Number(o.subtotal) || 0,
+              discount_amount: meta.discountAmount || 0,
+              discount_percent: meta.discountPercent || 0,
               points_used: Number(o.points_used) || 0,
               shipping_fee: shippingFee,
               total_due: Number(o.total_due) || 0,
@@ -179,13 +202,14 @@ export default function OrdersPanel() {
               clean_note: cleanNote || null,
               cancel_reason: meta.cancelReason || null,
               cancelled_by: meta.cancelledBy || null,
+              raw_created_at: o.created_at ? String(o.created_at) : undefined,
               created_at: o.created_at
                 ? new Date(String(o.created_at)).toLocaleString('vi-VN', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  day: '2-digit',
-                  month: '2-digit',
-                })
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    day: '2-digit',
+                    month: '2-digit',
+                  })
                 : 'Hôm nay',
             };
           });
@@ -201,51 +225,169 @@ export default function OrdersPanel() {
 
   useEffect(() => {
     fetchOrders();
-    // Auto-refresh every 25 seconds for incoming web orders
     const timer = setInterval(() => {
       fetchOrders();
     }, 25000);
-    return () => clearInterval(timer);
+    const handleLocationChanged = () => fetchOrders();
+    window.addEventListener('ulab:location-changed', handleLocationChanged);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('ulab:location-changed', handleLocationChanged);
+    };
   }, [fetchOrders]);
 
-  // Filter orders by status and channel
-  const filteredOrders = orders.filter((o) => {
-    const matchStatus = statusFilter === 'ALL' ? true : o.status === statusFilter;
-    const matchChannel = channelFilter === 'ALL' ? true : o.channel === channelFilter;
-    return matchStatus && matchChannel;
-  });
+  // Filter orders by status, channel, search query, and date
+  const filteredOrders = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return orders.filter((o) => {
+      const matchStatus = statusFilter === 'ALL' ? true : o.status === statusFilter;
+      const matchChannel = channelFilter === 'ALL' ? true : o.channel === channelFilter;
 
-  const handleAction = async (orderId: string, action: 'confirm' | 'cancel' | 'mark_paid', paymentMethod?: 'BANK_TRANSFER' | 'CASH') => {
+      let matchDate = true;
+      if (dateFilter && o.raw_created_at) {
+        const vnDate = new Date(new Date(o.raw_created_at).getTime() + 7 * 3600 * 1000)
+          .toISOString()
+          .slice(0, 10);
+        matchDate = vnDate === dateFilter;
+      }
+
+      let matchSearch = true;
+      if (q) {
+        const inCode = o.order_code.toLowerCase().includes(q);
+        const inName = o.customer_name.toLowerCase().includes(q);
+        const inPhone = (o.customer_phone || '').toLowerCase().includes(q);
+        const inItems = o.items.some((it) => it.item_name.toLowerCase().includes(q));
+        matchSearch = inCode || inName || inPhone || inItems;
+      }
+
+      return matchStatus && matchChannel && matchDate && matchSearch;
+    });
+  }, [orders, statusFilter, channelFilter, searchQuery, dateFilter]);
+
+  const handleAction = async (
+    orderId: string,
+    action: 'confirm' | 'cancel' | 'mark_paid',
+    paymentMethod?: 'BANK_TRANSFER' | 'CASH',
+    cancelReason?: string
+  ) => {
     setProcessingId(orderId);
+    setActionBanner(null);
     try {
       if (isSupabaseConfigured()) {
-        await fetch(`/api/orders/${orderId}`, {
+        const res = await fetch(`/api/orders/${orderId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, payment_method: paymentMethod }),
+          body: JSON.stringify({
+            action,
+            payment_method: paymentMethod,
+            cancel_reason: cancelReason,
+          }),
         });
+        const data = await res.json();
+        if (!res.ok) {
+          setActionBanner({ text: data.error || 'Không thể thực hiện thao tác.', isError: true });
+          setProcessingId(null);
+          return;
+        }
       }
-    } catch {
-      // Fallback local state update
-    } finally {
+
       setOrders((prev) =>
         prev.map((o) => {
           if (o.id !== orderId) return o;
           if (action === 'cancel') {
-            return { ...o, status: 'CANCELLED', payment_status: 'REFUNDED' };
+            return {
+              ...o,
+              status: 'CANCELLED',
+              payment_status: 'REFUNDED',
+              cancel_reason: cancelReason || 'Khách báo hủy đơn',
+            };
           }
           if (action === 'mark_paid') {
             return {
               ...o,
               status: 'CONFIRMED',
-              payment_method: paymentMethod,
+              payment_method: paymentMethod || 'CASH',
               payment_status: 'PAID',
             };
           }
           return { ...o, status: 'CONFIRMED' };
         })
       );
+      setActionBanner({
+        text:
+          action === 'cancel'
+            ? 'Đã hủy đơn hàng và hoàn điểm (nếu có) thành công.'
+            : action === 'mark_paid'
+              ? 'Đã xác nhận đơn và ghi nhận thu tiền vào Quỹ Tiền.'
+              : 'Đã xác nhận đơn hàng.',
+      });
+    } catch {
+      setActionBanner({ text: 'Lỗi kết nối máy chủ.', isError: true });
+    } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleConfirmCancelModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancellingOrder) return;
+    const cleanReason = cancelReasonInput.trim();
+    if (cleanReason.length < 3) {
+      alert('Vui lòng nhập lý do hủy đơn (tối thiểu 3 ký tự).');
+      return;
+    }
+    const targetId = cancellingOrder.id;
+    setCancellingOrder(null);
+    setCancelReasonInput('');
+    await handleAction(targetId, 'cancel', undefined, cleanReason);
+  };
+
+  // Convert DemoOrder to PosOrderRecord for direct thermal printing
+  const toPosOrderRecord = (order: DemoOrder): PosOrderRecord => ({
+    id: order.id,
+    orderCode: order.order_code,
+    status: order.status,
+    channel: order.channel,
+    orderType: order.order_type,
+    paymentMethod: 'CASH',
+    paymentStatus: order.status === 'CANCELLED' ? 'REFUNDED' : isOrderPaid(order) ? 'PAID' : 'UNPAID',
+    subtotal: order.subtotal,
+    discountAmount: order.discount_amount || 0,
+    discountPercent: order.discount_percent || 0,
+    pointsUsed: order.points_used,
+    totalDue: order.total_due,
+    amountReceived: order.total_due,
+    changeDue: 0,
+    customerName: order.customer_name,
+    customerPhone: order.customer_phone !== '—' ? order.customer_phone : '',
+    cashierName: order.cashier_name || 'Thu ngân Ủ LAB',
+    note: order.clean_note || '',
+    createdAt: order.raw_created_at || new Date().toISOString(),
+    items: order.items.map((it) => ({
+      productName: it.item_name,
+      sizeLabel: it.size_label,
+      quantity: it.quantity,
+      unitPrice: it.unit_price,
+      subtotal: it.unit_price * it.quantity,
+      optionsSummary: it.options_summary || (order.clean_note ? order.clean_note : '100% đường · 100% đá'),
+    })),
+  });
+
+  const handlePrintBaristaTicket = (order: DemoOrder) => {
+    const html = buildBaristaTicketHtml(toPosOrderRecord(order));
+    const win = window.open('', '_blank', 'width=420,height=640');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    }
+  };
+
+  const handlePrintReceipt = (order: DemoOrder) => {
+    const html = buildCustomerReceiptHtml(toPosOrderRecord(order));
+    const win = window.open('', '_blank', 'width=420,height=680');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
     }
   };
 
@@ -303,7 +445,7 @@ export default function OrdersPanel() {
         <div>
           <h1 className={styles.title}>Quản Lý Đơn Hàng</h1>
           <p className={styles.subtitle}>
-            Tiếp nhận đơn đặt trước từ website, quản lý đơn quầy POS, cập nhật phí ship và báo giá khách linh hoạt.
+            Tiếp nhận đơn đặt trước từ website, quản lý đơn quầy POS, in phiếu pha chế / biên nhận và đối soát tức thì.
           </p>
         </div>
         <button
@@ -316,10 +458,69 @@ export default function OrdersPanel() {
         </button>
       </div>
 
+      {actionBanner && (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: '10px 14px',
+            borderRadius: 10,
+            background: actionBanner.isError ? '#fef2f2' : '#f0fdf4',
+            border: `1px solid ${actionBanner.isError ? '#fecaca' : '#bbf7d0'}`,
+            color: actionBanner.isError ? '#b91c1c' : '#15803d',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>{actionBanner.text}</span>
+          <button
+            type="button"
+            onClick={() => setActionBanner(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Search & Date Filter Bar */}
+      <div className={styles.searchDateToolbar}>
+        <div className={styles.searchInputWrap}>
+          <input
+            type="search"
+            placeholder="🔍 Tìm theo Mã đơn (#POS-..., #CF-...), Tên khách, SĐT hoặc Tên món..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.searchInput}
+          />
+        </div>
+        <input
+          type="date"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          className={styles.dateInput}
+          title="Lọc đơn hàng theo ngày"
+        />
+        {(searchQuery || dateFilter) && (
+          <button
+            type="button"
+            className={styles.clearFilterBtn}
+            onClick={() => {
+              setSearchQuery('');
+              setDateFilter('');
+            }}
+          >
+            ✕ Xóa lọc
+          </button>
+        )}
+      </div>
+
       {/* Channel Filters */}
       <div className={styles.channelFilters}>
         {[
-          { key: 'ALL', label: 'Tất cả nguồn' },
+          { key: 'ALL', label: 'Tất cả nguồn', count: orders.length },
           { key: 'WEB', label: '🌐 Đơn Website', count: orders.filter((o) => o.channel === 'WEB').length },
           { key: 'POS', label: '🏪 Đơn POS Quầy', count: orders.filter((o) => o.channel === 'POS').length },
         ].map((c) => (
@@ -376,7 +577,6 @@ export default function OrdersPanel() {
           const isEditingShip = editingShippingId === order.id;
           const cleanPhone = order.customer_phone ? order.customer_phone.replace(/\D/g, '') : '';
 
-          // Fast quote SMS text
           const smsText = `Ủ LAB xin chào bạn ${order.customer_name}! Đơn hàng #${order.order_code}: Tiền nước ${formatVND(order.subtotal)}${order.points_used > 0 ? ` - Điểm ví ${formatVND(order.points_used)}` : ''} + Phí ship ${formatVND(order.shipping_fee || 0)} = Tổng thanh toán: ${formatVND(order.total_due)}. Quán chuẩn bị và giao ngay cho bạn nhé!`;
 
           return (
@@ -387,7 +587,6 @@ export default function OrdersPanel() {
                   <span className={styles.orderCode}>#{order.order_code}</span>
                   <span className={styles.orderTime}>{order.created_at}</span>
                   <div className={styles.badgesGroup}>
-                    {/* Channel Badge */}
                     {order.channel === 'POS' ? (
                       <span className={`${styles.badge} ${styles.badgePos}`}>
                         🏪 Bán tại quầy (POS)
@@ -398,7 +597,6 @@ export default function OrdersPanel() {
                       </span>
                     )}
 
-                    {/* Order Type Badge */}
                     {isDelivery && (
                       <span className={`${styles.badge} ${styles.badgeDelivery}`}>
                         🛵 COD giao tới nhà
@@ -415,12 +613,10 @@ export default function OrdersPanel() {
                       </span>
                     )}
 
-                    {/* Unified Money Badge */}
                     <span className={`${styles.badge} ${styles.badgePayCash}`}>
                       💵 Tiền
                     </span>
 
-                    {/* Payment State Badge */}
                     {order.status === 'CANCELLED' ? (
                       <span className={`${styles.badge} ${styles.cancelled}`}>
                         ✕ Đã hủy &amp; hoàn
@@ -437,7 +633,6 @@ export default function OrdersPanel() {
                   </div>
                 </div>
 
-                {/* Status Indicator on Right */}
                 <div className={styles.orderStatusIndicator}>
                   {order.status === 'PENDING' && (
                     <span className={`${styles.badge} ${styles.pending}`}>Chờ xác nhận</span>
@@ -463,7 +658,6 @@ export default function OrdersPanel() {
                   )}
                 </div>
 
-                {/* Quick Contact Buttons for Web Orders */}
                 {cleanPhone && cleanPhone.length >= 9 && (
                   <div className={styles.contactActions}>
                     <a
@@ -505,15 +699,22 @@ export default function OrdersPanel() {
               <div className={styles.items}>
                 {order.items.map((item, i) => (
                   <div key={i} className={styles.item}>
-                    <span className={styles.itemNameQty}>
-                      {item.item_name} ({item.size_label}) × {item.quantity}
-                    </span>
+                    <div>
+                      <span className={styles.itemNameQty}>
+                        {item.item_name} ({item.size_label}) × {item.quantity}
+                      </span>
+                      {item.options_summary && (
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          ↳ {item.options_summary}
+                        </div>
+                      )}
+                    </div>
                     <span className={styles.itemPrice}>{formatVND(item.unit_price * item.quantity)}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Clean Human Note (NO JSON) */}
+              {/* Clean Human Note */}
               {order.clean_note && (
                 <div className={styles.note}>
                   📝 Ghi chú: <strong>{order.clean_note}</strong>
@@ -534,6 +735,12 @@ export default function OrdersPanel() {
                   <span>Tạm tính tiền đồ uống</span>
                   <span>{formatVND(order.subtotal)}</span>
                 </div>
+                {(order.discount_amount || 0) > 0 && (
+                  <div className={`${styles.priceRow} ${styles.discount}`}>
+                    <span>Giảm giá trực tiếp</span>
+                    <span>-{formatVND(order.discount_amount || 0)}</span>
+                  </div>
+                )}
                 {order.points_used > 0 && (
                   <div className={`${styles.priceRow} ${styles.discount}`}>
                     <span>Trừ điểm ví thành viên</span>
@@ -541,7 +748,6 @@ export default function OrdersPanel() {
                   </div>
                 )}
 
-                {/* Shipping Fee Management for Delivery Orders */}
                 {isDelivery && (
                   <div className={`${styles.priceRow} ${styles.shippingRow}`}>
                     <span>Phí giao hàng (Ship):</span>
@@ -599,7 +805,29 @@ export default function OrdersPanel() {
 
               {/* Action Buttons */}
               <div className={styles.actions}>
-                {/* 1. Fast Payment Collection */}
+                {/* 1. Direct Thermal Printing Buttons */}
+                {order.status !== 'CANCELLED' && (
+                  <>
+                    <button
+                      type="button"
+                      className={`${styles.actionBtn} ${styles.printBtn}`}
+                      onClick={() => handlePrintBaristaTicket(order)}
+                      title="In phiếu pha chế / tem dán ly cho đơn này"
+                    >
+                      🏷️ In Tem Pha Chế
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.actionBtn} ${styles.printBtn}`}
+                      onClick={() => handlePrintReceipt(order)}
+                      title="In biên nhận thanh toán (80mm)"
+                    >
+                      🧾 In Biên Nhận
+                    </button>
+                  </>
+                )}
+
+                {/* 2. Fast Payment Collection */}
                 {!paid && order.status !== 'CANCELLED' && (
                   <button
                     type="button"
@@ -607,39 +835,44 @@ export default function OrdersPanel() {
                     disabled={processingId === order.id}
                     onClick={() => handleAction(order.id, 'mark_paid', 'CASH')}
                   >
-                    ✓ Đã Thu Tiền ({formatVND(order.total_due)})
+                    ✓ Xác nhận &amp; Đã Thu Tiền ({formatVND(order.total_due)})
                   </button>
                 )}
 
-                {/* 2. Confirm order if pending */}
-                {order.status === 'PENDING' && (
+                {/* 3. Confirm order if pending (for COD / unpaid delivery) */}
+                {order.status === 'PENDING' && !paid && (
                   <button
                     type="button"
                     className={`${styles.actionBtn} ${styles.confirmBtn}`}
                     disabled={processingId === order.id}
                     onClick={() => handleAction(order.id, 'confirm')}
                   >
-                    ✓ Xác nhận đơn
+                    🚚 Xác nhận đơn (Thu sau)
                   </button>
                 )}
 
-                {/* 3. Push to POS option */}
-                <button
-                  type="button"
-                  className={`${styles.actionBtn} ${styles.posBtn}`}
-                  onClick={() => handlePushToPos(order)}
-                  title="Chuyển sang màn hình POS để pha chế hoặc in tem ly"
-                >
-                  ⚡ Nạp vào POS
-                </button>
+                {/* 4. Push to POS option — ONLY for pending/unpaid WEB orders to prevent duplicate POS revenue */}
+                {order.channel === 'WEB' && order.status === 'PENDING' && !paid && (
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.posBtn}`}
+                    onClick={() => handlePushToPos(order)}
+                    title="Nạp đơn đặt web vào màn hình POS để chỉnh sửa thêm món"
+                  >
+                    ⚡ Nạp vào POS
+                  </button>
+                )}
 
-                {/* 4. Cancel order button */}
+                {/* 5. Cancel order button (opens mandatory reason modal) */}
                 {order.status !== 'CANCELLED' && (
                   <button
                     type="button"
                     className={`${styles.actionBtn} ${styles.cancelBtn}`}
                     disabled={processingId === order.id}
-                    onClick={() => handleAction(order.id, 'cancel')}
+                    onClick={() => {
+                      setCancellingOrder(order);
+                      setCancelReasonInput('Khách báo hủy đơn');
+                    }}
                   >
                     ✕ Hủy đơn
                   </button>
@@ -652,10 +885,90 @@ export default function OrdersPanel() {
         {filteredOrders.length === 0 && (
           <div className={styles.empty}>
             <span>📋</span>
-            <p>Không có đơn hàng nào phù hợp với bộ lọc</p>
+            <p>Không có đơn hàng nào phù hợp với bộ lọc hiện tại</p>
           </div>
         )}
       </div>
+
+      {/* Cancel Order Reason Modal */}
+      {cancellingOrder && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalCard}>
+            <div className={styles.modalHeader} style={{ background: '#b91c1c' }}>
+              <h3 className={styles.modalTitle}>
+                ⚠️ Xác Nhận Hủy Đơn #{cancellingOrder.order_code}
+              </h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setCancellingOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleConfirmCancelModal} className={styles.modalBody} style={{ alignItems: 'stretch', textAlign: 'left' }}>
+              <div className={styles.modalDetails}>
+                <div className={styles.modalDetailRow}>
+                  <span>Khách hàng:</span>
+                  <strong>{cancellingOrder.customer_name}</strong>
+                </div>
+                <div className={styles.modalDetailRow}>
+                  <span>Tổng giá trị đơn:</span>
+                  <strong style={{ color: '#b91c1c' }}>{formatVND(cancellingOrder.total_due)}</strong>
+                </div>
+                {cancellingOrder.points_used > 0 && (
+                  <div className={styles.modalDetailRow}>
+                    <span>Điểm ví hoàn lại:</span>
+                    <strong style={{ color: '#15803d' }}>+{formatVND(cancellingOrder.points_used)}</strong>
+                  </div>
+                )}
+              </div>
+
+              <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>
+                Chọn nhanh hoặc nhập lý do hủy đơn (Bắt buộc):
+              </label>
+              <div className={styles.quickReasonRow}>
+                {QUICK_CANCEL_REASONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    className={styles.quickReasonPill}
+                    onClick={() => setCancelReasonInput(r)}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                required
+                value={cancelReasonInput}
+                onChange={(e) => setCancelReasonInput(e.target.value)}
+                placeholder="Nhập lý do hủy đơn (tối thiểu 3 ký tự)..."
+                className={styles.searchInput}
+                style={{ marginBottom: 16 }}
+              />
+
+              <div className={styles.modalActionBtnRow}>
+                <button
+                  type="button"
+                  className={styles.clearFilterBtn}
+                  onClick={() => setCancellingOrder(null)}
+                >
+                  Đóng lại
+                </button>
+                <button
+                  type="submit"
+                  className={`${styles.actionBtn} ${styles.confirmBtn}`}
+                  style={{ background: '#b91c1c', justifyContent: 'center' }}
+                >
+                  ✕ Xác nhận Hủy đơn
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

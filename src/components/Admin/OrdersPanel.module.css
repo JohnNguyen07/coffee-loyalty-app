@@ -43,6 +43,100 @@
   border-color: #cbd5e1;
 }
 
+/* ── Search & Date Toolbar ── */
+.searchDateToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.searchInputWrap {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
+  font-size: 0.85rem;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: #006241;
+}
+
+.dateInput {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+  outline: none;
+}
+
+.clearFilterBtn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clearFilterBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.printBtn {
+  background: #f8fafc;
+  color: #1e3932;
+  border-color: #cbd5e1;
+}
+
+.printBtn:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.quickReasonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.quickReasonPill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+}
+
+.quickReasonPill:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
 /* ── Channel Filters ── */
 .channelFilters {
   display: flex;

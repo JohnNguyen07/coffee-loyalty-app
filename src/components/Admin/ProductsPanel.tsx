@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styles from './ProductsPanel.module.css';
 import { menuData, allMenuItems, formatVND, MenuItem } from '@/data/menu';
 import { CategorySvgIcon, StarSolidIcon } from '@/components/Icons/LabIcons';
@@ -15,6 +15,17 @@ export default function ProductsPanel() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
+  // Create New Product Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newCatSlug, setNewCatSlug] = useState('matcha');
+  const [newIsSignature, setNewIsSignature] = useState(false);
+  const [newShelfLife, setNewShelfLife] = useState('');
+  const [newPriceM, setNewPriceM] = useState('39000');
+  const [newPriceL, setNewPriceL] = useState('44000');
+  const [newPriceBottle, setNewPriceBottle] = useState('69000');
+  const [creatingProduct, setCreatingProduct] = useState(false);
+
   // Auto-dismiss toast
   useEffect(() => {
     if (!toastMessage) return;
@@ -24,39 +35,33 @@ export default function ProductsPanel() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // Fetch products and availability state from server on mount
-  useEffect(() => {
-    let active = true;
-    const loadProducts = async () => {
-      try {
-        const res = await fetch('/api/admin/products');
-        if (res.ok) {
-          const data = await res.json();
-          if (active && Array.isArray(data.products) && data.products.length > 0) {
-            setItems(data.products);
-            const outIds: string[] = data.products
-              .filter((p: MenuItem & { is_available?: boolean }) => p.is_available === false)
-              .map((p: MenuItem) => p.id);
-            setUnavailableIds(outIds);
-          }
+  const loadProducts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/products', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          setItems(data.products);
+          const outIds: string[] = data.products
+            .filter((p: MenuItem & { is_available?: boolean }) => p.is_available === false)
+            .map((p: MenuItem) => p.id);
+          setUnavailableIds(outIds);
         }
-      } catch (err) {
-        console.warn('Fallback loading menu products:', err);
       }
-    };
-
-    loadProducts();
-    return () => {
-      active = false;
-    };
+    } catch (err) {
+      console.warn('Fallback loading menu products:', err);
+    }
   }, []);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
 
   // Toggle availability (Báo hết / Mở bán lại)
   const toggleAvailability = async (item: MenuItem) => {
     const isCurrentlyOut = unavailableIds.includes(item.id);
     const nextIsOut = !isCurrentlyOut;
 
-    // Optimistic UI update
     setUnavailableIds((prev) =>
       nextIsOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
     );
@@ -80,7 +85,6 @@ export default function ProductsPanel() {
             : `Đã mở bán lại món "${item.name}". Quầy POS đã sẵn sàng phục vụ.`
         );
 
-        // Broadcast to POS and other panels
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('ulab:menu-changed', {
@@ -89,7 +93,6 @@ export default function ProductsPanel() {
           );
         }
       } else {
-        // Rollback on error
         setUnavailableIds((prev) =>
           isCurrentlyOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
         );
@@ -97,7 +100,6 @@ export default function ProductsPanel() {
       }
     } catch (err) {
       console.error('Error toggling product availability:', err);
-      // Rollback on error
       setUnavailableIds((prev) =>
         isCurrentlyOut ? [...prev, item.id] : prev.filter((id) => id !== item.id)
       );
@@ -121,7 +123,6 @@ export default function ProductsPanel() {
       price: Math.max(1000, Number(s.price) || 0),
     }));
 
-    // Optimistic update
     setItems((prev) =>
       prev.map((it) => (it.id === editingItem.id ? { ...it, sizes: newSizes } : it))
     );
@@ -153,6 +154,53 @@ export default function ProductsPanel() {
     }
   };
 
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+
+    const isBottleCat = newCatSlug === 'cold-brew-chai';
+    const sizes = isBottleCat
+      ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 69000) }]
+      : [
+          { label: 'M', price: Math.max(1000, Number(newPriceM) || 34000) },
+          { label: 'L', price: Math.max(1000, Number(newPriceL) || 39000) },
+        ];
+
+    setCreatingProduct(true);
+    try {
+      const res = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_PRODUCT',
+          name: newName.trim(),
+          categorySlug: newCatSlug,
+          isSignature: newIsSignature,
+          shelfLife: isBottleCat ? newShelfLife.trim() : undefined,
+          sizes,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setToastMessage(`✓ Đã thêm món "${newName.trim()}" vào thực đơn và đồng bộ sang POS!`);
+        setShowCreateModal(false);
+        setNewName('');
+        setNewIsSignature(false);
+        setNewShelfLife('');
+        await loadProducts();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ulab:menu-changed'));
+        }
+      } else {
+        setToastMessage(data.error || 'Không thể tạo món mới.');
+      }
+    } catch {
+      setToastMessage('Lỗi kết nối khi tạo món mới.');
+    } finally {
+      setCreatingProduct(false);
+    }
+  };
+
   const filteredItems = items.filter((item) => {
     const matchCat = categoryFilter === 'ALL' || item.categorySlug === categoryFilter;
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
@@ -161,13 +209,21 @@ export default function ProductsPanel() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
+      <div className={styles.header} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 className={styles.title}>Quản lý Thực Đơn &amp; Giá Bán</h1>
           <p className={styles.subtitle}>
-            Điều chỉnh giá theo cỡ ly (Size M, L, Chai) và tức thì bật/tắt báo hết hàng đồng bộ sang quầy POS.
+            Thêm món mới, điều chỉnh giá theo cỡ ly (Size M, L, Chai) và bật/tắt báo hết hàng đồng bộ tức thì sang quầy POS.
           </p>
         </div>
+        <button
+          type="button"
+          className={styles.primaryBtn}
+          style={{ padding: '10px 18px', fontWeight: 700, fontSize: '0.85rem' }}
+          onClick={() => setShowCreateModal(true)}
+        >
+          + Thêm món mới vào Menu
+        </button>
       </div>
 
       {/* Overview Stats */}
@@ -216,7 +272,7 @@ export default function ProductsPanel() {
           <option value="ALL">Tất cả danh mục ({items.length})</option>
           {menuData.map((cat) => (
             <option key={cat.slug} value={cat.slug}>
-              {cat.name} ({cat.items.length})
+              {cat.name} ({items.filter((i) => i.categorySlug === cat.slug).length})
             </option>
           ))}
         </select>
@@ -379,6 +435,160 @@ export default function ProductsPanel() {
                 </button>
                 <button type="submit" className={styles.primaryBtn}>
                   Lưu giá mới
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Product Modal */}
+      {showCreateModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: 16,
+              padding: 24,
+              width: '100%',
+              maxWidth: 440,
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.15rem', color: '#1E3932' }}>
+              🍹 Thêm Món Mới Vào Thực Đơn
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: '#64748b' }}>
+              Món mới sẽ được lưu vào cơ sở dữ liệu và xuất hiện ngay trên quầy POS.
+            </p>
+            <form onSubmit={handleCreateProduct} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                  Tên thức uống *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Matcha Kem Phô Mai"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className={styles.searchInput}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                  Nhóm thực đơn *
+                </label>
+                <select
+                  value={newCatSlug}
+                  onChange={(e) => setNewCatSlug(e.target.value)}
+                  className={styles.selectInput}
+                  style={{ width: '100%' }}
+                >
+                  <option value="cold-brew">🧊 Cold Brew</option>
+                  <option value="matcha">🍵 Matcha</option>
+                  <option value="cold-brew-chai">🍾 Cold Brew Chai</option>
+                </select>
+              </div>
+
+              {newCatSlug === 'cold-brew-chai' ? (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                      Đơn giá Chai (VNĐ) *
+                    </label>
+                    <input
+                      type="number"
+                      step={1000}
+                      min={1000}
+                      required
+                      value={newPriceBottle}
+                      onChange={(e) => setNewPriceBottle(e.target.value)}
+                      className={styles.searchInput}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                      Thời hạn bảo quản lạnh (Tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="VD: 5 – 7 ngày"
+                      value={newShelfLife}
+                      onChange={(e) => setNewShelfLife(e.target.value)}
+                      className={styles.searchInput}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                      Giá Size M (VNĐ) *
+                    </label>
+                    <input
+                      type="number"
+                      step={1000}
+                      min={1000}
+                      required
+                      value={newPriceM}
+                      onChange={(e) => setNewPriceM(e.target.value)}
+                      className={styles.searchInput}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                      Giá Size L (VNĐ) *
+                    </label>
+                    <input
+                      type="number"
+                      step={1000}
+                      min={1000}
+                      required
+                      value={newPriceL}
+                      onChange={(e) => setNewPriceL(e.target.value)}
+                      className={styles.searchInput}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', fontWeight: 600, color: '#1E3932', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={newIsSignature}
+                  onChange={(e) => setNewIsSignature(e.target.checked)}
+                />
+                Gắn nhãn ★ Signature (Best-seller chủ đạo)
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className={`${styles.actionBtn} ${styles.actionBtnEdit}`}
+                >
+                  Hủy
+                </button>
+                <button type="submit" disabled={creatingProduct} className={styles.primaryBtn}>
+                  {creatingProduct ? 'Đang lưu...' : '✓ Lưu món mới'}
                 </button>
               </div>
             </form>

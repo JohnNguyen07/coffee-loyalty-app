@@ -21,7 +21,7 @@ import type {
 
 export default function RevenuePanel() {
   const [activeTab, setActiveTab] = useState<'SALES' | 'CASHBOOK' | 'SHIFTS'>('SALES');
-  const [preset, setPreset] = useState<DateRangePreset>('TODAY');
+  const [preset, setPreset] = useState<DateRangePreset>('ALL_TIME');
   const [customFrom, setCustomFrom] = useState<string>('');
   const [customTo, setCustomTo] = useState<string>('');
   const [channelFilter, setChannelFilter] = useState<'ALL' | 'POS' | 'WEB'>('ALL');
@@ -261,6 +261,7 @@ export default function RevenuePanel() {
           <div className={styles.presetGroup} role="group" aria-label="Khoảng thời gian báo cáo">
             {(
               [
+                { key: 'ALL_TIME', label: 'Tất cả (Lũy kế)' },
                 { key: 'TODAY', label: 'Hôm nay' },
                 { key: 'YESTERDAY', label: 'Hôm qua' },
                 { key: 'LAST_7_DAYS', label: '7 ngày' },
@@ -582,6 +583,38 @@ export default function RevenuePanel() {
                   onChange={(e) => setOrderSearchText(e.target.value)}
                   className={styles.searchInput}
                 />
+
+                <button
+                  type="button"
+                  className={styles.refreshBtn}
+                  onClick={() => {
+                    if (filteredOrders.length === 0) return;
+                    const headers = ['Mã đơn', 'Thời gian', 'Kênh', 'Khách hàng', 'SĐT', 'Món nước', 'Tạm tính', 'Giảm giá', 'Thực thu', 'Trạng thái'];
+                    const rows = filteredOrders.map((o) => [
+                      o.orderCode,
+                      new Date(o.createdAt).toLocaleString('vi-VN'),
+                      o.channel,
+                      `"${String(o.customerName || '').replace(/"/g, '""')}"`,
+                      o.customerPhone || '',
+                      `"${String(o.itemsSummary || '').replace(/"/g, '""')}"`,
+                      o.subtotal,
+                      o.discountAmount,
+                      o.totalDue,
+                      o.status,
+                    ]);
+                    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `ULAB_DoanhThu_${preset}_${new Date().toISOString().slice(0, 10)}.csv`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  title="Tải xuống báo cáo đơn hàng định dạng Excel CSV"
+                >
+                  📥 Xuất CSV
+                </button>
               </div>
             </div>
 

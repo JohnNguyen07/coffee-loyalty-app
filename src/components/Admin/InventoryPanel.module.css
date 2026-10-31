@@ -54,30 +54,31 @@
 }
 
 .primaryBtn {
-  padding: 8px 16px;
+  padding: 9px 16px;
   background: var(--sb-green, #00754a);
   color: #ffffff;
   border: none;
-  border-radius: 8px;
-  font-size: 0.8125rem;
+  border-radius: 10px;
+  font-size: 0.825rem;
   font-weight: 700;
   cursor: pointer;
   transition: opacity 0.15s;
 }
 
 .primaryBtn:hover {
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
 .secondaryBtn {
-  padding: 8px 14px;
+  padding: 9px 14px;
   background: #ffffff;
   border: 1px solid #cbd5e1;
   color: #1e293b;
-  border-radius: 8px;
-  font-size: 0.8125rem;
+  border-radius: 10px;
+  font-size: 0.825rem;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
 .secondaryBtn:hover {
@@ -89,7 +90,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 @media (max-width: 1024px) {
@@ -110,6 +111,15 @@
   border-radius: 16px;
   padding: 18px 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s;
+}
+
+.metricCardClickable {
+  cursor: pointer;
+}
+
+.metricCardClickable:hover {
+  border-color: #00754a;
 }
 
 .metricLabel {
@@ -159,19 +169,19 @@
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  padding: 4px;
+  padding: 5px;
   gap: 4px;
   margin-bottom: 20px;
   overflow-x: auto;
 }
 
 .tabBtn {
-  padding: 8px 16px;
+  padding: 9px 16px;
   border: none;
   background: transparent;
   border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: 0.825rem;
+  font-weight: 700;
   color: #64748b;
   cursor: pointer;
   white-space: nowrap;
@@ -186,6 +196,51 @@
 .tabBtnActive {
   background: var(--sb-house, #1e3932) !important;
   color: #ffffff !important;
+}
+
+/* ── Filter Pills Row ── */
+.filterPillsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.filterPills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterPill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filterPill:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.filterPillActive {
+  background: #00754a;
+  color: #ffffff;
+  border-color: #00754a;
+}
+
+.filterPillAlertActive {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
 }
 
 /* ── Card Container ── */
@@ -216,14 +271,14 @@
 /* ── Table Styling ── */
 .tableWrap {
   overflow-x: auto;
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
 }
 
 .invTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.825rem;
   text-align: left;
 }
 
@@ -237,13 +292,125 @@
 }
 
 .invTable td {
-  padding: 12px 14px;
+  padding: 13px 14px;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: middle;
 }
 
 .invTable tr:hover td {
   background: #f8fafc;
+}
+
+/* ── Visual Stock Bar ── */
+.stockCell {
+  min-width: 170px;
+}
+
+.stockTopRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.stockBigNum {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.stockHumanHint {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.stockBarTrack {
+  width: 100%;
+  height: 7px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stockBarFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+/* ── Inline Row Action Buttons ── */
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rowBtnIn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rowBtnIn:hover {
+  background: #bbf7d0;
+}
+
+.rowBtnLoss {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rowBtnLoss:hover {
+  background: #ffedd5;
+}
+
+.rowBtnAudit {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rowBtnAudit:hover {
+  background: #dbeafe;
+}
+
+.rowBtnEdit {
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rowBtnEdit:hover {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 /* ── Badges ── */
@@ -254,6 +421,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .badgeTypePkg {
@@ -263,6 +431,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .badgeTypeFg {
@@ -272,6 +441,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .badgeStatusIn {
@@ -281,6 +451,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .badgeStatusLow {
@@ -290,6 +461,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .badgeStatusOut {
@@ -299,6 +471,7 @@
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 /* ── Form Layout ── */
@@ -340,15 +513,90 @@
   border-color: var(--sb-green, #00754a);
 }
 
+/* ── Quick Preset Chips ── */
+.quickChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.quickChip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+}
+
+.quickChip:hover {
+  background: #d4e9e2;
+  color: #00754a;
+  border-color: #00754a;
+}
+
+/* ── Modal Overlay ── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modalCard {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.modalTitle {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1e3932;
+  margin: 0;
+}
+
+.modalCloseBtn {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  color: #64748b;
+  cursor: pointer;
+}
+
 /* ── Banners ── */
 .errorBanner {
   padding: 12px 16px;
   background: #fef2f2;
   border: 1px solid #fecaca;
   color: #b91c1c;
-  border-radius: 8px;
+  border-radius: 10px;
   margin-bottom: 16px;
   font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .successBanner {
@@ -356,16 +604,18 @@
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   color: #15803d;
-  border-radius: 8px;
+  border-radius: 10px;
   margin-bottom: 16px;
   font-size: 0.875rem;
   font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .loadingEmpty {
   padding: 40px 20px;
   text-align: center;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 0.875rem;
 }
-

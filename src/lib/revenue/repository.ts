@@ -191,7 +191,7 @@ export async function getRevenueReport(
   const summary = calculateRevenueSummary(rawOrders, cashInput);
 
   // 3. Compute Cashbook summary with running balance
-  const openingCashbookBalance = query.openingCash || 500000;
+  const openingCashbookBalance = query.openingCash || 0;
   const cashbook = calculateCashbookSummary(openingCashbookBalance, cashTransactions);
 
   // 4. Fetch Active Shift and Shift History
@@ -347,19 +347,47 @@ export async function getActiveShiftSession(locationId: string): Promise<ShiftSe
       .maybeSingle();
 
     if (!error && data) {
+      const openedAtIso = String(data.opened_at);
+      const openingCash = Number(data.opening_cash) || 0;
+      let liveCashSales = Number(data.cash_sales) || 0;
+      let liveCashRefunds = Number(data.cash_refunds) || 0;
+
+      try {
+        const { data: shiftOrders } = await adminClient
+          .from('orders')
+          .select('status, total_due')
+          .gte('created_at', openedAtIso);
+
+        if (Array.isArray(shiftOrders) && shiftOrders.length > 0) {
+          liveCashSales = 0;
+          liveCashRefunds = 0;
+          for (const ord of shiftOrders) {
+            const amt = Number(ord.total_due) || 0;
+            if (ord.status === 'CONFIRMED') liveCashSales += amt;
+            else if (ord.status === 'CANCELLED') liveCashRefunds += amt;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const cashIn = Number(data.cash_in) || 0;
+      const cashOut = Number(data.cash_out) || 0;
+      const expectedCash = openingCash + liveCashSales - liveCashRefunds + cashIn - cashOut;
+
       return {
         id: String(data.id),
         code: data.code || `SHIFT-${String(data.id).slice(0, 8).toUpperCase()}`,
         shiftName: data.shift_name || 'Ca Bán Hàng',
         status: 'OPEN',
-        openedAt: String(data.opened_at),
+        openedAt: openedAtIso,
         openedByName: data.opener?.full_name || 'Thu ngân',
-        openingCash: Number(data.opening_cash) || 0,
-        cashSales: Number(data.cash_sales) || 0,
-        cashRefunds: Number(data.cash_refunds) || 0,
-        cashIn: Number(data.cash_in) || 0,
-        cashOut: Number(data.cash_out) || 0,
-        expectedCash: Number(data.expected_cash) || 0,
+        openingCash,
+        cashSales: liveCashSales,
+        cashRefunds: liveCashRefunds,
+        cashIn,
+        cashOut,
+        expectedCash,
       };
     }
   } catch (err) {

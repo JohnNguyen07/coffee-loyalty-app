@@ -1,4 +1,4 @@
-export type DateRangePreset = 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'CUSTOM';
+export type DateRangePreset = 'ALL_TIME' | 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'CUSTOM';
 export type VarianceStatus = 'BALANCED' | 'SURPLUS' | 'SHORTAGE';
 
 export interface RawOrderItem {
@@ -488,6 +488,13 @@ export function getDateRangeBoundaries(
   };
 
   switch (preset) {
+    case 'ALL_TIME': {
+      return {
+        from: '2026-01-01T00:00:00.000Z',
+        to: createIsoUtcFromVnDate(year + 1, 11, 31, 23, 59, 59, 999),
+        label: 'Toàn thời gian (Lũy kế)',
+      };
+    }
     case 'YESTERDAY': {
       const yesterday = date - 1;
       return {

@@ -141,6 +141,8 @@ export default function POSPanel() {
   const [cancelReasonInput, setCancelReasonInput] = useState<string>('');
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
+  const [showRecentOrdersTable, setShowRecentOrdersTable] = useState<boolean>(false);
+  const [isRegisteringCustomer, setIsRegisteringCustomer] = useState<boolean>(false);
 
   // ── Legacy QR Sticker Generator State (kept 100% compatible) ──
   const quickPrices = getQuickPrices();
@@ -443,6 +445,59 @@ export default function POSPanel() {
     setCheckoutError(null);
     setCartLines((prev) => prev.filter((l) => l.lineId !== lineId));
     if (editingLineId === lineId) setEditingLineId(null);
+  };
+
+  const handleDuplicateLine = (lineId: string) => {
+    setCheckoutError(null);
+    const target = cartLines.find((l) => l.lineId === lineId);
+    if (!target) return;
+    const newLineId = `line-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const cloned: PosCartLine = {
+      ...target,
+      lineId: newLineId,
+      quantity: 1,
+      addons: [...target.addons],
+    };
+    setCartLines((prev) => [...prev, cloned]);
+    setEditingLineId(newLineId);
+  };
+
+  const handleRegisterNewMemberInline = async () => {
+    const cleanPhone = customerPhoneInput.replace(/\D/g, '');
+    if (cleanPhone.length < 9) {
+      setCustomerLookupMsg('Vui lòng nhập SĐT hợp lệ (tối thiểu 9 số) trước khi tạo thành viên.');
+      return;
+    }
+    const nameToUse = customerNameInput.trim() || `Thành viên ${cleanPhone.slice(-4)}`;
+    setIsRegisteringCustomer(true);
+    try {
+      const res = await fetch('/api/admin/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: nameToUse,
+          phone: cleanPhone,
+        }),
+      });
+      const data = await res.json();
+      if (data.customer) {
+        setLinkedCustomer({
+          id: data.customer.id,
+          full_name: data.customer.full_name || nameToUse,
+          phone: data.customer.phone || cleanPhone,
+          point_balance: Number(data.customer.point_balance) || 0,
+          tier_name: data.customer.tier?.name || 'Member',
+        });
+        setCustomerNameInput(data.customer.full_name || nameToUse);
+        setCustomerLookupMsg(`✓ Đã đăng ký & liên kết thành viên: ${data.customer.full_name || nameToUse}`);
+      } else {
+        setCustomerLookupMsg(data.error || 'Không thể đăng ký thành viên lúc này.');
+      }
+    } catch {
+      setCustomerLookupMsg('Lỗi kết nối khi tạo thành viên mới.');
+    } finally {
+      setIsRegisteringCustomer(false);
+    }
   };
 
   const handleUpdateLineOption = (
@@ -909,25 +964,38 @@ export default function POSPanel() {
           </p>
         </div>
 
-        <div className={styles.modeSwitchGroup} role="tablist" aria-label="Chế độ vận hành POS">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeMode === 'pos'}
-            className={`${styles.modeSwitchBtn} ${activeMode === 'pos' ? styles.modeSwitchActive : ''}`}
-            onClick={() => setActiveMode('pos')}
-          >
-            🛒 Bán hàng POS
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeMode === 'qr'}
-            className={`${styles.modeSwitchBtn} ${activeMode === 'qr' ? styles.modeSwitchActive : ''}`}
-            onClick={() => setActiveMode('qr')}
-          >
-            🏷️ Tạo Tem QR Lẻ (75×100mm)
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {recentOrders.length > 0 && (
+            <button
+              type="button"
+              className={styles.refreshBtn}
+              onClick={() => handleOpenOrderPreview(recentOrders[0], 'receipt')}
+              title="Mở nhanh phiếu pha chế và biên nhận của đơn vừa tạo gần nhất"
+              style={{ fontWeight: 700, borderColor: '#006241', color: '#006241' }}
+            >
+              🖨️ In lại đơn vừa tạo (#{recentOrders[0].orderCode})
+            </button>
+          )}
+          <div className={styles.modeSwitchGroup} role="tablist" aria-label="Chế độ vận hành POS">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeMode === 'pos'}
+              className={`${styles.modeSwitchBtn} ${activeMode === 'pos' ? styles.modeSwitchActive : ''}`}
+              onClick={() => setActiveMode('pos')}
+            >
+              🛒 Bán hàng POS
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeMode === 'qr'}
+              className={`${styles.modeSwitchBtn} ${activeMode === 'qr' ? styles.modeSwitchActive : ''}`}
+              onClick={() => setActiveMode('qr')}
+            >
+              🏷️ Tạo Tem QR Lẻ (75×100mm)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1158,13 +1226,23 @@ export default function POSPanel() {
                                 ? '▲ Đóng tùy chọn'
                                 : '⚙️ Tùy chọn (Size / Đường / Đá / Topping / Ghi chú)'}
                             </button>
-                            <button
-                              type="button"
-                              className={styles.lineRemoveBtn}
-                              onClick={() => handleRemoveLine(line.lineId)}
-                            >
-                              Xóa
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className={styles.lineEditToggleBtn}
+                                onClick={() => handleDuplicateLine(line.lineId)}
+                                title="Nhân bản thêm 1 dòng món giống hệt để chỉnh riêng đá/đường"
+                              >
+                                📋 Nhân bản
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.lineRemoveBtn}
+                                onClick={() => handleRemoveLine(line.lineId)}
+                              >
+                                Xóa
+                              </button>
+                            </div>
                           </div>
 
                           {/* Expandable Item Options Drawer */}
@@ -1345,7 +1423,23 @@ export default function POSPanel() {
                     />
                   </div>
                   {customerLookupMsg && (
-                    <div className={styles.customerLookupStatus}>{customerLookupMsg}</div>
+                    <div
+                      className={styles.customerLookupStatus}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+                    >
+                      <span>{customerLookupMsg}</span>
+                      {!linkedCustomer && customerPhoneInput.replace(/\D/g, '').length >= 9 && (
+                        <button
+                          type="button"
+                          className={styles.miniChip}
+                          disabled={isRegisteringCustomer}
+                          onClick={handleRegisterNewMemberInline}
+                          style={{ background: '#006241', color: '#fff', borderColor: '#006241', fontWeight: 700 }}
+                        >
+                          {isRegisteringCustomer ? 'Đang tạo...' : '+ Đăng ký thành viên mới'}
+                        </button>
+                      )}
+                    </div>
                   )}
                   {linkedCustomer && linkedCustomer.point_balance > 0 && (
                     <div className={styles.pointsRedeemRow}>
@@ -1586,59 +1680,72 @@ export default function POSPanel() {
           </div>
 
           {/* ══════════════════════════════════════════════════════════════
-              RECENT POS ORDERS LOOKUP, REPRINT & ROLE-BASED CANCELLATION
+              RECENT POS ORDERS LOOKUP, REPRINT & ROLE-BASED CANCELLATION (COLLAPSIBLE)
              ══════════════════════════════════════════════════════════════ */}
           <div className={styles.recentOrdersSection}>
             <div className={styles.tableHeaderBar}>
               <div>
                 <h2 className={styles.sectionTitle}>
-                  Tra Cứu Đơn Hàng Gần Đây ({recentOrders.length} đơn)
+                  Tra Cứu Nhanh Đơn Hàng Tại Quầy ({recentOrders.length} đơn gần nhất)
                 </h2>
                 <p className={styles.sectionSubDesc}>
-                  In lại phiếu pha chế, biên nhận hoặc hủy đơn theo phân quyền (không xóa cứng dữ liệu).
+                  Đã thu gọn mặc định để màn hình POS gọn gàng. Quản lý đầy đủ đơn hàng tại tab <strong>Đơn Hàng</strong>.
                 </p>
               </div>
 
               <div className={styles.tableFilterActions}>
-                <input
-                  type="date"
-                  value={ordersDate}
-                  onChange={(e) => setOrdersDate(e.target.value)}
-                  className={styles.filterSelect}
-                  aria-label="Lọc theo ngày"
-                />
-
-                <select
-                  value={ordersFilterStatus}
-                  onChange={(e) => setOrdersFilterStatus(e.target.value)}
-                  className={styles.filterSelect}
-                  aria-label="Lọc theo trạng thái đơn"
-                >
-                  <option value="ALL">Tất cả trạng thái</option>
-                  <option value="CONFIRMED">Đã thanh toán (CONFIRMED)</option>
-                  <option value="PENDING">Chờ xác nhận (PENDING)</option>
-                  <option value="CANCELLED">Đã hủy (CANCELLED)</option>
-                </select>
-
-                <input
-                  type="search"
-                  placeholder="Tìm mã đơn (#POS-...), tên, SĐT..."
-                  value={ordersSearch}
-                  onChange={(e) => setOrdersSearch(e.target.value)}
-                  className={styles.searchInput}
-                />
-
                 <button
                   type="button"
-                  onClick={fetchRecentOrders}
+                  onClick={() => setShowRecentOrdersTable((prev) => !prev)}
                   className={styles.refreshBtn}
+                  style={{ fontWeight: 700, background: showRecentOrdersTable ? '#1e3932' : '#ffffff', color: showRecentOrdersTable ? '#ffffff' : '#1e3932' }}
                 >
-                  ↻ Làm mới
+                  {showRecentOrdersTable ? '▲ Thu gọn danh sách đơn' : `▼ Mở danh sách (${recentOrders.length} đơn)`}
                 </button>
               </div>
             </div>
 
-            <div className={styles.tableCard}>
+            {showRecentOrdersTable && (
+              <>
+                <div className={styles.tableFilterActions} style={{ marginBottom: 12 }}>
+                  <input
+                    type="date"
+                    value={ordersDate}
+                    onChange={(e) => setOrdersDate(e.target.value)}
+                    className={styles.filterSelect}
+                    aria-label="Lọc theo ngày"
+                  />
+
+                  <select
+                    value={ordersFilterStatus}
+                    onChange={(e) => setOrdersFilterStatus(e.target.value)}
+                    className={styles.filterSelect}
+                    aria-label="Lọc theo trạng thái đơn"
+                  >
+                    <option value="ALL">Tất cả trạng thái</option>
+                    <option value="CONFIRMED">Đã thanh toán (CONFIRMED)</option>
+                    <option value="PENDING">Chờ xác nhận (PENDING)</option>
+                    <option value="CANCELLED">Đã hủy (CANCELLED)</option>
+                  </select>
+
+                  <input
+                    type="search"
+                    placeholder="Tìm mã đơn (#POS-...), tên, SĐT..."
+                    value={ordersSearch}
+                    onChange={(e) => setOrdersSearch(e.target.value)}
+                    className={styles.searchInput}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={fetchRecentOrders}
+                    className={styles.refreshBtn}
+                  >
+                    ↻ Làm mới
+                  </button>
+                </div>
+
+                <div className={styles.tableCard}>
               {loadingOrders ? (
                 <div className={styles.tableEmpty}>Đang tải danh sách đơn hàng gần đây...</div>
               ) : recentOrders.length === 0 ? (
@@ -1779,6 +1886,8 @@ export default function POSPanel() {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         </>
       ) : (

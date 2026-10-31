@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { verifyAdmin } from '@/lib/auth-utils';
+import { verifyAdmin, verifyPosStaff } from '@/lib/auth-utils';
 import { NextRequest, NextResponse } from 'next/server';
+import { cancelPosOrder } from '@/lib/pos/repository';
 
 // PATCH /api/orders/[id] — Update order status and payment (admin/cashier)
 export async function PATCH(
@@ -8,13 +9,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const admin = await verifyAdmin();
+  const staff = await verifyPosStaff();
+  const admin = staff || (await verifyAdmin());
   if (!admin) {
-    return NextResponse.json({ error: 'Không có quyền' }, { status: 403 });
+    return NextResponse.json({ error: 'Không có quyền thực hiện thao tác' }, { status: 403 });
   }
 
   const body = await request.json();
-  const { action, payment_method, shipping_fee } = body; // 'confirm' | 'cancel' | 'mark_paid' | 'update_shipping'
+  const { action, payment_method, shipping_fee, cancel_reason } = body; // 'confirm' | 'cancel' | 'mark_paid' | 'update_shipping'
 
   if (!['confirm', 'cancel', 'mark_paid', 'update_shipping'].includes(action)) {
     return NextResponse.json({ error: 'Hành động không hợp lệ' }, { status: 400 });
@@ -69,7 +71,6 @@ export async function PATCH(
 
   if (action === 'mark_paid') {
     const method = payment_method === 'BANK_TRANSFER' ? 'BANK_TRANSFER' : 'CASH';
-    const payLabel = method === 'BANK_TRANSFER' ? 'Quét mã QR' : 'Tiền mặt';
 
     const { data: currentOrder } = await adminClient
       .from('orders')
@@ -84,7 +85,7 @@ export async function PATCH(
     const existingNote = currentOrder.note || '';
     const updatedNote = existingNote.includes('Đã thanh toán')
       ? existingNote
-      : `${existingNote} | [Đã thanh toán: ${payLabel}]`.trim();
+      : `${existingNote} | [Đã thanh toán: Tiền]`.trim();
 
     try {
       const { data: updatedWithCols, error: colErr } = await adminClient
@@ -123,6 +124,20 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true, order: fallbackUpdated });
+  }
+
+  // Handle Cancel with Audit Reason & Point Refund via cancelPosOrder
+  if (action === 'cancel' && staff) {
+    const reason = String(cancel_reason || 'Khách báo hủy đơn').trim();
+    const cancelRes = await cancelPosOrder({
+      orderId: id,
+      cancelReason: reason.length >= 3 ? reason : 'Khách báo hủy đơn',
+      staff,
+    });
+    if (!cancelRes.success) {
+      return NextResponse.json({ error: cancelRes.error || 'Không thể hủy đơn' }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, order: cancelRes.order });
   }
 
   // Use RPC for atomic confirm/cancel with point handling

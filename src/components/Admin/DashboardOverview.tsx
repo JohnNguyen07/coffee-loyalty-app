@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styles from './DashboardOverview.module.css';
 
 interface DashboardOverviewProps {
@@ -9,66 +9,95 @@ interface DashboardOverviewProps {
 
 export default function DashboardOverview({ onNavigate }: DashboardOverviewProps) {
   const [stats, setStats] = useState({
+    allTimeRevenue: 0,
     todayRevenue: 0,
-    orderCount: 0,
+    allTimeOrders: 0,
+    todayOrders: 0,
     activeLocationName: 'Ủ LAB — Quầy Chính',
-    inventoryAlerts: 0,
+    lowStockCount: 0,
+    expiringLotsCount: 0,
+    totalInventoryItems: 0,
   });
 
-  useEffect(() => {
-    let active = true;
-    const fetchQuickStats = async () => {
-      try {
-        const [revRes, orderRes, rbacRes] = await Promise.all([
-          fetch('/api/revenue/summary?preset=TODAY').catch(() => null),
-          fetch('/api/pos/orders?limit=10').catch(() => null),
-          fetch('/api/rbac/profile').catch(() => null),
-        ]);
+  const fetchQuickStats = useCallback(async () => {
+    try {
+      const [allRevRes, todayRevRes, invRes, rbacRes] = await Promise.all([
+        fetch('/api/revenue/summary?preset=ALL_TIME').catch(() => null),
+        fetch('/api/revenue/summary?preset=TODAY').catch(() => null),
+        fetch('/api/inventory/summary').catch(() => null),
+        fetch('/api/rbac/profile').catch(() => null),
+      ]);
 
-        if (!active) return;
+      let allTimeRevenue = 0;
+      let todayRevenue = 0;
+      let allTimeOrders = 0;
+      let todayOrders = 0;
+      let locName = 'Ủ LAB — Quầy Chính';
+      let lowStockCount = 0;
+      let expiringLotsCount = 0;
+      let totalInventoryItems = 0;
 
-        let revenue = 0;
-        let orders = 0;
-        let locName = 'Ủ LAB — Quầy Chính';
-
-        if (revRes && revRes.ok) {
-          const revData = await revRes.json();
-          if (revData.summary) {
-            revenue = revData.summary.metrics?.paidOrderRevenue ?? revData.summary.netSales ?? 0;
-            orders = revData.summary.metrics?.orderCount ?? revData.summary.confirmedOrdersCount ?? 0;
-          }
+      if (allRevRes && allRevRes.ok) {
+        const revData = await allRevRes.json();
+        if (revData.summary) {
+          allTimeRevenue = revData.summary.metrics?.paidOrderRevenue ?? 0;
+          allTimeOrders = revData.summary.metrics?.orderCount ?? 0;
         }
-
-        if (orderRes && orderRes.ok) {
-          const orderData = await orderRes.json();
-          if (orderData.orders && orders === 0) {
-            orders = orderData.orders.length;
-          }
-        }
-
-        if (rbacRes && rbacRes.ok) {
-          const rbacData = await rbacRes.json();
-          if (rbacData.locations && rbacData.locations.length > 0) {
-            locName = rbacData.locations[0].name;
-          }
-        }
-
-        setStats({
-          todayRevenue: revenue,
-          orderCount: orders,
-          activeLocationName: locName,
-          inventoryAlerts: 0,
-        });
-      } catch (err) {
-        console.warn('Dashboard stats fetch fallback:', err);
       }
-    };
 
-    fetchQuickStats();
-    return () => {
-      active = false;
-    };
+      if (todayRevRes && todayRevRes.ok) {
+        const todayData = await todayRevRes.json();
+        if (todayData.summary) {
+          todayRevenue = todayData.summary.metrics?.paidOrderRevenue ?? 0;
+          todayOrders = todayData.summary.metrics?.orderCount ?? 0;
+        }
+      }
+
+      if (invRes && invRes.ok) {
+        const invData = await invRes.json();
+        if (invData.summary) {
+          lowStockCount = invData.summary.lowStockCount || 0;
+          expiringLotsCount = invData.summary.expiringLotsCount || 0;
+          totalInventoryItems = invData.summary.totalItems || 0;
+        }
+      }
+
+      if (rbacRes && rbacRes.ok) {
+        const rbacData = await rbacRes.json();
+        if (rbacData.locations && rbacData.locations.length > 0) {
+          const savedLocId = typeof window !== 'undefined' ? localStorage.getItem('ulab_active_location_id') : null;
+          const matchedLoc = savedLocId
+            ? rbacData.locations.find((l: { id: string; name: string }) => l.id === savedLocId)
+            : null;
+          locName = matchedLoc ? matchedLoc.name : rbacData.locations[0].name;
+        }
+      }
+
+      setStats({
+        allTimeRevenue,
+        todayRevenue,
+        allTimeOrders,
+        todayOrders,
+        activeLocationName: locName,
+        lowStockCount,
+        expiringLotsCount,
+        totalInventoryItems,
+      });
+    } catch (err) {
+      console.warn('Dashboard stats fetch fallback:', err);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchQuickStats();
+    const handleLocationChanged = () => fetchQuickStats();
+    window.addEventListener('ulab:location-changed', handleLocationChanged);
+    return () => {
+      window.removeEventListener('ulab:location-changed', handleLocationChanged);
+    };
+  }, [fetchQuickStats]);
+
+  const totalAlerts = stats.lowStockCount + stats.expiringLotsCount;
 
   return (
     <div className={styles.dashboard}>
@@ -82,9 +111,9 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
 
       {/* ── 4 Quick Metric Cards ── */}
       <div className={styles.metricsGrid}>
-        <div className={styles.metricCard}>
+        <div className={styles.metricCard} onClick={() => onNavigate('revenue')} style={{ cursor: 'pointer' }}>
           <div className={styles.metricHeader}>
-            <span className={styles.metricLabel}>Doanh Thu Hôm Nay</span>
+            <span className={styles.metricLabel}>Tổng Doanh Thu Thực Tế</span>
             <div className={styles.metricIconWrap}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect width="20" height="12" x="2" y="6" rx="2" />
@@ -93,14 +122,16 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
             </div>
           </div>
           <span className={styles.metricValue}>
-            {stats.todayRevenue.toLocaleString('vi-VN')} đ
+            {stats.allTimeRevenue.toLocaleString('vi-VN')} đ
           </span>
-          <span className={styles.metricSub}>Doanh thu thuần đơn đã thanh toán</span>
+          <span className={styles.metricSub}>
+            Hôm nay: {stats.todayRevenue.toLocaleString('vi-VN')} đ · Quỹ Tiền Cửa Hàng
+          </span>
         </div>
 
-        <div className={styles.metricCard}>
+        <div className={styles.metricCard} onClick={() => onNavigate('orders')} style={{ cursor: 'pointer' }}>
           <div className={styles.metricHeader}>
-            <span className={styles.metricLabel}>Số Đơn Hàng Hôm Nay</span>
+            <span className={styles.metricLabel}>Tổng Đơn Hoàn Tất</span>
             <div className={styles.metricIconWrap}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
@@ -109,8 +140,10 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
               </svg>
             </div>
           </div>
-          <span className={styles.metricValue}>{stats.orderCount}</span>
-          <span className={styles.metricSub}>Đơn hoàn tất tại quầy &amp; website</span>
+          <span className={styles.metricValue}>{stats.allTimeOrders} đơn</span>
+          <span className={styles.metricSub}>
+            Hôm nay: {stats.todayOrders} đơn · Tại quầy &amp; website
+          </span>
         </div>
 
         <div className={styles.metricCard}>
@@ -129,17 +162,45 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
           <span className={styles.metricSub}>Có thể chuyển đổi tại Header phía trên</span>
         </div>
 
-        <div className={styles.metricCard}>
+        <div className={styles.metricCard} onClick={() => onNavigate('inventory')} style={{ cursor: 'pointer' }}>
           <div className={styles.metricHeader}>
             <span className={styles.metricLabel}>An Toàn Tồn Kho</span>
             <div className={styles.metricIconWrap}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={totalAlerts > 0 ? '#d97706' : '#16a34a'}
+                strokeWidth="2"
+              >
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
               </svg>
             </div>
           </div>
-          <span className={styles.metricValue} style={{ color: '#16a34a' }}>Ổn định</span>
-          <span className={styles.metricSub}>Định giá FIFO &amp; Lô FEFO tự động</span>
+          {totalAlerts > 0 ? (
+            <>
+              <span className={styles.metricValue} style={{ color: '#d97706', fontSize: '1.35rem' }}>
+                ⚠️ {stats.lowStockCount} sắp hết
+              </span>
+              <span className={styles.metricSub}>
+                {stats.expiringLotsCount > 0
+                  ? `${stats.expiringLotsCount} lô cận hạn · Bấm để nhập kho`
+                  : 'Cần nhập bổ sung nguyên liệu'}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={styles.metricValue} style={{ color: '#16a34a' }}>
+                ✓ Ổn định
+              </span>
+              <span className={styles.metricSub}>
+                {stats.totalInventoryItems > 0
+                  ? `Đang theo dõi ${stats.totalInventoryItems} mặt hàng kho`
+                  : 'Định giá FIFO & Lô FEFO tự động'}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -170,10 +231,10 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
               <path d="m3.3 7 8.7 5 8.7-5" />
               <path d="M12 22V12" />
             </svg>
-            Quản Trị Kho &amp; Giá Vốn
+            Quản Trị Kho &amp; Nguyên Liệu
           </h3>
           <p className={styles.actionCardDesc}>
-            Theo dõi lớp giá vốn FIFO, quản lý hạn dùng lô hàng FEFO, sản xuất đóng chai và kiểm kê hao hụt.
+            Nhập kho nhanh, xuất hủy hao hụt, kiểm kê cuối ca 1-click và sản xuất đóng chai Cold Brew.
           </p>
           <span className={styles.actionLinkText} style={{ color: '#0284c7' }}>Vào Kho hàng &rarr;</span>
         </div>
@@ -222,4 +283,3 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
     </div>
   );
 }
-

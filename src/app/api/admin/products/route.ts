@@ -1,103 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { menuData } from '@/data/menu';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveUserRbac } from '@/lib/rbac/server-guard';
 import {
-  isProductAvailable,
+  getPosMenuCatalog,
   setProductAvailability,
   setProductPrices,
-  getProductPriceOverridesMap,
 } from '@/lib/pos/repository';
 
-// In-memory / dynamic inventory state for the cafe
-const inventoryItems = [
-  {
-    id: 'inv-1',
-    name: 'Bột Matcha Fuji MK4',
-    sku: 'MAT-UJI-01',
-    category: 'Nguyên liệu pha chế',
-    unit: 'Gói 500g',
-    current_stock: 14,
-    min_stock: 5,
-    cost_price: 450000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-2',
-    name: 'Hạt Cà Phê Arabica Cầu Đất (Rang Medium)',
-    sku: 'COF-ARA-02',
-    category: 'Nguyên liệu pha chế',
-    unit: 'Bao 1kg',
-    current_stock: 22,
-    min_stock: 8,
-    cost_price: 280000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-3',
-    name: 'Chai Thủy Tinh Nắp Nhôm (Cold Brew)',
-    sku: 'BTL-330-GL',
-    category: 'Bao bì & Đóng gói',
-    unit: 'Thùng (100 chai)',
-    current_stock: 42,
-    min_stock: 15,
-    cost_price: 320000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-4',
-    name: 'Tem Niêm Phong & Nhãn Decal Chai Cold Brew',
-    sku: 'LBL-BTL-CB',
-    category: 'Bao bì & Đóng gói',
-    unit: 'Cuộn (500 tem)',
-    current_stock: 8,
-    min_stock: 3,
-    cost_price: 180000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-5',
-    name: 'Sữa Tươi Thanh Trùng Dalat Milk',
-    sku: 'MILK-DALAT',
-    category: 'Nguyên liệu pha chế',
-    unit: 'Chai 950ml',
-    current_stock: 18,
-    min_stock: 6,
-    cost_price: 38000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-6',
-    name: 'Cuộn Tem Decal QR Tích Điểm (50x30mm)',
-    sku: 'LBL-QR-5030',
-    category: 'Vật tư quầy',
-    unit: 'Cuộn 1000 tem',
-    current_stock: 6,
-    min_stock: 2,
-    cost_price: 75000,
-    status: 'IN_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'inv-7',
-    name: 'Kem Cheese / Phô Mai Kem Anchor',
-    sku: 'CHZ-ANC-01',
-    category: 'Nguyên liệu pha chế',
-    unit: 'Hộp 1kg',
-    current_stock: 2,
-    min_stock: 4,
-    cost_price: 210000,
-    status: 'LOW_STOCK',
-    updated_at: new Date().toISOString(),
-  },
-];
-
-// GET /api/admin/products
+// GET /api/admin/products — Read live menu catalog synced with Supabase & POS
 export async function GET() {
   try {
     const rbac = await resolveUserRbac();
@@ -108,60 +18,30 @@ export async function GET() {
       );
     }
 
-    const adminClient = createAdminClient();
-
-    // Query categories from database if available, else fallback to menuData
-    const { data: dbCategories } = await adminClient
-      .from('menu_categories')
-      .select('*')
-      .order('sort_order', { ascending: true });
-
-    const priceOverrides = getProductPriceOverridesMap();
-
-    // Format products list with persistent availability and prices
-    const products = menuData.flatMap((cat) =>
-      cat.items.map((item) => {
-        const itemOverrides = priceOverrides[item.id];
-        const sizes = itemOverrides
-          ? item.sizes.map((s) => {
-              const matched = itemOverrides.find((o) => o.label === s.label);
-              return { label: s.label, price: matched ? matched.price : s.price };
-            })
-          : item.sizes;
-
-        return {
-          ...item,
-          sizes,
-          categoryName: cat.name,
-          categorySlug: cat.slug,
-          is_available: isProductAvailable(item.id),
-        };
-      })
+    const catalog = await getPosMenuCatalog();
+    const products = catalog.categories.flatMap((cat) =>
+      cat.items.map((item) => ({
+        ...item,
+        categoryName: cat.name,
+        categorySlug: cat.slug,
+        is_available: item.isAvailable !== false,
+      }))
     );
 
-    const categories =
-      dbCategories && dbCategories.length > 0
-        ? dbCategories.map((c) => ({
-            id: c.id,
-            name: c.name,
-            slug: c.slug,
-            itemCount: products.filter((p) => p.categorySlug === c.slug).length,
-          }))
-        : menuData.map((c, idx) => ({
-            id: `cat-${idx + 1}`,
-            name: c.name,
-            slug: c.slug,
-            itemCount: c.items.length,
-          }));
+    const categories = catalog.categories.map((c, idx) => ({
+      id: `cat-${idx + 1}`,
+      name: c.name,
+      slug: c.slug,
+      itemCount: c.items.length,
+    }));
 
     return NextResponse.json({
       products,
       categories,
-      inventory: inventoryItems,
       metrics: {
         totalProducts: products.length,
         totalCategories: categories.length,
-        lowStockItems: inventoryItems.filter((i) => i.current_stock <= i.min_stock).length,
+        unavailableCount: products.filter((p) => !p.is_available).length,
       },
     });
   } catch (err: unknown) {
@@ -170,7 +50,7 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/products — Update availability or inventory
+// POST /api/admin/products — Toggle availability, update prices, or create new menu product
 export async function POST(request: NextRequest) {
   try {
     const rbac = await resolveUserRbac();
@@ -182,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { action, productId, isAvailable, sizes, inventoryId, adjustment } = body;
+    const { action, productId, isAvailable, sizes, name, categorySlug, isSignature, shelfLife } = body;
 
     if (action === 'TOGGLE_AVAILABILITY' && productId) {
       const avail = Boolean(isAvailable);
@@ -203,22 +83,75 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (action === 'ADJUST_STOCK' && inventoryId && adjustment !== undefined) {
-      const item = inventoryItems.find((i) => i.id === inventoryId);
-      if (!item) {
-        return NextResponse.json({ error: 'Không tìm thấy mặt hàng trong kho' }, { status: 404 });
+    if (action === 'CREATE_PRODUCT') {
+      const cleanName = String(name || '').trim();
+      const catSlug = String(categorySlug || 'matcha').trim();
+      const rawSizes = Array.isArray(sizes) ? sizes : [];
+
+      if (!cleanName || rawSizes.length === 0) {
+        return NextResponse.json(
+          { error: 'Vui lòng nhập tên món và ít nhất 1 mức giá theo Size.' },
+          { status: 400 }
+        );
       }
 
-      item.current_stock = Math.max(0, item.current_stock + parseInt(adjustment, 10));
-      item.status =
-        item.current_stock === 0
-          ? 'OUT_OF_STOCK'
-          : item.current_stock <= item.min_stock
-            ? 'LOW_STOCK'
-            : 'IN_STOCK';
-      item.updated_at = new Date().toISOString();
+      const adminClient = createAdminClient();
+      const { data: catRow } = await adminClient
+        .from('menu_categories')
+        .select('id, name, slug')
+        .eq('slug', catSlug)
+        .maybeSingle();
 
-      return NextResponse.json({ success: true, item });
+      if (!catRow) {
+        return NextResponse.json(
+          { error: 'Không tìm thấy danh mục thực đơn tương ứng trong cơ sở dữ liệu.' },
+          { status: 404 }
+        );
+      }
+
+      const { data: insertedItem, error: itemErr } = await adminClient
+        .from('menu_items')
+        .insert({
+          category_id: catRow.id,
+          name: cleanName,
+          description: shelfLife ? String(shelfLife).trim() : null,
+          is_signature: Boolean(isSignature),
+          is_available: true,
+          sort_order: 99,
+        })
+        .select('*')
+        .single();
+
+      if (itemErr || !insertedItem) {
+        return NextResponse.json(
+          { error: itemErr?.message || 'Không thể tạo món mới trong cơ sở dữ liệu.' },
+          { status: 500 }
+        );
+      }
+
+      const sizeRows = rawSizes.map((sz: { label: string; price: number }, idx: number) => ({
+        item_id: insertedItem.id,
+        size_label: String(sz.label || 'M'),
+        price: Math.max(1000, Number(sz.price) || 0),
+        is_available: true,
+        sort_order: idx + 1,
+      }));
+
+      await adminClient.from('menu_item_sizes').insert(sizeRows);
+
+      return NextResponse.json({
+        success: true,
+        product: {
+          id: insertedItem.id,
+          name: cleanName,
+          category: catRow.name,
+          categorySlug: catRow.slug,
+          isSignature: Boolean(isSignature),
+          shelfLife: shelfLife ? String(shelfLife).trim() : undefined,
+          sizes: sizeRows.map((s) => ({ label: s.size_label, price: s.price })),
+          is_available: true,
+        },
+      });
     }
 
     return NextResponse.json({ error: 'Hành động không hợp lệ' }, { status: 400 });

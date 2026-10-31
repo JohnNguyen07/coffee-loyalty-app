@@ -181,13 +181,22 @@ export async function getInventoryOverview(
     };
   });
 
-  // 5. Recent movements
+  // 5. Recent movements with human-readable item name
   const { data: movements } = await adminClient
     .from('inventory_movements')
     .select('*')
     .eq('business_id', businessId)
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(35);
+
+  const enrichedMovements = (movements || []).map((mv: Record<string, unknown>) => {
+    const matchedItem = itemsList.find((it) => it.id === String(mv.item_id));
+    return {
+      ...mv,
+      item_name: matchedItem?.name || 'Mặt hàng kho',
+      item_sku: matchedItem?.sku || '',
+    };
+  });
 
   return {
     summary: {
@@ -199,7 +208,7 @@ export async function getInventoryOverview(
     },
     items: itemsWithStock,
     lots: lotViews,
-    recentMovements: movements || [],
+    recentMovements: enrichedMovements,
   };
 }
 
@@ -739,16 +748,216 @@ export async function recordStockAudit(
         notes: `Điều chỉnh sau kiểm kê ${payload.auditNumber}: ${variance.varianceStatus} ${Math.abs(variance.varianceQuantity)} ${it.unit}`,
       });
 
-      // Update physical lot if specific lot was audited
+      // Update physical lot if specific lot was audited, otherwise reconcile item lots & cost layers
       if (it.lotId) {
         await adminClient
           .from('inventory_lots')
           .update({ remaining_quantity: it.countedQuantity })
           .eq('id', it.lotId);
+      } else {
+        const { data: activeLots } = await adminClient
+          .from('inventory_lots')
+          .select('*')
+          .eq('warehouse_id', payload.warehouseId)
+          .eq('item_id', it.itemId)
+          .eq('status', 'ACTIVE')
+          .order('expiry_date', { ascending: true, nullsFirst: false });
+
+        if (variance.varianceQuantity < 0) {
+          // Shortage: deduct abs(varianceQuantity) across active lots (FEFO)
+          let toDeduct = Math.abs(variance.varianceQuantity);
+          for (const lot of activeLots || []) {
+            if (toDeduct <= 0) break;
+            const rem = Number(lot.remaining_quantity) || 0;
+            const deduct = Math.min(rem, toDeduct);
+            const nextRem = Number((rem - deduct).toFixed(3));
+            toDeduct = Number((toDeduct - deduct).toFixed(3));
+            await adminClient
+              .from('inventory_lots')
+              .update({
+                remaining_quantity: nextRem,
+                status: nextRem <= 0 ? 'DEPLETED' : 'ACTIVE',
+              })
+              .eq('id', lot.id);
+          }
+
+          // Also deduct from FIFO cost layers
+          let layerDeduct = Math.abs(variance.varianceQuantity);
+          const { data: activeLayers } = await adminClient
+            .from('inventory_cost_layers')
+            .select('*')
+            .eq('warehouse_id', payload.warehouseId)
+            .eq('item_id', it.itemId)
+            .gt('remaining_quantity', 0)
+            .order('layer_order', { ascending: true });
+
+          for (const ly of activeLayers || []) {
+            if (layerDeduct <= 0) break;
+            const rem = Number(ly.remaining_quantity) || 0;
+            const deduct = Math.min(rem, layerDeduct);
+            const nextRem = Number((rem - deduct).toFixed(3));
+            layerDeduct = Number((layerDeduct - deduct).toFixed(3));
+            await adminClient
+              .from('inventory_cost_layers')
+              .update({ remaining_quantity: nextRem })
+              .eq('id', ly.id);
+          }
+        } else if (variance.varianceQuantity > 0) {
+          // Surplus: add to first active lot or create a new adjustment lot + layer
+          const addQty = Number(variance.varianceQuantity.toFixed(3));
+          if (activeLots && activeLots.length > 0) {
+            const firstLot = activeLots[0];
+            const nextRem = Number(((Number(firstLot.remaining_quantity) || 0) + addQty).toFixed(3));
+            await adminClient
+              .from('inventory_lots')
+              .update({ remaining_quantity: nextRem })
+              .eq('id', firstLot.id);
+          } else {
+            await adminClient.from('inventory_lots').insert({
+              business_id: staff.businessId,
+              warehouse_id: payload.warehouseId,
+              item_id: it.itemId,
+              lot_number: `LOT-${payload.auditNumber}`,
+              received_date: new Date().toISOString().slice(0, 10),
+              initial_quantity: addQty,
+              remaining_quantity: addQty,
+              status: 'ACTIVE',
+            });
+          }
+
+          await adminClient.from('inventory_cost_layers').insert({
+            business_id: staff.businessId,
+            warehouse_id: payload.warehouseId,
+            item_id: it.itemId,
+            source_doc_type: 'AUDIT',
+            source_doc_id: audit.id,
+            source_doc_number: payload.auditNumber,
+            layer_order: 999,
+            received_at: new Date().toISOString(),
+            initial_quantity: addQty,
+            remaining_quantity: addQty,
+            unit_cost: it.unitCost || 0,
+          });
+        }
       }
     }
   }
 
   return { success: true, auditId: audit.id };
 }
+
+/**
+ * Record direct Stock Loss / Spoilage / Expired Write-off (Xuất Hủy / Hao Hụt) atomically.
+ * Deducts FEFO physical lots and FIFO cost layers and writes an immutable movement.
+ */
+export async function recordStockLoss(
+  payload: {
+    warehouseId: string;
+    itemId: string;
+    quantity: number;
+    lossType?: 'OUT_LOSS' | 'OUT_EXPIRED';
+    reason: string;
+  },
+  staff: PosStaffContext
+): Promise<{ success: boolean; error?: string }> {
+  const adminClient = createAdminClient();
+  const deductQty = Number(Math.max(0, Number(payload.quantity) || 0).toFixed(3));
+  if (deductQty <= 0) {
+    return { success: false, error: 'Số lượng xuất hủy phải lớn hơn 0.' };
+  }
+
+  const { data: item } = await adminClient
+    .from('inventory_items')
+    .select('*')
+    .eq('id', payload.itemId)
+    .single();
+
+  if (!item) {
+    return { success: false, error: 'Không tìm thấy mặt hàng cần xuất hủy.' };
+  }
+
+  // Deduct from FEFO lots
+  const { data: activeLots } = await adminClient
+    .from('inventory_lots')
+    .select('*')
+    .eq('warehouse_id', payload.warehouseId)
+    .eq('item_id', payload.itemId)
+    .eq('status', 'ACTIVE')
+    .gt('remaining_quantity', 0)
+    .order('expiry_date', { ascending: true, nullsFirst: false });
+
+  const totalAvailable = (activeLots || []).reduce(
+    (s, l) => s + (Number(l.remaining_quantity) || 0),
+    0
+  );
+
+  if (totalAvailable < deductQty) {
+    return {
+      success: false,
+      error: `Tồn kho hiện tại (${totalAvailable} ${item.base_unit}) không đủ để xuất hủy ${deductQty} ${item.base_unit}.`,
+    };
+  }
+
+  let remToDeduct = deductQty;
+  let firstLotId: string | null = null;
+  for (const lot of activeLots || []) {
+    if (remToDeduct <= 0) break;
+    if (!firstLotId) firstLotId = String(lot.id);
+    const rem = Number(lot.remaining_quantity) || 0;
+    const take = Math.min(rem, remToDeduct);
+    const nextRem = Number((rem - take).toFixed(3));
+    remToDeduct = Number((remToDeduct - take).toFixed(3));
+
+    await adminClient
+      .from('inventory_lots')
+      .update({
+        remaining_quantity: nextRem,
+        status: nextRem <= 0 ? 'DEPLETED' : 'ACTIVE',
+      })
+      .eq('id', lot.id);
+  }
+
+  // Deduct from FIFO cost layers
+  let layerDeduct = deductQty;
+  const { data: activeLayers } = await adminClient
+    .from('inventory_cost_layers')
+    .select('*')
+    .eq('warehouse_id', payload.warehouseId)
+    .eq('item_id', payload.itemId)
+    .gt('remaining_quantity', 0)
+    .order('layer_order', { ascending: true });
+
+  for (const ly of activeLayers || []) {
+    if (layerDeduct <= 0) break;
+    const rem = Number(ly.remaining_quantity) || 0;
+    const take = Math.min(rem, layerDeduct);
+    const nextRem = Number((rem - take).toFixed(3));
+    layerDeduct = Number((layerDeduct - take).toFixed(3));
+
+    await adminClient
+      .from('inventory_cost_layers')
+      .update({ remaining_quantity: nextRem })
+      .eq('id', ly.id);
+  }
+
+  const docNum = `XH-${Date.now().toString().slice(-6)}`;
+  const mvType = payload.lossType === 'OUT_EXPIRED' ? 'OUT_EXPIRED' : 'OUT_LOSS';
+
+  await adminClient.from('inventory_movements').insert({
+    business_id: staff.businessId,
+    warehouse_id: payload.warehouseId,
+    item_id: payload.itemId,
+    lot_id: firstLotId,
+    movement_type: mvType,
+    quantity: -deductQty,
+    base_unit: String(item.base_unit),
+    reference_doc_type: 'LOSS',
+    reference_doc_number: docNum,
+    actor_id: staff.dbUserId,
+    notes: `Xuất hủy / Hao hụt (${docNum}): ${payload.reason || 'Hao hụt vận hành'}`,
+  });
+
+  return { success: true };
+}
+
 
