@@ -74,17 +74,27 @@ BEGIN
     (v_item_id, 'M', 34000, 1), (v_item_id, 'L', 39000, 2);
 
   INSERT INTO menu_items (category_id, name, sort_order)
-  VALUES (v_matcha_id, 'Matcha Coco', 2) RETURNING id INTO v_item_id;
+  VALUES (v_matcha_id, 'Matcha Kem Muối', 2) RETURNING id INTO v_item_id;
+  INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
+    (v_item_id, 'M', 39000, 1), (v_item_id, 'L', 44000, 2);
+
+  INSERT INTO menu_items (category_id, name, sort_order)
+  VALUES (v_matcha_id, 'Strawberry Matcha Latte', 3) RETURNING id INTO v_item_id;
+  INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
+    (v_item_id, 'M', 42000, 1), (v_item_id, 'L', 46000, 2);
+
+  INSERT INTO menu_items (category_id, name, sort_order)
+  VALUES (v_matcha_id, 'Matcha Coco', 4) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'M', 34000, 1), (v_item_id, 'L', 39000, 2);
 
   INSERT INTO menu_items (category_id, name, sort_order)
-  VALUES (v_matcha_id, 'Matcha Oat', 3) RETURNING id INTO v_item_id;
+  VALUES (v_matcha_id, 'Matcha Oat', 5) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'M', 34000, 1), (v_item_id, 'L', 39000, 2);
 
   INSERT INTO menu_items (category_id, name, is_signature, sort_order)
-  VALUES (v_matcha_id, 'Matcha Cold Whisk', TRUE, 4) RETURNING id INTO v_item_id;
+  VALUES (v_matcha_id, 'Matcha Cold Whisk', TRUE, 6) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'M', 42000, 1), (v_item_id, 'L', 46000, 2);
 

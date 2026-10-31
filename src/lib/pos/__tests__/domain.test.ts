@@ -276,4 +276,32 @@ describe('M01 POS Domain Logic', () => {
     assert.equal(cupResult.totals.items[1].unitPrice, 34000);
     assert.equal(cupResult.totals.subtotal, 63000);
   });
+
+  it('includes Strawberry Matcha Latte in POS catalog and calculates M/L prices accurately', () => {
+    const res = calculatePosOrderTotals({
+      items: [
+        {
+          itemId: 'strawberry-matcha',
+          productName: 'Strawberry Matcha Latte',
+          sizeLabel: 'M',
+          quantity: 1,
+        },
+        {
+          itemId: 'strawberry-matcha',
+          productName: 'Strawberry Matcha Latte',
+          sizeLabel: 'L',
+          quantity: 1,
+        },
+      ],
+      paymentMethod: 'CASH',
+      amountReceived: 100000,
+      staffRole: 'CASHIER',
+    });
+
+    assert.equal(res.validation.valid, true);
+    assert.equal(res.totals.items[0].productName, 'Strawberry Matcha Latte');
+    assert.equal(res.totals.items[0].unitPrice, 42000);
+    assert.equal(res.totals.items[1].unitPrice, 46000);
+    assert.equal(res.totals.subtotal, 88000);
+  });
 });

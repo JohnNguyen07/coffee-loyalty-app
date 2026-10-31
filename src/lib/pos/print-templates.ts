@@ -8,9 +8,9 @@ const ORDER_TYPE_LABEL: Record<string, string> = {
 };
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = {
-  CASH: 'Tiền mặt',
-  BANK_TRANSFER: 'Chuyển khoản QR',
-  EWALLET: 'Ví điện tử',
+  CASH: 'Tiền',
+  BANK_TRANSFER: 'Tiền',
+  EWALLET: 'Tiền',
 };
 
 function escapeHtml(str: string): string {

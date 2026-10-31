@@ -1481,29 +1481,21 @@ export default function POSPanel() {
                   )}
                 </div>
 
-                {/* Payment Method & Cash Tender */}
+                {/* Unified Money Account & Cash Tender */}
                 <div className={styles.checkoutSection}>
-                  <label className={styles.fieldLabel}>Phương thức thanh toán</label>
+                  <label className={styles.fieldLabel}>Tài khoản thanh toán</label>
                   <div className={styles.paymentMethodGrid}>
-                    {(
-                      [
-                        { key: 'CASH', label: '💵 Tiền mặt' },
-                        { key: 'BANK_TRANSFER', label: '🏦 Chuyển khoản QR' },
-                        { key: 'EWALLET', label: '📱 Ví điện tử' },
-                      ] as const
-                    ).map((pm) => (
-                      <button
-                        key={pm.key}
-                        type="button"
-                        className={`${styles.paymentMethodBtn} ${paymentMethod === pm.key ? styles.paymentMethodActive : ''}`}
-                        onClick={() => setPaymentMethod(pm.key)}
-                      >
-                        {pm.label}
-                      </button>
-                    ))}
+                    <button
+                      type="button"
+                      className={`${styles.paymentMethodBtn} ${styles.paymentMethodActive}`}
+                      onClick={() => setPaymentMethod('CASH')}
+                      style={{ gridColumn: '1 / -1' }}
+                    >
+                      💵 Tiền (Quỹ Tiền Cửa Hàng)
+                    </button>
                   </div>
 
-                  {paymentMethod === 'CASH' && totals.totalDue > 0 && (
+                  {totals.totalDue > 0 && (
                     <div className={styles.cashTenderBox}>
                       <div className={styles.cashTenderInputRow}>
                         <span>Khách đưa:</span>
@@ -1728,11 +1720,7 @@ export default function POSPanel() {
                                   </span>
                                 )}
                                 <span className={styles.codeSubLink}>
-                                  {ord.paymentMethod === 'CASH'
-                                    ? 'Tiền mặt'
-                                    : ord.paymentMethod === 'BANK_TRANSFER'
-                                      ? 'Chuyển khoản'
-                                      : 'Ví ĐT'}
+                                  💵 Tiền
                                 </span>
                               </div>
                             </td>
@@ -2120,7 +2108,7 @@ export default function POSPanel() {
                       <span>{formatVND(completedOrder.totalDue)}</span>
                     </div>
                     <div className={styles.sheetSumRow}>
-                      <span>Khách đưa ({completedOrder.paymentMethod}):</span>
+                      <span>Khách đưa (Tiền):</span>
                       <span>{formatVND(completedOrder.amountReceived)}</span>
                     </div>
                     <div className={styles.sheetSumRow}>

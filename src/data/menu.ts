@@ -119,7 +119,7 @@ export const menuData: MenuCategory[] = [
       },
       {
         id: 'strawberry-matcha',
-        name: 'Strawberry Matcha',
+        name: 'Strawberry Matcha Latte',
         category: 'Matcha',
         categorySlug: 'matcha',
         tag: 'Dâu Tươi',

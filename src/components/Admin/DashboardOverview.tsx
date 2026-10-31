@@ -34,8 +34,8 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
         if (revRes && revRes.ok) {
           const revData = await revRes.json();
           if (revData.summary) {
-            revenue = revData.summary.netSales || 0;
-            orders = revData.summary.confirmedOrdersCount || 0;
+            revenue = revData.summary.metrics?.paidOrderRevenue ?? revData.summary.netSales ?? 0;
+            orders = revData.summary.metrics?.orderCount ?? revData.summary.confirmedOrdersCount ?? 0;
           }
         }
 
@@ -187,7 +187,7 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
             Doanh Thu &amp; Sổ Quỹ Két
           </h3>
           <p className={styles.actionCardDesc}>
-            Báo cáo dòng tiền thực tế, phân tách tiền mặt và chuyển khoản, quản lý ca bán và chênh lệch két.
+            Báo cáo doanh thu thực tế, quản lý 1 tài khoản Tiền duy nhất (Quỹ Tiền Cửa Hàng), quản lý ca bán và kiểm đếm két.
           </p>
           <span className={styles.actionLinkText} style={{ color: '#b45309' }}>Xem Doanh thu &rarr;</span>
         </div>

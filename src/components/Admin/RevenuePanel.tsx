@@ -662,7 +662,7 @@ export default function RevenuePanel() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
-          TAB 2: SỔ QUỸ THU - CHI (TIỀN MẶT & NGÂN HÀNG)
+          TAB 2: SỔ QUỸ THU - CHI (QUỸ TIỀN CỬA HÀNG)
          ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'CASHBOOK' && (
         <>
@@ -759,7 +759,7 @@ export default function RevenuePanel() {
                 Nhật Ký Dòng Tiền (Sổ Cái Thu - Chi)
               </h3>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                Ghi nhận minh bạch mọi biến động tiền mặt và chuyển khoản tại cửa hàng.
+                Ghi nhận minh bạch mọi biến động thu - chi trong 1 tài khoản Tiền duy nhất tại cửa hàng.
               </span>
             </div>
 
@@ -889,7 +889,7 @@ export default function RevenuePanel() {
                   <strong>{formatVND(activeShift.openingCash)}</strong>
                 </div>
                 <div className={styles.shiftStatBox}>
-                  <span>2. Tiền mặt bán trong ca</span>
+                  <span>2. Tiền bán hàng trong ca</span>
                   <strong style={{ color: '#15803d' }}>+{formatVND(activeShift.cashSales)}</strong>
                 </div>
                 <div className={styles.shiftStatBox}>
@@ -897,7 +897,7 @@ export default function RevenuePanel() {
                   <strong style={{ color: '#dc2626' }}>−{formatVND(activeShift.cashRefunds)}</strong>
                 </div>
                 <div className={`${styles.shiftStatBox} ${styles.expectedBox}`}>
-                  <span>4. Tiền lý thuyết trong két</span>
+                  <span>4. Tiền lý thuyết trong quỹ</span>
                   <strong>{formatVND(activeShift.expectedCash)}</strong>
                 </div>
               </div>
@@ -934,8 +934,8 @@ export default function RevenuePanel() {
                     <th>Thời gian ca</th>
                     <th>Thu ngân</th>
                     <th>Tiền đầu ca</th>
-                    <th>Bán tiền mặt</th>
-                    <th>Lý thuyết két</th>
+                    <th>Tiền bán hàng</th>
+                    <th>Lý thuyết quỹ</th>
                     <th>Thực tế đếm</th>
                     <th>Chênh lệch</th>
                     <th>Nộp chủ quán</th>
@@ -1007,7 +1007,7 @@ export default function RevenuePanel() {
           <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3 className={styles.modalTitle}>
-                {txType === 'RECEIPT' ? '➕ Lập Phiếu Thu Tiền' : '➖ Lập Phiếu Chi Tiền Mặt'}
+                {txType === 'RECEIPT' ? '➕ Lập Phiếu Thu Tiền' : '➖ Lập Phiếu Chi Tiền'}
               </h3>
               <button
                 type="button"
@@ -1027,8 +1027,8 @@ export default function RevenuePanel() {
                     onChange={(e) => setTxType(e.target.value as CashTransactionType)}
                     className={styles.formSelect}
                   >
-                    <option value="PAYMENT">Phiếu Chi (Tiền ra khỏi két)</option>
-                    <option value="RECEIPT">Phiếu Thu (Tiền vào két)</option>
+                    <option value="PAYMENT">Phiếu Chi (Tiền ra khỏi quỹ)</option>
+                    <option value="RECEIPT">Phiếu Thu (Tiền vào quỹ)</option>
                   </select>
                 </div>
 
@@ -1046,7 +1046,6 @@ export default function RevenuePanel() {
                         <option value="UTILITIES">Sinh hoạt &amp; Tiện ích (Điện, nước, rác, gửi xe...)</option>
                         <option value="SALARY_ADVANCE">Tạm ứng lương nhân viên</option>
                         <option value="SHIPPING">Chi phí giao hàng (Shipper ngoài)</option>
-                        <option value="BANK_DEPOSIT">Nộp tiền vào ngân hàng (Chuyển quỹ)</option>
                         <option value="OTHER">Chi phí khác</option>
                       </>
                     ) : (
@@ -1076,7 +1075,7 @@ export default function RevenuePanel() {
                   <input
                     type="text"
                     disabled
-                    value="Quỹ tiền cửa hàng (Ủ LAB)"
+                    value="💵 Tiền (Quỹ Tiền Cửa Hàng)"
                     className={styles.formInput}
                   />
                 </div>
@@ -1382,7 +1381,7 @@ export default function RevenuePanel() {
                   <span>{formatVND(zReportShift.openingCash)}</span>
                 </div>
                 <div className={styles.thermalRow}>
-                  <span>+ Bán hàng tiền mặt:</span>
+                  <span>+ Tiền bán hàng:</span>
                   <span>{formatVND(zReportShift.cashSales)}</span>
                 </div>
                 <div className={styles.thermalRow}>

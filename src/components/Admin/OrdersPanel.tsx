@@ -169,11 +169,11 @@ export default function OrdersPanel() {
               cancelled_by: meta.cancelledBy || null,
               created_at: o.created_at
                 ? new Date(String(o.created_at)).toLocaleString('vi-VN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    day: '2-digit',
-                    month: '2-digit',
-                  })
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  day: '2-digit',
+                  month: '2-digit',
+                })
                 : 'Hôm nay',
             };
           });

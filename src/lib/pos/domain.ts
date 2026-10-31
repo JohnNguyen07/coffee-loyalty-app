@@ -151,9 +151,14 @@ export function normalizePosItems(
         }
       }
 
-      // 4. Fallback: match by name only
+      // 4. Fallback: match by name only (including Strawberry Matcha <-> Strawberry Matcha Latte alias)
       if (!matchedItem) {
-        matchedItem = catalog.find((m) => m.name.toLowerCase() === cleanName);
+        matchedItem = catalog.find(
+          (m) =>
+            m.name.toLowerCase() === cleanName ||
+            (m.id === 'strawberry-matcha' &&
+              (cleanName === 'strawberry matcha' || cleanName === 'strawberry matcha latte'))
+        );
       }
 
       const sizeObj = matchedItem?.sizes.find((s) => s.label === it.sizeLabel);

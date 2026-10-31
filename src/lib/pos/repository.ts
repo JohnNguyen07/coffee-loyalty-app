@@ -221,15 +221,20 @@ export async function getPosMenuCatalog() {
         const catItems: MenuItem[] = dbItems
           .filter((item) => item.category_id === cat.id)
           .map((item) => {
+            const lowerDbName = item.name.trim().toLowerCase();
+            const isStrawberryMatcha =
+              lowerDbName === 'strawberry matcha' || lowerDbName === 'strawberry matcha latte';
             const staticMatch =
-              staticCat?.items.find((m) => m.name.toLowerCase() === item.name.toLowerCase()) ||
+              staticCat?.items.find(
+                (m) =>
+                  m.name.toLowerCase() === lowerDbName ||
+                  (isStrawberryMatcha && m.id === 'strawberry-matcha')
+              ) ||
               allMenuItems.find(
-                (m) => m.name.toLowerCase() === item.name.toLowerCase() && m.categorySlug === cat.slug
+                (m) => m.name.toLowerCase() === lowerDbName && m.categorySlug === cat.slug
               ) ||
               allMenuItems.find((m) => m.id === item.id) ||
-              allMenuItems.find(
-                (m) => m.name.toLowerCase() === item.name.toLowerCase()
-              );
+              allMenuItems.find((m) => m.name.toLowerCase() === lowerDbName);
             const pid = staticMatch?.id || item.id;
             const rawSizes = Array.isArray(item.sizes) ? (item.sizes as DbSizeRow[]) : [];
             const sortedSizes = rawSizes
@@ -252,7 +257,7 @@ export async function getPosMenuCatalog() {
 
             return {
               id: pid,
-              name: item.name,
+              name: staticMatch?.name || item.name,
               category: cat.name,
               categorySlug: cat.slug,
               isSignature: Boolean(item.is_signature ?? staticMatch?.isSignature),
@@ -262,6 +267,34 @@ export async function getPosMenuCatalog() {
               isAvailable,
             };
           });
+
+        // Merge any canonical items from static menuData that haven't been seeded into DB yet
+        if (staticCat) {
+          for (const stItem of staticCat.items) {
+            const alreadyPresent = catItems.some(
+              (ci) =>
+                ci.id === stItem.id ||
+                ci.name.toLowerCase() === stItem.name.toLowerCase()
+            );
+            if (!alreadyPresent) {
+              const priceMap = globalProductPriceOverrides.get(stItem.id);
+              const sizes = priceMap
+                ? stItem.sizes.map((s) => ({
+                    label: s.label,
+                    price: priceMap.get(s.label) ?? s.price,
+                  }))
+                : stItem.sizes;
+              const isAvailable = globalProductAvailability.has(stItem.id)
+                ? globalProductAvailability.get(stItem.id)!
+                : true;
+              catItems.push({
+                ...stItem,
+                sizes,
+                isAvailable,
+              });
+            }
+          }
+        }
 
         return {
           name: cat.name,

@@ -465,12 +465,9 @@ export async function closeShiftSession(
       .lte('created_at', closeTime);
 
     for (const ord of (shiftOrders as Record<string, unknown>[]) || []) {
-      const meta = extractPosOrderMetadata(ord);
       const totalDue = Number(ord.total_due) || 0;
-      if (meta.paymentMethod === 'CASH') {
-        if (ord.status === 'CONFIRMED') cashSales += totalDue;
-        else if (ord.status === 'CANCELLED') cashRefunds += totalDue;
-      }
+      if (ord.status === 'CONFIRMED') cashSales += totalDue;
+      else if (ord.status === 'CANCELLED') cashRefunds += totalDue;
     }
   } catch {
     // ignore
