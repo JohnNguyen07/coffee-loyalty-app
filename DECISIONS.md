@@ -25,3 +25,10 @@
     - Hao hụt/Hỏng hóc (`OUT_LOSS`) kèm lý do giải trình.
     - Điều chỉnh kiểm kê (`ADJUST_AUDIT`) tự động bù trừ khi chốt phiếu kiểm kê thực tế.
   - **Đơn vị tiền tệ & định lượng**: Tiền lưu `BIGINT` VND; Định lượng nguyên liệu lưu `DECIMAL(12, 3)` (chính xác đến 0.001 g hoặc 0.001 ml) để đảm bảo không sai số tích lũy khi mở rộng sang công thức.
+
+## ADR-004: Tinh gọn Đặt hàng Web & Thống nhất Tài khoản Doanh thu Quỹ Tiền
+- **Bối cảnh**: Trải nghiệm thực tế ghi nhận việc yêu cầu khách quét VietQR ngay khi đặt hàng web gây phát sinh lỗi không khớp thanh toán khi popup Messenger bị chặn hoặc khách chưa biết phí ship. Đồng thời tại quầy cà phê takeaway, việc tách riêng tài khoản tiền mặt và QR gây rườm rà trong kiểm đếm và đối soát sổ quỹ.
+- **Quyết định**:
+  - **Đặt hàng Web**: Cung cấp đúng 2 lựa chọn nhận hàng: `🏪 Lấy tại quán` (ghé quầy nhận đồ và thanh toán) và `🛵 COD giao tới nhà` (giao tận nơi, quán liên hệ báo phí ship trước và thu tiền khi giao). Loại bỏ toàn bộ giao diện quét mã VietQR và chọn hình thức thanh toán dự kiến trên web.
+  - **Quản lý đơn hàng (OrdersPanel)**: Bỏ modal VietQR và nút quét QR thu tiền. Sử dụng một nút thao tác thu tiền duy nhất `✓ Đã Thu Tiền`. Metadata POS được bóc tách tự động, tuyệt đối không hiển thị lộ chuỗi `[[ULAB_POS_META:...]]` lên giao diện người dùng.
+  - **Doanh thu & Sổ quỹ (Module B)**: Thống nhất tài khoản Tiền mặt và QR thành 1 tài khoản duy nhất: **Quỹ Tiền Cửa Hàng (Ủ LAB)**. Báo cáo bán hàng, sổ quỹ thu - chi, ca làm việc và đối soát két vận hành trên dòng tiền thống nhất.
