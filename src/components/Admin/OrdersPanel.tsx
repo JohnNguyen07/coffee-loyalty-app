@@ -92,14 +92,20 @@ export default function OrdersPanel() {
             const itemsArr = Array.isArray(o.items) ? o.items : [];
             const rawNote = String(o.note || '');
 
+            // Strip out any [[ULAB_POS_META:...]] or JSON metadata completely before parsing note fields
+            const cleanRawNote = rawNote.replace(/\[\[ULAB_POS_META:[\s\S]*?\]\]/g, '').trim();
+
             let cleanNote = meta.userNote || '';
+            // If userNote also accidentally contains the meta tag or raw string, clean it
+            cleanNote = cleanNote.replace(/\[\[ULAB_POS_META:[\s\S]*?\]\]/g, '').trim();
+
             let address: string | null = null;
             let parsedName = '';
             let parsedPhone = '';
             let shippingFee = 0;
 
             // Extract shipping fee if recorded in note
-            const shipMatch = rawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
+            const shipMatch = cleanRawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
             if (shipMatch) {
               shippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
             }
@@ -112,22 +118,28 @@ export default function OrdersPanel() {
               parsedName = String(userObj.full_name || 'Khách đặt web');
               parsedPhone = String(userObj.phone || userObj.email || '—');
 
-              const khMatch = rawNote.match(/KH:\s*([^|(]+)(?:\(([^)]+)\))?/);
+              const khMatch = cleanRawNote.match(/KH:\s*([^|(]+)(?:\(([^)]+)\))?/);
               if (khMatch) {
                 if (khMatch[1]?.trim()) parsedName = khMatch[1].trim();
                 if (khMatch[2]?.trim()) parsedPhone = khMatch[2].trim();
               }
 
-              const dcMatch = rawNote.match(/Đ\/c:\s*([^|]+)/);
+              const dcMatch = cleanRawNote.match(/Đ\/c:\s*([^|]+)/);
               if (dcMatch) {
                 address = dcMatch[1].trim();
               }
 
-              const noteMatch = rawNote.match(/Ghi chú:\s*([^|]+)/);
+              const noteMatch = cleanRawNote.match(/Ghi chú:\s*([^|]+)/);
               if (noteMatch) {
                 cleanNote = noteMatch[1].trim();
-              } else if (!cleanNote && !rawNote.startsWith('[')) {
-                cleanNote = rawNote;
+              } else if (!cleanNote && !cleanRawNote.startsWith('[')) {
+                cleanNote = cleanRawNote;
+              } else if (cleanNote && cleanNote.includes('|')) {
+                // If cleanNote was userNote containing the entire piped string
+                const innerMatch = cleanNote.match(/Ghi chú:\s*([^|]+)/);
+                if (innerMatch) {
+                  cleanNote = innerMatch[1].trim();
+                }
               }
             }
 
