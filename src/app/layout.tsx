@@ -1,28 +1,5 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, Lora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const beVietnamPro = Be_Vietnam_Pro({
-  subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-be-vietnam-pro",
-  display: "swap",
-});
-
-const lora = Lora({
-  subsets: ["latin", "vietnamese"],
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-lora",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin", "vietnamese"],
-  weight: ["500", "600"],
-  variable: "--font-jetbrains-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
@@ -51,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" data-scroll-behavior="smooth">
-      <body className={`${beVietnamPro.variable} ${lora.variable} ${jetbrainsMono.variable}`}>
+      <body className="antialiased">
         {children}
       </body>
     </html>
