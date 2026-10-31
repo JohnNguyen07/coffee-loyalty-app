@@ -383,7 +383,7 @@ export default function RevenuePanel() {
           className={`${styles.navTabBtn} ${activeTab === 'CASHBOOK' ? styles.navTabBtnActive : ''}`}
           onClick={() => setActiveTab('CASHBOOK')}
         >
-          📒 Sổ Quỹ Thu - Chi (Tiền Mặt &amp; Ngân Hàng)
+          📒 Sổ Quỹ Thu - Chi (Quỹ Tiền Cửa Hàng)
         </button>
         <button
           type="button"
@@ -454,15 +454,15 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Tiền mặt thu bán hàng</span>
+                <span className={styles.metricLabel}>Tổng tiền thực tế đã thu</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum}>
-                    {summary ? summary.collection.cashCollected.toLocaleString('vi-VN') : '0'}
+                    {summary ? summary.collection.totalCollected.toLocaleString('vi-VN') : '0'}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Lý thuyết két: {formatVND(cashRec?.expectedCash || 0)}</span>
+                  <span>1 tài khoản Tiền duy nhất (Gộp POS &amp; Web)</span>
                 </div>
               </div>
             </div>
@@ -470,22 +470,20 @@ export default function RevenuePanel() {
             <div className={styles.metricCard}>
               <div className={styles.metricIconWrap}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m8 3 4 4-4 4" />
-                  <path d="M4 7h8a4 4 0 0 1 4 4v1" />
-                  <path d="m16 21-4-4 4-4" />
-                  <path d="M20 17h-8a4 4 0 0 1-4-4v-1" />
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="M6 12h12M12 6v12" />
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Chuyển khoản VietQR</span>
+                <span className={styles.metricLabel}>Số dư quỹ tiền cửa hàng</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum}>
-                    {summary ? summary.collection.bankTransferCollected.toLocaleString('vi-VN') : '0'}
+                    {cashbook ? cashbook.closingBalance.toLocaleString('vi-VN') : '0'}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Ví ĐT: {formatVND(summary?.collection.ewalletCollected || 0)}</span>
+                  <span>Lý thuyết quỹ: {formatVND(cashRec?.expectedCash || 0)}</span>
                 </div>
               </div>
             </div>
@@ -597,7 +595,7 @@ export default function RevenuePanel() {
                     <th>Tạm tính</th>
                     <th>Giảm giá</th>
                     <th>Thực thu (Net)</th>
-                    <th>Phương thức</th>
+                    <th>Tài khoản</th>
                     <th>Trạng thái</th>
                   </tr>
                 </thead>
@@ -642,11 +640,7 @@ export default function RevenuePanel() {
                           <strong style={{ color: '#006241' }}>{formatVND(ord.totalDue)}</strong>
                         </td>
                         <td>
-                          {ord.paymentMethod === 'CASH'
-                            ? '💵 Tiền mặt'
-                            : ord.paymentMethod === 'BANK_TRANSFER'
-                              ? '🏦 Chuyển khoản'
-                              : '📱 Ví ĐT'}
+                          💵 Tiền
                         </td>
                         <td>
                           {ord.status === 'CONFIRMED' ? (
@@ -802,7 +796,7 @@ export default function RevenuePanel() {
                 <thead>
                   <tr>
                     <th>Mã phiếu &amp; Thời gian</th>
-                    <th>Loại &amp; Phương thức</th>
+                    <th>Loại phiếu</th>
                     <th>Danh mục thu / chi</th>
                     <th>Người nhận / Nộp</th>
                     <th>Diễn giải lý do</th>
@@ -838,9 +832,6 @@ export default function RevenuePanel() {
                           ) : (
                             <span className={styles.paymentBadge}>− Phiếu Chi</span>
                           )}
-                          <span className={styles.dateCell}>
-                            {tx.paymentMethod === 'CASH' ? '💵 Tiền mặt' : '🏦 Ngân hàng'}
-                          </span>
                         </td>
                         <td>
                           <strong>{CASH_CATEGORY_LABELS[tx.category] || tx.category}</strong>
@@ -1081,15 +1072,13 @@ export default function RevenuePanel() {
                 </div>
 
                 <div className={styles.formGroup}>
-                  <label>Phương thức giao dịch:</label>
-                  <select
-                    value={txPaymentMethod}
-                    onChange={(e) => setTxPaymentMethod(e.target.value as 'CASH' | 'BANK_TRANSFER')}
-                    className={styles.formSelect}
-                  >
-                    <option value="CASH">Tiền mặt tại két</option>
-                    <option value="BANK_TRANSFER">Chuyển khoản ngân hàng</option>
-                  </select>
+                  <label>Tài khoản ghi sổ:</label>
+                  <input
+                    type="text"
+                    disabled
+                    value="Quỹ tiền cửa hàng (Ủ LAB)"
+                    className={styles.formInput}
+                  />
                 </div>
 
                 <div className={styles.formGroup}>

@@ -32,14 +32,15 @@ export interface RawOrderForRevenue {
 export interface CashReconciliationInput {
   openingCash: number;
   actualCashCounted?: number;
-  cashPayouts?: number; // Tiền mặt chi khẩn cấp tại quầy
+  cashPayouts?: number; // Tiền chi ra tại quầy
 }
 
 export interface RevenueMetricCardData {
   paidOrderRevenue: number;     // Doanh thu đơn đã thanh toán (VND)
   orderCount: number;           // Số đơn hàng (Đơn)
-  actualCash: number;           // Tiền mặt thực tế (VND)
-  bankTransferAmount: number;   // Chuyển khoản (VND)
+  totalMoneyCollected: number;  // Tổng tiền thực tế đã thu (Gộp chung tài khoản Tiền)
+  actualCash: number;           // Alias giữ tương thích
+  bankTransferAmount: number;   // Alias giữ tương thích
 }
 
 export interface OrderRevenueBreakdown {
@@ -51,27 +52,27 @@ export interface OrderRevenueBreakdown {
 }
 
 export interface PaymentCollectionBreakdown {
-  cashCollected: number;        // Tiền mặt đã thu
-  bankTransferCollected: number;// Chuyển khoản QR ngân hàng
-  ewalletCollected: number;     // Ví điện tử
+  cashCollected: number;        // Gộp chung tài khoản Tiền
+  bankTransferCollected: number;// 0 (Đã gộp chung vào tiền)
+  ewalletCollected: number;     // 0
   totalCollected: number;       // Tổng tiền thực tế đã thu
 }
 
 export interface RefundBreakdown {
   totalRefunded: number;        // Tổng tiền hoàn lại do đơn hủy
-  cashRefunded: number;         // Tiền mặt hoàn lại
-  bankTransferRefunded: number; // Chuyển khoản hoàn lại
+  cashRefunded: number;         // Tiền hoàn lại
+  bankTransferRefunded: number;
   pointsRefunded: number;       // Điểm ví hoàn lại
   cancelledOrderCount: number;  // Số đơn bị hủy
 }
 
 export interface CashReconciliationBreakdown {
-  openingCash: number;          // Tiền thối đầu ca
-  cashSales: number;            // Tiền mặt thu từ đơn hàng
-  cashRefunds: number;          // Tiền mặt hoàn cho đơn hủy
-  cashPayouts: number;          // Tiền mặt chi ra tại quầy
-  expectedCash: number;         // Tiền mặt lý thuyết trong két
-  actualCash: number;           // Tiền mặt thực tế kiểm đếm
+  openingCash: number;          // Tiền thối / tiền quỹ đầu ca
+  cashSales: number;            // Tiền thu từ bán hàng
+  cashRefunds: number;          // Tiền hoàn cho đơn hủy
+  cashPayouts: number;          // Tiền chi ra tại quầy
+  expectedCash: number;         // Tiền lý thuyết trong quỹ
+  actualCash: number;           // Tiền thực tế kiểm đếm
   cashVariance: number;         // Chênh lệch (actual - expected)
   varianceStatus: VarianceStatus;
 }
@@ -129,7 +130,7 @@ export function calculateDenominationsTotal(counts: Partial<Record<DenominationK
   return total;
 }
 
-// ── Cash Transactions & Cashbook (Sổ Quỹ) ──
+// ── Cash Transactions & Cashbook (Sổ Quỹ Tiền Cửa Hàng) ──
 export type CashTransactionType = 'RECEIPT' | 'PAYMENT';
 
 export type CashTransactionCategory =
@@ -138,19 +139,17 @@ export type CashTransactionCategory =
   | 'UTILITIES'        // Tiền điện, nước, rác, internet, gửi xe
   | 'SALARY_ADVANCE'   // Tạm ứng lương nhân viên
   | 'SHIPPING'         // Tiền trả shipper ngoài
-  | 'BANK_DEPOSIT'     // Rút tiền két nộp vào tài khoản ngân hàng (chuyển quỹ)
-  | 'OPENING_FLOAT'    // Rót tiền thối đầu ca từ chủ quán
+  | 'OPENING_FLOAT'    // Rót tiền quỹ / tiền thối đầu ca
   | 'OTHER';           // Chi phí khác
 
 export const CASH_CATEGORY_LABELS: Record<CashTransactionCategory, string> = {
   RAW_MATERIAL: 'Nguyên liệu mua ngoài (Đá, sữa, chanh...)',
-  PACKAGING: 'Bao bì & Công cụ (Ly, ống hút, túi...)',
+  PACKAGING: 'Bao bì & Dụng cụ (Ly, ống hút, túi...)',
   UTILITIES: 'Sinh hoạt & Tiện ích (Điện, nước, rác, xe...)',
   SALARY_ADVANCE: 'Tạm ứng lương nhân viên',
   SHIPPING: 'Chi phí giao hàng (Shipper ngoài)',
-  BANK_DEPOSIT: 'Nộp tiền vào ngân hàng (Chuyển quỹ)',
-  OPENING_FLOAT: 'Nạp tiền thối quầy (Rót quỹ)',
-  OTHER: 'Chi phí khác',
+  OPENING_FLOAT: 'Rót tiền quỹ / Tiền thối đầu ca',
+  OTHER: 'Khoản thu / chi khác',
 };
 
 export interface CashTransaction {
@@ -160,7 +159,7 @@ export interface CashTransaction {
   type: CashTransactionType;
   category: CashTransactionCategory;
   amount: number;
-  paymentMethod: 'CASH' | 'BANK_TRANSFER';
+  paymentMethod?: string;
   recipientPayer: string;
   notes?: string;
   createdByName: string;
@@ -207,7 +206,6 @@ export function calculateCashbookSummary(
     };
   });
 
-  // Reverse back to newest first for display
   withRunning.reverse();
 
   return {
@@ -283,13 +281,10 @@ export function calculateShiftReconciliation(params: {
 }
 
 /**
- * Normalizes payment method string.
+ * Normalizes payment method string (Unified into 'TIEN').
  */
-export function normalizePaymentMethod(method?: string): 'CASH' | 'BANK_TRANSFER' | 'EWALLET' {
-  const m = String(method || '').toUpperCase();
-  if (m === 'BANK_TRANSFER' || m === 'TRANSFER' || m === 'QR') return 'BANK_TRANSFER';
-  if (m === 'EWALLET' || m === 'WALLET') return 'EWALLET';
-  return 'CASH';
+export function normalizePaymentMethod(method?: string): string {
+  return 'TIEN';
 }
 
 /**
@@ -348,7 +343,6 @@ export function calculateHourlySales(orders: RawOrderForRevenue[]): HourlySalesB
   for (const ord of orders) {
     if (ord.status !== 'CONFIRMED') continue;
     const d = new Date(ord.created_at);
-    // Convert to VN hour (+7 UTC)
     const vnHour = (d.getUTCHours() + 7) % 24;
     if (map.has(vnHour)) {
       const curr = map.get(vnHour)!;
@@ -365,7 +359,7 @@ export function calculateHourlySales(orders: RawOrderForRevenue[]): HourlySalesB
 }
 
 /**
- * Calculates complete revenue metrics, distinguishing order revenue, cash collected, refunds, and cash variance.
+ * Calculates complete revenue metrics with UNIFIED Money account (Gộp chung tiền mặt và QR).
  */
 export function calculateRevenueSummary(
   orders: RawOrderForRevenue[],
@@ -379,12 +373,8 @@ export function calculateRevenueSummary(
   let pendingOrdersCount = 0;
   let cancelledOrdersCount = 0;
 
-  let cashCollected = 0;
-  let bankTransferCollected = 0;
-  let ewalletCollected = 0;
-
-  let cashRefunded = 0;
-  let bankTransferRefunded = 0;
+  let totalCollected = 0;
+  let totalRefunded = 0;
   let pointsRefunded = 0;
 
   for (const ord of orders) {
@@ -392,7 +382,6 @@ export function calculateRevenueSummary(
     const totalDue = Math.max(0, Number(ord.total_due) || 0);
     const pointsUsed = Math.max(0, Number(ord.points_used) || 0);
     const discountAmount = Math.max(0, Number(ord.discount_amount) || 0);
-    const method = normalizePaymentMethod(ord.payment_method);
 
     if (ord.status === 'CONFIRMED') {
       completedOrdersCount++;
@@ -400,38 +389,24 @@ export function calculateRevenueSummary(
       discounts += discountAmount;
       pointsDiscount += pointsUsed;
       netRevenue += totalDue;
-
-      if (method === 'CASH') {
-        cashCollected += totalDue;
-      } else if (method === 'BANK_TRANSFER') {
-        bankTransferCollected += totalDue;
-      } else if (method === 'EWALLET') {
-        ewalletCollected += totalDue;
-      }
+      totalCollected += totalDue; // Gộp chung 1 tài khoản Tiền
     } else if (ord.status === 'PENDING') {
       pendingOrdersCount++;
     } else if (ord.status === 'CANCELLED') {
       cancelledOrdersCount++;
       pointsRefunded += pointsUsed;
-
       if (totalDue > 0) {
-        if (method === 'CASH') {
-          cashRefunded += totalDue;
-        } else {
-          bankTransferRefunded += totalDue;
-        }
+        totalRefunded += totalDue;
       }
     }
   }
 
-  const totalCollected = cashCollected + bankTransferCollected + ewalletCollected;
-  const totalRefunded = cashRefunded + bankTransferRefunded;
   const averageOrderValue = completedOrdersCount > 0 ? Math.round(netRevenue / completedOrdersCount) : 0;
 
-  // Cash Reconciliation & Drawer Variance calculation
+  // Unified Money Reconciliation & Variance calculation
   const openingCash = Math.max(0, Math.floor(cashInput.openingCash || 0));
   const cashPayouts = Math.max(0, Math.floor(cashInput.cashPayouts || 0));
-  const expectedCash = openingCash + cashCollected - cashRefunded - cashPayouts;
+  const expectedCash = openingCash + totalCollected - totalRefunded - cashPayouts;
 
   const actualCash =
     cashInput.actualCashCounted !== undefined && cashInput.actualCashCounted !== null
@@ -449,8 +424,9 @@ export function calculateRevenueSummary(
     metrics: {
       paidOrderRevenue: netRevenue,
       orderCount: completedOrdersCount,
+      totalMoneyCollected: totalCollected,
       actualCash,
-      bankTransferAmount: bankTransferCollected + ewalletCollected,
+      bankTransferAmount: 0,
     },
     orderRevenue: {
       grossSales,
@@ -460,22 +436,22 @@ export function calculateRevenueSummary(
       averageOrderValue,
     },
     collection: {
-      cashCollected,
-      bankTransferCollected,
-      ewalletCollected,
+      cashCollected: totalCollected,
+      bankTransferCollected: 0,
+      ewalletCollected: 0,
       totalCollected,
     },
     refunds: {
       totalRefunded,
-      cashRefunded,
-      bankTransferRefunded,
+      cashRefunded: totalRefunded,
+      bankTransferRefunded: 0,
       pointsRefunded,
       cancelledOrderCount: cancelledOrdersCount,
     },
     cashReconciliation: {
       openingCash,
-      cashSales: cashCollected,
-      cashRefunds: cashRefunded,
+      cashSales: totalCollected,
+      cashRefunds: totalRefunded,
       cashPayouts,
       expectedCash,
       actualCash,

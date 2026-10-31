@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import styles from './OrdersPanel.module.css';
 import { formatVND } from '@/data/menu';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { buildVietQrImageUrl, DEFAULT_VIETQR_CONFIG } from '@/lib/vietqr';
 import { extractPosOrderMetadata } from '@/lib/pos/domain';
 
 interface OrderItem {
@@ -73,7 +72,6 @@ export default function OrdersPanel() {
   const [channelFilter, setChannelFilter] = useState<'ALL' | 'WEB' | 'POS'>('ALL');
   const [loading, setLoading] = useState<boolean>(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [qrModalOrder, setQrModalOrder] = useState<DemoOrder | null>(null);
 
   // Inline Shipping Fee Editing State
   const [editingShippingId, setEditingShippingId] = useState<string | null>(null);
@@ -236,9 +234,6 @@ export default function OrdersPanel() {
         })
       );
       setProcessingId(null);
-      if (qrModalOrder?.id === orderId) {
-        setQrModalOrder(null);
-      }
     }
   };
 
@@ -394,7 +389,7 @@ export default function OrdersPanel() {
                     {/* Order Type Badge */}
                     {isDelivery && (
                       <span className={`${styles.badge} ${styles.badgeDelivery}`}>
-                        🛵 Giao tận nơi
+                        🛵 COD giao tới nhà
                       </span>
                     )}
                     {isPickup && (
@@ -408,20 +403,10 @@ export default function OrdersPanel() {
                       </span>
                     )}
 
-                    {/* Payment Method Badge */}
-                    {order.payment_method === 'BANK_TRANSFER' ? (
-                      <span className={`${styles.badge} ${styles.badgePayQr}`}>
-                        📲 Quét mã QR
-                      </span>
-                    ) : order.payment_method === 'CASH' ? (
-                      <span className={`${styles.badge} ${styles.badgePayCash}`}>
-                        💵 Tiền mặt
-                      </span>
-                    ) : (
-                      <span className={`${styles.badge} ${styles.badgePayFlex}`}>
-                        🔄 Linh hoạt
-                      </span>
-                    )}
+                    {/* Unified Money Badge */}
+                    <span className={`${styles.badge} ${styles.badgePayCash}`}>
+                      💵 Tiền
+                    </span>
 
                     {/* Payment State Badge */}
                     {order.status === 'CANCELLED' ? (
@@ -602,41 +587,19 @@ export default function OrdersPanel() {
 
               {/* Action Buttons */}
               <div className={styles.actions}>
-                {/* 1. Fast VietQR collection for unpaid orders */}
+                {/* 1. Fast Payment Collection */}
                 {!paid && order.status !== 'CANCELLED' && (
                   <button
                     type="button"
-                    className={`${styles.actionBtn} ${styles.qrBtn}`}
-                    onClick={() => setQrModalOrder(order)}
-                    title="Mở mã VietQR đúng số tiền để thu chuyển khoản"
+                    className={`${styles.actionBtn} ${styles.payCashBtn}`}
+                    disabled={processingId === order.id}
+                    onClick={() => handleAction(order.id, 'mark_paid', 'CASH')}
                   >
-                    📲 Mở QR Thu Tiền ({formatVND(order.total_due)})
+                    ✓ Đã Thu Tiền ({formatVND(order.total_due)})
                   </button>
                 )}
 
-                {/* 2. Fast Payment Mark */}
-                {!paid && order.status !== 'CANCELLED' && (
-                  <>
-                    <button
-                      type="button"
-                      className={`${styles.actionBtn} ${styles.payQrBtn}`}
-                      disabled={processingId === order.id}
-                      onClick={() => handleAction(order.id, 'mark_paid', 'BANK_TRANSFER')}
-                    >
-                      ✓ Đã nhận Quét QR
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.actionBtn} ${styles.payCashBtn}`}
-                      disabled={processingId === order.id}
-                      onClick={() => handleAction(order.id, 'mark_paid', 'CASH')}
-                    >
-                      ✓ Đã thu Tiền mặt
-                    </button>
-                  </>
-                )}
-
-                {/* 3. Confirm order if pending */}
+                {/* 2. Confirm order if pending */}
                 {order.status === 'PENDING' && (
                   <button
                     type="button"
@@ -648,7 +611,7 @@ export default function OrdersPanel() {
                   </button>
                 )}
 
-                {/* 4. Push to POS option */}
+                {/* 3. Push to POS option */}
                 <button
                   type="button"
                   className={`${styles.actionBtn} ${styles.posBtn}`}
@@ -658,7 +621,7 @@ export default function OrdersPanel() {
                   ⚡ Nạp vào POS
                 </button>
 
-                {/* 5. Cancel order button */}
+                {/* 4. Cancel order button */}
                 {order.status !== 'CANCELLED' && (
                   <button
                     type="button"
@@ -681,89 +644,6 @@ export default function OrdersPanel() {
           </div>
         )}
       </div>
-
-      {/* ── QR Payment Modal for Cashier ── */}
-      {qrModalOrder && (
-        <div className={styles.modalOverlay} onClick={() => setQrModalOrder(null)}>
-          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Mã VietQR Thu Tiền — #{qrModalOrder.order_code}</h3>
-              <button
-                type="button"
-                className={styles.modalCloseBtn}
-                onClick={() => setQrModalOrder(null)}
-              >
-                &times;
-              </button>
-            </div>
-            <div className={styles.modalBody}>
-              <div className={styles.modalQrImageWrap}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={buildVietQrImageUrl({
-                    amount: qrModalOrder.total_due,
-                    description: `ULAB ${qrModalOrder.order_code}`,
-                  })}
-                  alt="Mã QR thanh toán đơn hàng"
-                  className={styles.modalQrImg}
-                />
-              </div>
-
-              <div className={styles.modalDetails}>
-                <div className={styles.modalDetailRow}>
-                  <span>Khách hàng:</span>
-                  <strong>{qrModalOrder.customer_name} ({qrModalOrder.customer_phone || 'Khách lẻ'})</strong>
-                </div>
-                <div className={styles.modalDetailRow}>
-                  <span>Số tiền cần thu:</span>
-                  <strong style={{ color: '#006241', fontSize: '1.05rem' }}>
-                    {formatVND(qrModalOrder.total_due)}
-                  </strong>
-                </div>
-                <div className={styles.modalDetailRow}>
-                  <span>Ngân hàng:</span>
-                  <strong>{DEFAULT_VIETQR_CONFIG.bankName}</strong>
-                </div>
-                <div className={styles.modalDetailRow}>
-                  <span>Số tài khoản:</span>
-                  <strong style={{ fontFamily: 'monospace' }}>{DEFAULT_VIETQR_CONFIG.accountNo}</strong>
-                </div>
-                <div className={styles.modalDetailRow}>
-                  <span>Nội dung chuyển khoản:</span>
-                  <strong style={{ fontFamily: 'monospace' }}>ULAB {qrModalOrder.order_code}</strong>
-                </div>
-              </div>
-
-              <div className={styles.modalActions}>
-                <div className={styles.modalActionBtnRow}>
-                  <button
-                    type="button"
-                    className={`${styles.actionBtn} ${styles.payQrBtn}`}
-                    onClick={() => handleAction(qrModalOrder.id, 'mark_paid', 'BANK_TRANSFER')}
-                  >
-                    ✓ Đã nhận Quét QR
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.actionBtn} ${styles.payCashBtn}`}
-                    onClick={() => handleAction(qrModalOrder.id, 'mark_paid', 'CASH')}
-                  >
-                    ✓ Đã thu Tiền mặt
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className={`${styles.actionBtn} ${styles.cancelBtn}`}
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={() => setQrModalOrder(null)}
-                >
-                  Đóng
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

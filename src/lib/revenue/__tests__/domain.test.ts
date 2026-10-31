@@ -74,15 +74,15 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
 
     const result = calculateRevenueSummary(sampleOrders, {
       openingCash: 500000, // 500,000đ tiền thối đầu ca
-      actualCashCounted: 535000, // Kiểm đếm cuối ca: 535,000đ
+      actualCashCounted: 595000, // Kiểm đếm cuối ca: 595,000đ (khớp quỹ tiền thống nhất)
       cashPayouts: 5000, // Chi mua đá: 5,000đ
     });
 
-    // 1. Core 4 Metrics matching dashboard cards
+    // 1. Core Metrics matching unified money model
     assert.equal(result.metrics.paidOrderRevenue, 140000); // 80k + 60k
     assert.equal(result.metrics.orderCount, 2);            // 2 paid orders
-    assert.equal(result.metrics.actualCash, 535000);       // Tiền mặt thực tế kiểm đếm
-    assert.equal(result.metrics.bankTransferAmount, 60000);// 60k chuyển khoản
+    assert.equal(result.metrics.actualCash, 595000);       // Tiền thực tế kiểm đếm
+    assert.equal(result.metrics.totalMoneyCollected, 140000); // Gộp chung 1 tài khoản Tiền: 140,000đ
 
     // 2. Order Revenue (Net Sales)
     assert.equal(result.orderRevenue.grossSales, 160000);   // 90k + 70k
@@ -91,9 +91,9 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(result.orderRevenue.netRevenue, 140000);
     assert.equal(result.orderRevenue.averageOrderValue, 70000);
 
-    // 3. Collection Breakdown
-    assert.equal(result.collection.cashCollected, 80000);
-    assert.equal(result.collection.bankTransferCollected, 60000);
+    // 3. Collection Breakdown (Unified Money)
+    assert.equal(result.collection.cashCollected, 140000);
+    assert.equal(result.collection.bankTransferCollected, 0);
     assert.equal(result.collection.totalCollected, 140000);
 
     // 4. Refunds Breakdown
@@ -103,8 +103,8 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(result.refunds.cancelledOrderCount, 1);
 
     // 5. Cash Reconciliation & Variance
-    assert.equal(result.cashReconciliation.expectedCash, 535000);
-    assert.equal(result.cashReconciliation.actualCash, 535000);
+    assert.equal(result.cashReconciliation.expectedCash, 595000);
+    assert.equal(result.cashReconciliation.actualCash, 595000);
     assert.equal(result.cashReconciliation.cashVariance, 0);
     assert.equal(result.cashReconciliation.varianceStatus, 'BALANCED');
 
@@ -229,12 +229,12 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     assert.equal(shift.cashHandedOver, 1120000);
   });
 
-  it('normalizes payment methods correctly', () => {
-    assert.equal(normalizePaymentMethod('cash'), 'CASH');
-    assert.equal(normalizePaymentMethod('BANK_TRANSFER'), 'BANK_TRANSFER');
-    assert.equal(normalizePaymentMethod('QR'), 'BANK_TRANSFER');
-    assert.equal(normalizePaymentMethod('EWALLET'), 'EWALLET');
-    assert.equal(normalizePaymentMethod(undefined), 'CASH');
+  it('normalizes payment methods to unified money account', () => {
+    assert.equal(normalizePaymentMethod('cash'), 'TIEN');
+    assert.equal(normalizePaymentMethod('BANK_TRANSFER'), 'TIEN');
+    assert.equal(normalizePaymentMethod('QR'), 'TIEN');
+    assert.equal(normalizePaymentMethod('EWALLET'), 'TIEN');
+    assert.equal(normalizePaymentMethod(undefined), 'TIEN');
   });
 
   it('generates date range boundaries accurately', () => {

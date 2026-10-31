@@ -179,7 +179,7 @@ export async function getRevenueReport(
 
   // 2. Compute total cash payouts from cashbook to feed cashReconciliation
   const cashPayoutsFromBook = cashTransactions
-    .filter((tx) => tx.type === 'PAYMENT' && tx.paymentMethod === 'CASH')
+    .filter((tx) => tx.type === 'PAYMENT')
     .reduce((sum, tx) => sum + tx.amount, 0);
 
   const cashInput: CashReconciliationInput = {
