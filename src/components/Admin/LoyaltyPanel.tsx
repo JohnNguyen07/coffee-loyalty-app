@@ -32,7 +32,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
   const normalizedInit = initialSubTab === 'transactions' ? 'transactions' : 'tiers';
   const [subTab, setSubTab] = useState<'tiers' | 'transactions'>(normalizedInit);
   const [tiers, setTiers] = useState(Object.values(TIERS_CONFIG));
-  const [samplePrice, setSamplePrice] = useState(39000);
+  const [samplePrice, setSamplePrice] = useState(40000);
   const [editingTierCode, setEditingTierCode] = useState<string | null>(null);
   const [editRate, setEditRate] = useState<number>(3);
   const [editMinSpend, setEditMinSpend] = useState<number>(0);
@@ -226,7 +226,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
                 className={styles.searchInput}
                 step={1000}
               />
-              {[29000, 34000, 39000, 46000, 74000].map((p) => (
+              {[30000, 35000, 40000, 45000, 69000, 74000].map((p) => (
                 <button
                   key={p}
                   type="button"

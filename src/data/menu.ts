@@ -39,8 +39,8 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'cold-brew',
         tag: '18h Steeped',
         sizes: [
-          { label: 'M', price: 29000 },
-          { label: 'L', price: 34000 },
+          { label: 'M', price: 30000 },
+          { label: 'L', price: 35000 },
         ],
       },
       {
@@ -51,19 +51,8 @@ export const menuData: MenuCategory[] = [
         tag: 'Best Seller',
         isSignature: true,
         sizes: [
-          { label: 'M', price: 34000 },
-          { label: 'L', price: 39000 },
-        ],
-      },
-      {
-        id: 'cold-brew-vai',
-        name: 'Cold Brew Vải',
-        category: 'Cold Brew',
-        categorySlug: 'cold-brew',
-        tag: 'Fruity Note',
-        sizes: [
-          { label: 'M', price: 34000 },
-          { label: 'L', price: 39000 },
+          { label: 'M', price: 35000 },
+          { label: 'L', price: 40000 },
         ],
       },
       {
@@ -73,8 +62,8 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'cold-brew',
         tag: 'Refreshing',
         sizes: [
-          { label: 'M', price: 29000 },
-          { label: 'L', price: 34000 },
+          { label: 'M', price: 30000 },
+          { label: 'L', price: 35000 },
         ],
       },
       {
@@ -84,8 +73,8 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'cold-brew',
         tag: 'Tropical',
         sizes: [
-          { label: 'M', price: 29000 },
-          { label: 'L', price: 34000 },
+          { label: 'M', price: 30000 },
+          { label: 'L', price: 35000 },
         ],
       },
     ],
@@ -102,30 +91,7 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'matcha',
         tag: 'Fuji MK4',
         sizes: [
-          { label: 'M', price: 34000 },
-          { label: 'L', price: 39000 },
-        ],
-      },
-      {
-        id: 'matcha-kem-muoi',
-        name: 'Matcha Kem Muối',
-        category: 'Matcha',
-        categorySlug: 'matcha',
-        tag: 'Béo Mịn',
-        sizes: [
-          { label: 'M', price: 39000 },
-          { label: 'L', price: 44000 },
-        ],
-      },
-      {
-        id: 'strawberry-matcha',
-        name: 'Strawberry Matcha Latte',
-        category: 'Matcha',
-        categorySlug: 'matcha',
-        tag: 'Dâu Tươi',
-        sizes: [
-          { label: 'M', price: 42000 },
-          { label: 'L', price: 46000 },
+          { label: 'M', price: 40000 },
         ],
       },
       {
@@ -135,8 +101,7 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'matcha',
         tag: 'Light & Fresh',
         sizes: [
-          { label: 'M', price: 34000 },
-          { label: 'L', price: 39000 },
+          { label: 'M', price: 40000 },
         ],
       },
       {
@@ -146,8 +111,7 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'matcha',
         tag: 'Plant-Based',
         sizes: [
-          { label: 'M', price: 34000 },
-          { label: 'L', price: 39000 },
+          { label: 'M', price: 40000 },
         ],
       },
       {
@@ -157,10 +121,29 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'matcha',
         tag: 'Craft Signature',
         sizes: [
-          { label: 'M', price: 42000 },
-          { label: 'L', price: 46000 },
+          { label: 'M', price: 45000 },
         ],
         isSignature: true,
+      },
+      {
+        id: 'strawberry-matcha',
+        name: 'Strawberry Matcha Latte',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Dâu Tươi',
+        sizes: [
+          { label: 'M', price: 45000 },
+        ],
+      },
+      {
+        id: 'matcha-kem-muoi',
+        name: 'Matcha Kem Muối',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Béo Mịn',
+        sizes: [
+          { label: 'M', price: 45000 },
+        ],
       },
     ],
   },

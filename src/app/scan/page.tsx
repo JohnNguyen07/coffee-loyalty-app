@@ -39,7 +39,7 @@ function parseDrinkPriceFromCode(qrCode: string): number {
       return parsed;
     }
   }
-  return 34000;
+  return 35000;
 }
 
 function ScanContent() {
@@ -67,7 +67,7 @@ function ScanContent() {
     cashback_rate: number;
   } | null>(null);
 
-  const detectedDrinkPrice = useMemo(() => (code ? parseDrinkPriceFromCode(code) : 34000), [code]);
+  const detectedDrinkPrice = useMemo(() => (code ? parseDrinkPriceFromCode(code) : 35000), [code]);
   const estimatedRate = profile?.tier?.cashback_rate || 5;
   const estimatedCashback = Math.round((detectedDrinkPrice * estimatedRate) / 100);
 

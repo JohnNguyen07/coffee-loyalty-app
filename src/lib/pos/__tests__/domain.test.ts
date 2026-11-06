@@ -17,7 +17,7 @@ describe('M01 POS Domain Logic', () => {
         {
           itemId: 'cold-brew-cam-sa',
           productName: 'Cold Brew Cam Sả',
-          sizeLabel: 'L', // 39,000đ in catalog
+          sizeLabel: 'L', // 40,000đ in catalog
           quantity: 2,
           options: {
             sweetness: '70% đường',
@@ -40,10 +40,10 @@ describe('M01 POS Domain Logic', () => {
 
     assert.equal(result.validation.valid, true);
     assert.equal(result.totals.totalQuantity, 3);
-    // (39,000 + 7,000) * 2 + 69,000 = 92,000 + 69,000 = 161,000
-    assert.equal(result.totals.subtotal, 161000);
-    assert.equal(result.totals.totalDue, 161000);
-    assert.equal(result.totals.changeDue, 39000);
+    // (40,000 + 7,000) * 2 + 69,000 = 94,000 + 69,000 = 163,000
+    assert.equal(result.totals.subtotal, 163000);
+    assert.equal(result.totals.totalDue, 163000);
+    assert.equal(result.totals.changeDue, 37000);
   });
 
   it('enforces role-based discount limits for CASHIER vs MANAGER/ADMIN', () => {
@@ -251,7 +251,7 @@ describe('M01 POS Domain Logic', () => {
     assert.equal(resilientBottleResult.totals.items[0].sizeLabel, 'Chai');
     assert.equal(resilientBottleResult.totals.subtotal, 148000);
 
-    // 3. Cup version size M (29,000đ) and size L (34,000đ)
+    // 3. Cup version size M (30,000đ) and size L (35,000đ)
     const cupResult = calculatePosOrderTotals({
       items: [
         {
@@ -272,25 +272,19 @@ describe('M01 POS Domain Logic', () => {
       staffRole: 'CASHIER',
     });
     assert.equal(cupResult.validation.valid, true);
-    assert.equal(cupResult.totals.items[0].unitPrice, 29000);
-    assert.equal(cupResult.totals.items[1].unitPrice, 34000);
-    assert.equal(cupResult.totals.subtotal, 63000);
+    assert.equal(cupResult.totals.items[0].unitPrice, 30000);
+    assert.equal(cupResult.totals.items[1].unitPrice, 35000);
+    assert.equal(cupResult.totals.subtotal, 65000);
   });
 
-  it('includes Strawberry Matcha Latte in POS catalog and calculates M/L prices accurately', () => {
+  it('includes Strawberry Matcha Latte in POS catalog and calculates Size M price accurately', () => {
     const res = calculatePosOrderTotals({
       items: [
         {
           itemId: 'strawberry-matcha',
           productName: 'Strawberry Matcha Latte',
           sizeLabel: 'M',
-          quantity: 1,
-        },
-        {
-          itemId: 'strawberry-matcha',
-          productName: 'Strawberry Matcha Latte',
-          sizeLabel: 'L',
-          quantity: 1,
+          quantity: 2,
         },
       ],
       paymentMethod: 'CASH',
@@ -300,8 +294,7 @@ describe('M01 POS Domain Logic', () => {
 
     assert.equal(res.validation.valid, true);
     assert.equal(res.totals.items[0].productName, 'Strawberry Matcha Latte');
-    assert.equal(res.totals.items[0].unitPrice, 42000);
-    assert.equal(res.totals.items[1].unitPrice, 46000);
-    assert.equal(res.totals.subtotal, 88000);
+    assert.equal(res.totals.items[0].unitPrice, 45000);
+    assert.equal(res.totals.subtotal, 90000);
   });
 });

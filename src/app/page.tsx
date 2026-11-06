@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import styles from './page.module.css';
-import { menuData, formatVND } from '@/data/menu';
+import { menuData, formatVND, type MenuCategory } from '@/data/menu';
 import { TIERS_CONFIG, useAuth } from '@/hooks/useAuth';
 import Header from '@/components/Header/Header';
 import CategoryTabs from '@/components/CategoryTabs/CategoryTabs';
@@ -28,8 +28,29 @@ export default function Home() {
   const [onlySignature, setOnlySignature] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [liveCategories, setLiveCategories] = useState<MenuCategory[]>(menuData);
 
   const { profile } = useAuth();
+
+  // Fetch live menu & prices from database so storefront always stays synced with Admin/POS
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/menu', { cache: 'no-store' });
+        if (!isMounted || !res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.categories) && data.categories.length > 0) {
+          setLiveCategories(data.categories);
+        }
+      } catch {
+        // Fallback to static menuData
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // If a customer scans a QR link formatted as https://domain.com/?code=XYZ, forward seamlessly to /scan?code=XYZ
   useEffect(() => {
@@ -45,11 +66,12 @@ export default function Home() {
   // Filter categories and items based on search, category tab, and signature toggle
   const displayedCategories = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return menuData
+    return liveCategories
       .filter((cat) => activeCategory === 'all' || cat.slug === activeCategory)
       .map((cat) => ({
         ...cat,
         items: cat.items.filter((item) => {
+          if (item.isAvailable === false) return false;
           const matchesSearch =
             !q ||
             item.name.toLowerCase().includes(q) ||
@@ -59,7 +81,7 @@ export default function Home() {
         }),
       }))
       .filter((cat) => cat.items.length > 0);
-  }, [activeCategory, searchQuery, onlySignature]);
+  }, [liveCategories, activeCategory, searchQuery, onlySignature]);
 
   const totalMatchingItems = displayedCategories.reduce(
     (sum, cat) => sum + cat.items.length,
@@ -122,7 +144,7 @@ export default function Home() {
 
           {/* Category Pill Tabs */}
           <CategoryTabs
-            categories={menuData}
+            categories={liveCategories}
             activeSlug={activeCategory}
             onSelect={setActiveCategory}
             showAllOption={true}

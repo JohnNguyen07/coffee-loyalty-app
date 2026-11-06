@@ -21,8 +21,9 @@ export default function ProductsPanel() {
   const [newCatSlug, setNewCatSlug] = useState('matcha');
   const [newIsSignature, setNewIsSignature] = useState(false);
   const [newShelfLife, setNewShelfLife] = useState('');
-  const [newPriceM, setNewPriceM] = useState('39000');
-  const [newPriceL, setNewPriceL] = useState('44000');
+  const [newPriceM, setNewPriceM] = useState('40000');
+  const [newPriceL, setNewPriceL] = useState('35000');
+  const [newHasSizeL, setNewHasSizeL] = useState(false);
   const [newPriceBottle, setNewPriceBottle] = useState('69000');
   const [creatingProduct, setCreatingProduct] = useState(false);
 
@@ -161,10 +162,12 @@ export default function ProductsPanel() {
     const isBottleCat = newCatSlug === 'cold-brew-chai';
     const sizes = isBottleCat
       ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 69000) }]
-      : [
-          { label: 'M', price: Math.max(1000, Number(newPriceM) || 34000) },
-          { label: 'L', price: Math.max(1000, Number(newPriceL) || 39000) },
-        ];
+      : newHasSizeL || newCatSlug === 'cold-brew'
+        ? [
+            { label: 'M', price: Math.max(1000, Number(newPriceM) || 30000) },
+            { label: 'L', price: Math.max(1000, Number(newPriceL) || 35000) },
+          ]
+        : [{ label: 'M', price: Math.max(1000, Number(newPriceM) || 40000) }];
 
     setCreatingProduct(true);
     try {
@@ -494,7 +497,18 @@ export default function ProductsPanel() {
                 </label>
                 <select
                   value={newCatSlug}
-                  onChange={(e) => setNewCatSlug(e.target.value)}
+                  onChange={(e) => {
+                    const slug = e.target.value;
+                    setNewCatSlug(slug);
+                    if (slug === 'cold-brew') {
+                      setNewPriceM('30000');
+                      setNewPriceL('35000');
+                      setNewHasSizeL(true);
+                    } else if (slug === 'matcha') {
+                      setNewPriceM('40000');
+                      setNewHasSizeL(false);
+                    }
+                  }}
                   className={styles.selectInput}
                   style={{ width: '100%' }}
                 >
@@ -536,38 +550,52 @@ export default function ProductsPanel() {
                   </div>
                 </>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
-                      Giá Size M (VNĐ) *
-                    </label>
-                    <input
-                      type="number"
-                      step={1000}
-                      min={1000}
-                      required
-                      value={newPriceM}
-                      onChange={(e) => setNewPriceM(e.target.value)}
-                      className={styles.searchInput}
-                      style={{ width: '100%' }}
-                    />
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: (newHasSizeL || newCatSlug === 'cold-brew') ? '1fr 1fr' : '1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                        Giá Size M (VNĐ) *
+                      </label>
+                      <input
+                        type="number"
+                        step={1000}
+                        min={1000}
+                        required
+                        value={newPriceM}
+                        onChange={(e) => setNewPriceM(e.target.value)}
+                        className={styles.searchInput}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    {(newHasSizeL || newCatSlug === 'cold-brew') && (
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                          Giá Size L (VNĐ) *
+                        </label>
+                        <input
+                          type="number"
+                          step={1000}
+                          min={1000}
+                          required
+                          value={newPriceL}
+                          onChange={(e) => setNewPriceL(e.target.value)}
+                          className={styles.searchInput}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
-                      Giá Size L (VNĐ) *
+                  {newCatSlug !== 'cold-brew' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.825rem', color: '#475569', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={newHasSizeL}
+                        onChange={(e) => setNewHasSizeL(e.target.checked)}
+                      />
+                      Có bán thêm Size L
                     </label>
-                    <input
-                      type="number"
-                      step={1000}
-                      min={1000}
-                      required
-                      value={newPriceL}
-                      onChange={(e) => setNewPriceL(e.target.value)}
-                      className={styles.searchInput}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                </div>
+                  )}
+                </>
               )}
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', fontWeight: 600, color: '#1E3932', cursor: 'pointer' }}>

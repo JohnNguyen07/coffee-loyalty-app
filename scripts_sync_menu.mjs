@@ -20,40 +20,33 @@ const menuData = [
         name: 'Original Cold Brew',
         sort_order: 1,
         sizes: [
-          { size_label: 'M', price: 29000, sort_order: 1 },
-          { size_label: 'L', price: 34000, sort_order: 2 },
+          { size_label: 'M', price: 30000, sort_order: 1 },
+          { size_label: 'L', price: 35000, sort_order: 2 },
         ],
       },
       {
         name: 'Cold Brew Cam Sả',
         sort_order: 2,
+        is_signature: true,
         sizes: [
-          { size_label: 'M', price: 34000, sort_order: 1 },
-          { size_label: 'L', price: 39000, sort_order: 2 },
-        ],
-      },
-      {
-        name: 'Cold Brew Vải',
-        sort_order: 3,
-        sizes: [
-          { size_label: 'M', price: 34000, sort_order: 1 },
-          { size_label: 'L', price: 39000, sort_order: 2 },
+          { size_label: 'M', price: 35000, sort_order: 1 },
+          { size_label: 'L', price: 40000, sort_order: 2 },
         ],
       },
       {
         name: 'Cold Brew Chanh Vàng',
-        sort_order: 4,
+        sort_order: 3,
         sizes: [
-          { size_label: 'M', price: 29000, sort_order: 1 },
-          { size_label: 'L', price: 34000, sort_order: 2 },
+          { size_label: 'M', price: 30000, sort_order: 1 },
+          { size_label: 'L', price: 35000, sort_order: 2 },
         ],
       },
       {
         name: 'Cold Brew Nước Dừa',
-        sort_order: 5,
+        sort_order: 4,
         sizes: [
-          { size_label: 'M', price: 29000, sort_order: 1 },
-          { size_label: 'L', price: 34000, sort_order: 2 },
+          { size_label: 'M', price: 30000, sort_order: 1 },
+          { size_label: 'L', price: 35000, sort_order: 2 },
         ],
       },
     ],
@@ -67,24 +60,21 @@ const menuData = [
         name: 'Matcha Latte',
         sort_order: 1,
         sizes: [
-          { size_label: 'M', price: 34000, sort_order: 1 },
-          { size_label: 'L', price: 39000, sort_order: 2 },
+          { size_label: 'M', price: 40000, sort_order: 1 },
         ],
       },
       {
         name: 'Matcha Coco',
         sort_order: 2,
         sizes: [
-          { size_label: 'M', price: 34000, sort_order: 1 },
-          { size_label: 'L', price: 39000, sort_order: 2 },
+          { size_label: 'M', price: 40000, sort_order: 1 },
         ],
       },
       {
         name: 'Matcha Oat',
         sort_order: 3,
         sizes: [
-          { size_label: 'M', price: 34000, sort_order: 1 },
-          { size_label: 'L', price: 39000, sort_order: 2 },
+          { size_label: 'M', price: 40000, sort_order: 1 },
         ],
       },
       {
@@ -92,8 +82,21 @@ const menuData = [
         sort_order: 4,
         is_signature: true,
         sizes: [
-          { size_label: 'M', price: 42000, sort_order: 1 },
-          { size_label: 'L', price: 46000, sort_order: 2 },
+          { size_label: 'M', price: 45000, sort_order: 1 },
+        ],
+      },
+      {
+        name: 'Strawberry Matcha Latte',
+        sort_order: 5,
+        sizes: [
+          { size_label: 'M', price: 45000, sort_order: 1 },
+        ],
+      },
+      {
+        name: 'Matcha Kem Muối',
+        sort_order: 6,
+        sizes: [
+          { size_label: 'M', price: 45000, sort_order: 1 },
         ],
       },
     ],
@@ -124,14 +127,15 @@ const menuData = [
 ];
 
 async function sync() {
-  console.log('--- Syncing Categories ---');
-  // Rename old category if present
-  await client
-    .from('menu_categories')
-    .update({ name: 'Cold Brew Chai', slug: 'cold-brew-chai', sort_order: 3 })
-    .eq('slug', 'cold-brew-dong-lon');
+  console.log('--- Checking Historical Revenue Before Sync ---');
+  const { data: beforeOrders } = await client
+    .from('orders')
+    .select('id, status, total_due');
+  const confirmedBefore = (beforeOrders || []).filter((o) => o.status === 'CONFIRMED');
+  const totalRevBefore = confirmedBefore.reduce((s, o) => s + (Number(o.total_due) || 0), 0);
+  console.log(`Confirmed Orders Before: ${confirmedBefore.length} | Total Revenue: ${totalRevBefore.toLocaleString('vi-VN')}đ`);
 
-  // Upsert categories
+  console.log('\n--- Syncing Categories & Menu Items In-Place ---');
   for (const cat of menuData) {
     const { data: existing } = await client
       .from('menu_categories')
@@ -157,37 +161,63 @@ async function sync() {
 
     console.log(`Category: ${cat.name} (${cat.slug}) -> ${catId}`);
 
-    // Remove existing items in this category
-    const { error: delErr } = await client
+    const { data: existingCatItems } = await client
       .from('menu_items')
-      .delete()
+      .select('id, name')
       .eq('category_id', catId);
-    if (delErr) console.error('Error clearing old items:', delErr);
 
-    // Insert new items
+    const keptIds = new Set();
+
     for (const item of cat.items) {
-      const { data: insertedItem, error: itemErr } = await client
-        .from('menu_items')
-        .insert({
-          category_id: catId,
-          name: item.name,
-          description: item.description || null,
-          is_signature: Boolean(item.is_signature),
-          sort_order: item.sort_order,
-        })
-        .select('id')
-        .single();
+      const match = (existingCatItems || []).find(
+        (ei) =>
+          ei.name.trim().toLowerCase() === item.name.trim().toLowerCase() ||
+          (item.name === 'Strawberry Matcha Latte' && ei.name.trim().toLowerCase() === 'strawberry matcha')
+      );
 
-      if (itemErr) {
-        console.error('Error inserting item:', item.name, itemErr);
-        continue;
+      let itemId = match?.id;
+      if (itemId) {
+        await client
+          .from('menu_items')
+          .update({
+            name: item.name,
+            description: item.description || null,
+            is_signature: Boolean(item.is_signature),
+            is_available: true,
+            sort_order: item.sort_order,
+          })
+          .eq('id', itemId);
+      } else {
+        const { data: insertedItem, error: itemErr } = await client
+          .from('menu_items')
+          .insert({
+            category_id: catId,
+            name: item.name,
+            description: item.description || null,
+            is_signature: Boolean(item.is_signature),
+            is_available: true,
+            sort_order: item.sort_order,
+          })
+          .select('id')
+          .single();
+
+        if (itemErr) {
+          console.error('Error inserting item:', item.name, itemErr);
+          continue;
+        }
+        itemId = insertedItem.id;
       }
 
-      // Insert sizes
+      keptIds.add(itemId);
+
+      // Replace sizes for this item with the exact new template sizes & prices
+      await client.from('menu_item_sizes').delete().eq('menu_item_id', itemId);
+
       const sizesToInsert = item.sizes.map((s) => ({
-        menu_item_id: insertedItem.id,
+        menu_item_id: itemId,
         size_label: s.size_label,
         price: s.price,
+        is_available: true,
         sort_order: s.sort_order,
       }));
 
@@ -196,11 +226,29 @@ async function sync() {
         .insert(sizesToInsert);
 
       if (sizeErr) console.error('Error inserting sizes for:', item.name, sizeErr);
-      else console.log(`  + Inserted: ${item.name} (${item.sizes.length} sizes)`);
+      else console.log(`  ✓ Synced: ${item.name} -> ${item.sizes.map((s) => `${s.size_label}: ${s.price}`).join(', ')}`);
+    }
+
+    // Remove obsolete items in this category (e.g., Cold Brew Vải)
+    for (const oldItem of existingCatItems || []) {
+      if (!keptIds.has(oldItem.id)) {
+        await client
+          .from('inventory_items')
+          .update({ linked_menu_item_id: null })
+          .eq('linked_menu_item_id', oldItem.id);
+        await client.from('menu_items').delete().eq('id', oldItem.id);
+        console.log(`  - Removed obsolete menu item: ${oldItem.name}`);
+      }
     }
   }
 
-  console.log('Sync finished successfully!');
+  console.log('\n--- Verifying Historical Revenue After Sync ---');
+  const { data: afterOrders } = await client
+    .from('orders')
+    .select('id, status, total_due');
+  const confirmedAfter = (afterOrders || []).filter((o) => o.status === 'CONFIRMED');
+  const totalRevAfter = confirmedAfter.reduce((s, o) => s + (Number(o.total_due) || 0), 0);
+  console.log(`Confirmed Orders After: ${confirmedAfter.length} | Total Revenue: ${totalRevAfter.toLocaleString('vi-VN')}đ`);
 }
 
 sync().catch(console.error);

@@ -19,7 +19,7 @@ Xây dựng nền tảng vận hành **Ủ LAB Business OS** tinh gọn, đồng
 
 | Tính năng | Trạng thái | Đánh giá hiện trạng |
 | :--- | :---: | :--- |
-| **Danh mục Thực đơn & Định giá chuẩn** | ✅ Hoàn thành | Phân loại Cold Brew, Matcha, Cold Brew Chai; đầy đủ **Strawberry Matcha Latte** (M 42k / L 46k), **Matcha Kem Muối** (M 39k / L 44k) và định giá riêng món chai (Cold Brew Chanh Vàng chai 74.000đ). |
+| **Danh mục Thực đơn & Định giá chuẩn** | ✅ Hoàn thành | Đồng bộ bảng giá & size mới trên toàn hệ thống: **Cold Brew** (M 30k–35k / L 35k–40k), **Matcha** (1 size M duy nhất: 40k–45k) và **Cold Brew Chai** (Chanh Vàng 74k / Pure Black 69k); bảo toàn nguyên vẹn lịch sử doanh thu và số lượng đã bán. |
 | **Báo hết / Mở bán & Sửa giá tức thì** | ✅ Hoàn thành | Bật/tắt trạng thái còn hàng hoặc cập nhật giá theo size ngay trên `ProductsPanel`, lưu bền vững vào Supabase `menu_items` và đồng bộ tức thì sang POS. |
 | **Giỏ hàng POS & Tính tiền Backend** | ✅ Hoàn thành | Tùy chọn size, độ ngọt, đá, topping, ghi chú riêng từng món; backend xác thực lại toàn bộ đơn giá gốc, phụ phí và hạn mức giảm giá theo vai trò. |
 | **Mã đơn chuẩn & Chống ghi trùng** | ✅ Hoàn thành | Sinh mã `POS-YYMMDD-XXXX` (tại quầy) và `#CF-XXXX` (đặt web), kèm `idempotency_key` ngăn bấm đúp tạo đơn trùng và lưu snapshot vào `order_items`. |

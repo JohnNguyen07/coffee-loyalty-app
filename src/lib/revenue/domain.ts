@@ -288,9 +288,31 @@ export function normalizePaymentMethod(method?: string): string {
 }
 
 /**
+ * Normalizes historical and current drink names so past sales quantities and revenue
+ * aggregate seamlessly with updated menu items.
+ */
+function canonicalizeProductName(raw: string): string {
+  const cleaned = raw.replace(/\s*\[.*\]$/, '').trim();
+  const lower = cleaned.toLowerCase();
+  if (lower === 'original cold brew') return 'Original Cold Brew';
+  if (lower === 'cold brew cam sả' || lower === 'cold brew cam sa') return 'Cold Brew Cam Sả';
+  if (lower === 'cold brew chanh vàng' || lower === 'cold brew chanh vang') return 'Cold Brew Chanh Vàng';
+  if (lower === 'cold brew nước dừa' || lower === 'cold brew nuoc dua') return 'Cold Brew Nước Dừa';
+  if (lower === 'cold brew vải' || lower === 'cold brew vai') return 'Cold Brew Vải';
+  if (lower === 'matcha latte') return 'Matcha Latte';
+  if (lower === 'matcha coco') return 'Matcha Coco';
+  if (lower === 'matcha oat') return 'Matcha Oat';
+  if (lower === 'matcha cold whisk') return 'Matcha Cold Whisk';
+  if (lower === 'strawberry matcha' || lower === 'strawberry matcha latte') return 'Strawberry Matcha Latte';
+  if (lower === 'matcha kem muối' || lower === 'matcha kem muoi') return 'Matcha Kem Muối';
+  if (lower === 'pure black cold brew') return 'Pure Black Cold Brew';
+  return cleaned;
+}
+
+/**
  * Calculates Best Sellers ranking.
  */
-export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 8): BestSellerItem[] {
+export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 12): BestSellerItem[] {
   const map = new Map<string, { quantity: number; revenue: number; category: string }>();
 
   for (const ord of orders) {
@@ -298,18 +320,18 @@ export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 8): B
     const items = ord.items || [];
     for (const it of items) {
       const rawName = String(it.product_name || 'Món');
-      const cleanName = rawName.replace(/\s*\[.*\]$/, '');
+      const cleanName = canonicalizeProductName(rawName);
       const qty = Number(it.quantity) || 1;
       const subtotal = Number(it.subtotal) || (Number(it.unit_price || 0) * qty) || 0;
 
       let cat = 'Khác';
       const lower = cleanName.toLowerCase();
-      if (lower.includes('cam sả') || lower.includes('chanh vàng') || lower.includes('cold brew')) {
+      if (String(it.size || '').toLowerCase() === 'chai' || lower.includes('pure black')) {
+        cat = 'Cold Brew Chai';
+      } else if (lower.includes('cam sả') || lower.includes('chanh vàng') || lower.includes('nước dừa') || lower.includes('vải') || lower.includes('cold brew')) {
         cat = 'Cold Brew';
       } else if (lower.includes('matcha')) {
-        cat = 'Matcha Fuji';
-      } else if (lower.includes('chai')) {
-        cat = 'Đóng Chai';
+        cat = 'Matcha';
       } else if (lower.includes('cà phê') || lower.includes('espresso') || lower.includes('latte')) {
         cat = 'Pha Máy';
       }

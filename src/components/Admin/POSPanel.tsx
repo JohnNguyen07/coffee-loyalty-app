@@ -73,6 +73,7 @@ interface LinkedCustomer {
   phone: string;
   point_balance: number;
   tier_name?: string;
+  cashback_rate?: number;
 }
 
 const ORDER_QUICK_NOTES = ['Ít ngọt', 'Đá riêng', 'Không ống hút', 'Làm gấp'];
@@ -487,6 +488,7 @@ export default function POSPanel() {
           phone: data.customer.phone || cleanPhone,
           point_balance: Number(data.customer.point_balance) || 0,
           tier_name: data.customer.tier?.name || 'Member',
+          cashback_rate: Number(data.customer.tier?.cashback_rate) || 3,
         });
         setCustomerNameInput(data.customer.full_name || nameToUse);
         setCustomerLookupMsg(`✓ Đã đăng ký & liên kết thành viên: ${data.customer.full_name || nameToUse}`);
@@ -549,8 +551,9 @@ export default function POSPanel() {
   };
 
   // Lookup member by phone
-  const handleLookupCustomer = async () => {
-    const clean = customerPhoneInput.replace(/[\s\-()]/g, '');
+  const handleLookupCustomer = useCallback(async (phoneOverride?: string) => {
+    const rawPhone = phoneOverride !== undefined ? phoneOverride : customerPhoneInput;
+    const clean = rawPhone.replace(/[\s\-()]/g, '');
     if (!clean) {
       setLinkedCustomer(null);
       setCustomerLookupMsg(null);
@@ -564,28 +567,44 @@ export default function POSPanel() {
       const res = await fetch(`/api/user/by-phone?phone=${encodeURIComponent(clean)}`);
       const data = await res.json();
       if (data?.found && data?.user) {
+        const rate = Number(data.user.tier?.cashback_rate) || 3;
         setLinkedCustomer({
           id: data.user.id,
           full_name: data.user.full_name || 'Thành viên Ủ LAB',
           phone: data.user.phone || clean,
           point_balance: Number(data.user.point_balance) || 0,
           tier_name: data.user.tier?.name || 'Member',
+          cashback_rate: rate,
         });
-        if (!customerNameInput) {
-          setCustomerNameInput(data.user.full_name || '');
-        }
-        setCustomerLookupMsg(`✓ Thành viên: ${data.user.full_name || clean} (Ví: ${formatVND(Number(data.user.point_balance) || 0)})`);
+        setCustomerNameInput((prev) => prev || data.user.full_name || '');
+        setCustomerLookupMsg(
+          `✓ Thành viên ${data.user.tier?.name || 'Member'} (Hoàn ${rate}%): ${data.user.full_name || clean} · Ví: ${formatVND(Number(data.user.point_balance) || 0)}`
+        );
       } else {
         setLinkedCustomer(null);
         setPointsToUse(0);
-        setCustomerLookupMsg('Khách mới / Khách vãng lai (chưa có tài khoản tích điểm)');
+        setCustomerLookupMsg('✨ SĐT mới: Hệ thống sẽ tự động tạo ví & tích điểm hoàn 3% ngay khi thanh toán!');
       }
     } catch {
       setCustomerLookupMsg('Không thể tra cứu SĐT lúc này.');
     } finally {
       setLookingUpCustomer(false);
     }
-  };
+  }, [customerPhoneInput]);
+
+  // Auto-lookup customer as soon as cashier types a 10-digit phone number
+  useEffect(() => {
+    const clean = customerPhoneInput.replace(/\D/g, '');
+    if (clean.length === 10 && /^0\d{9}$/.test(clean)) {
+      if (linkedCustomer?.phone !== clean) {
+        handleLookupCustomer(clean);
+      }
+    } else if (clean.length === 0) {
+      setLinkedCustomer(null);
+      setCustomerLookupMsg(null);
+      setPointsToUse(0);
+    }
+  }, [customerPhoneInput, linkedCustomer?.phone, handleLookupCustomer]);
 
   // Submit & Confirm POS Payment
   const handleConfirmPayment = async () => {
@@ -1409,7 +1428,7 @@ export default function POSPanel() {
                     <button
                       type="button"
                       className={styles.lookupBtn}
-                      onClick={handleLookupCustomer}
+                      onClick={() => handleLookupCustomer()}
                       disabled={lookingUpCustomer}
                     >
                       {lookingUpCustomer ? '...' : 'Tra cứu'}
@@ -1462,7 +1481,7 @@ export default function POSPanel() {
                           placeholder="0"
                           className={styles.pointsSmallInput}
                         />
-                        <button
+                         <button
                           type="button"
                           className={styles.miniChip}
                           onClick={() =>
@@ -1474,6 +1493,30 @@ export default function POSPanel() {
                           Tối đa
                         </button>
                       </div>
+                    </div>
+                  )}
+                  {/^0\d{8,10}$/.test(customerPhoneInput.replace(/\D/g, '')) && totals.totalDue > 0 && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        color: '#065f46',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span>
+                        🎁 Tự động tích điểm ({linkedCustomer?.cashback_rate || 3}%):
+                      </span>
+                      <strong>
+                        +{formatVND(Math.floor((totals.totalDue * (linkedCustomer?.cashback_rate || 3)) / 100))} vào ví khách
+                      </strong>
                     </div>
                   )}
                 </div>
@@ -2224,6 +2267,26 @@ export default function POSPanel() {
                       <span>Tiền thừa:</span>
                       <strong>{formatVND(completedOrder.changeDue)}</strong>
                     </div>
+                    {completedOrder.pointsEarned && completedOrder.pointsEarned > 0 && (
+                      <div
+                        className={styles.sheetSumRow}
+                        style={{
+                          marginTop: 6,
+                          paddingTop: 6,
+                          borderTop: '1px dashed #cbd5e1',
+                          color: '#047857',
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span>🎁 Điểm tích tự động ({completedOrder.customerPhone}):</span>
+                        <strong>
+                          +{formatVND(completedOrder.pointsEarned)}
+                          {completedOrder.memberPointBalance !== undefined
+                            ? ` (Ví: ${formatVND(completedOrder.memberPointBalance)})`
+                            : ''}
+                        </strong>
+                      </div>
+                    )}
                   </div>
                   {completedOrderQrDataUrl && completedOrder.qrTokenCode && (
                     <div className={styles.sheetQrSection}>
