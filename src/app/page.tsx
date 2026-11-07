@@ -21,6 +21,14 @@ import {
   FlaskIcon,
 } from '@/components/Icons/LabIcons';
 
+const STORE_ADDRESS = '124/1 Xô Viết Nghệ Tĩnh, Thạnh Mỹ Tây';
+const STORE_GOOGLE_MAPS_URL =
+  'https://www.google.com/maps/@10.7963201,106.710408,21z?entry=ttu&g_ep=EgoyMDI2MTEwMy4wIKXMDSoASAFQAw%3D%3D';
+const STORE_DIRECTIONS_URL =
+  'https://www.google.com/maps/dir/?api=1&destination=10.7963201,106.710408';
+const STORE_EMBED_MAP_URL =
+  'https://maps.google.com/maps?q=10.7963201,106.710408&hl=vi&z=19&output=embed';
+
 export default function Home() {
   const router = useRouter();
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -84,7 +92,7 @@ export default function Home() {
   }, [liveCategories, activeCategory, searchQuery, onlySignature]);
 
   const totalMatchingItems = displayedCategories.reduce(
-    (sum, cat) => sum + cat.items.length,
+    (sum: number, cat: MenuCategory) => sum + cat.items.length,
     0
   );
 
@@ -310,6 +318,64 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* ── ZONE 4B: STORE LOCATION & GOOGLE MAPS ── */}
+        <section id="store-location" className={styles.locationSection}>
+          <div className={styles.locationCard}>
+            <div className={styles.locationInfoCol}>
+              <span className={styles.locationBadge}>📍 Điểm bán Ủ LAB</span>
+              <h2 className={styles.locationTitle}>Ghé quầy Ủ LAB thưởng thức trực tiếp</h2>
+              <p className={styles.locationDesc}>
+                Mỗi phần Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ luôn sẵn sàng phục vụ mang đi hoặc đặt trước lấy ngay tại quầy.
+              </p>
+
+              <div className={styles.locationAddressBox}>
+                <div className={styles.locationPinIcon} aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className={styles.locationAddressLabel}>Địa chỉ cửa hàng</div>
+                  <div className={styles.locationAddressText}>{STORE_ADDRESS}</div>
+                </div>
+              </div>
+
+              <div className={styles.locationActions}>
+                <a
+                  href={STORE_DIRECTIONS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.locationDirectionBtn}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M21.71 11.29l-9-9a.996.996 0 0 0-1.41 0l-9 9a.996.996 0 0 0 0 1.41l9 9c.39.39 1.02.39 1.41 0l9-9a.996.996 0 0 0 0-1.41zM14 14.5V12h-4v3H8v-4c0-.55.45-1 1-1h5V7.5l3.5 3.5-3.5 3.5z" />
+                  </svg>
+                  <span>Chỉ đường Google Maps</span>
+                </a>
+                <a
+                  href={STORE_GOOGLE_MAPS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.btnPrimaryOutlined}
+                >
+                  Xem trên bản đồ lớn
+                </a>
+              </div>
+            </div>
+
+            <div className={styles.locationMapWrap}>
+              <iframe
+                src={STORE_EMBED_MAP_URL}
+                title={`Bản đồ Ủ LAB - ${STORE_ADDRESS}`}
+                className={styles.locationMapIframe}
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* ── ZONE 5: HOUSE GREEN FOOTER BOOKEND ── */}
@@ -337,6 +403,9 @@ export default function Home() {
               <p className={styles.footerDesc}>
                 Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm minh bạch trên từng ly nước.
               </p>
+              <p className={styles.footerDesc}>
+                📍 Địa chỉ: <strong>{STORE_ADDRESS}</strong>
+              </p>
             </div>
 
             <div className={styles.footerNavCol}>
@@ -347,6 +416,9 @@ export default function Home() {
                 </li>
                 <li>
                   <a href="#rewards-ceremony">Chương trình Ủ LAB Rewards</a>
+                </li>
+                <li>
+                  <a href="#store-location">Bản đồ: {STORE_ADDRESS}</a>
                 </li>
                 <li>
                   <Link href="/register">Đăng ký nhận 10.000đ</Link>

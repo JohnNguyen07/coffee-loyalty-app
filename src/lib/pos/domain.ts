@@ -476,6 +476,7 @@ export interface PosOrderMetadata {
   cashierName?: string;
   cancelReason?: string;
   cancelledBy?: string;
+  qrTokenCode?: string;
   userNote?: string;
 }
 
@@ -534,6 +535,7 @@ export function extractPosOrderMetadata(orderRow: Record<string, unknown>): PosO
     cashierName: parsedMeta.cashierName || 'Thu ngân Ủ LAB',
     cancelReason: (orderRow.cancel_reason as string | undefined) || parsedMeta.cancelReason || undefined,
     cancelledBy: parsedMeta.cancelledBy || undefined,
+    qrTokenCode: parsedMeta.qrTokenCode || undefined,
     userNote: cleanUserNote || parsedMeta.userNote || '',
   };
 }

@@ -608,6 +608,14 @@ export async function createPosOrder(
     memberProfile?.full_name ||
     (cleanPhone ? `Khách (${cleanPhone})` : 'Khách lẻ tại quầy');
 
+  const candidateQr =
+    totals.totalDue >= 1000
+      ? `QR-${totals.totalDue}-${Date.now().toString(36).toUpperCase()}-${Math.random()
+          .toString(36)
+          .substring(2, 5)
+          .toUpperCase()}`
+      : undefined;
+
   const fallbackNote = serializePosFallbackNote({
     channel: 'POS',
     orderType: payload.orderType || 'TAKEAWAY',
@@ -621,6 +629,7 @@ export async function createPosOrder(
     customerName,
     customerPhone: cleanPhone,
     cashierName: staff.fullName,
+    qrTokenCode: candidateQr,
     userNote: payload.note?.trim() || '',
   });
 
@@ -831,11 +840,7 @@ export async function createPosOrder(
   // 8. Generate a QR Loyalty Token for this receipt if totalDue > 0
   // If memberProfile already received auto-cashback via phone, mark QR as USED so it cannot be double-claimed!
   let qrTokenCode: string | undefined;
-  if (totals.totalDue >= 1000) {
-    const candidateQr = `QR-${totals.totalDue}-${Date.now().toString(36).toUpperCase()}-${Math.random()
-      .toString(36)
-      .substring(2, 5)
-      .toUpperCase()}`;
+  if (candidateQr && totals.totalDue >= 1000) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: qrRow, error: qrErr } = await adminClient
       .from('qr_tokens')
@@ -1060,40 +1065,126 @@ export async function cancelPosOrder(params: {
     updatedRow = baseUpdate as Record<string, unknown>;
   }
 
-  // Refund member points if points were used on this order
+  // Refund member points if points were used on this order, AND revoke earned cashback points if any were credited
   const pointsUsed = Number(existingRow.points_used) || 0;
-  const userId = existingRow.user_id as string | undefined;
-  if (pointsUsed > 0 && userId) {
-    const { data: userRow } = await adminClient
-      .from('users')
-      .select('id, point_balance, locked_points')
-      .eq('id', userId)
-      .maybeSingle();
+  const orderCodeStr = String(existingRow.order_code);
+  const orderTotalDue = Number(existingRow.total_due) || 0;
 
-    if (userRow) {
-      const newBalance = (Number(userRow.point_balance) || 0) + pointsUsed;
-      const newLocked =
-        currentStatus === 'PENDING'
-          ? Math.max(0, (Number(userRow.locked_points) || 0) - pointsUsed)
-          : Number(userRow.locked_points) || 0;
-
+  // Expire any active QR token linked to this cancelled order so it cannot be scanned later
+  if (prevMeta.qrTokenCode) {
+    try {
       await adminClient
-        .from('users')
-        .update({
-          point_balance: newBalance,
-          locked_points: newLocked,
-          updated_at: nowIso,
-        })
-        .eq('id', userRow.id);
+        .from('qr_tokens')
+        .update({ status: 'EXPIRED' })
+        .eq('code', prevMeta.qrTokenCode)
+        .eq('status', 'ACTIVE');
+    } catch {
+      // Ignore if qr_tokens update fails
+    }
+  }
 
-      await adminClient.from('point_transactions').insert({
-        user_id: userRow.id,
-        type: 'ORDER_CANCEL_REFUND',
-        amount: pointsUsed,
-        balance_after: newBalance,
-        reference_id: String(existingRow.order_code),
-        description: `Hoàn điểm do hủy đơn ${existingRow.order_code}: ${params.cancelReason.trim()}`,
-      });
+  // Look up any CASHBACK transactions earned from this order (via auto-phone POS credit or scanned QR token)
+  const refCandidates = [orderCodeStr, ...(prevMeta.qrTokenCode ? [prevMeta.qrTokenCode] : [])];
+  const { data: earnedTxs } = await adminClient
+    .from('point_transactions')
+    .select('id, user_id, type, amount, reference_id')
+    .in('reference_id', refCandidates)
+    .in('type', ['CASHBACK', 'ORDER_CONFIRM'])
+    .gt('amount', 0);
+
+  let revokedCashbackPoints = 0;
+
+  // 1) Refund points that the customer spent on this order (if pointsUsed > 0)
+  if (pointsUsed > 0) {
+    let spendUserId = existingRow.user_id as string | undefined;
+    if (!spendUserId && prevMeta.customerPhone) {
+      const cleanCancelPhone = prevMeta.customerPhone.replace(/\s+/g, '');
+      if (cleanCancelPhone) {
+        const { data: byPhone } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('phone', cleanCancelPhone)
+          .maybeSingle();
+        if (byPhone?.id) spendUserId = String(byPhone.id);
+      }
+    }
+
+    if (spendUserId) {
+      const { data: spendUser } = await adminClient
+        .from('users')
+        .select('id, point_balance, locked_points')
+        .eq('id', spendUserId)
+        .maybeSingle();
+
+      if (spendUser) {
+        const refundedBalance = (Number(spendUser.point_balance) || 0) + pointsUsed;
+        const newLocked =
+          currentStatus === 'PENDING'
+            ? Math.max(0, (Number(spendUser.locked_points) || 0) - pointsUsed)
+            : Number(spendUser.locked_points) || 0;
+
+        await adminClient
+          .from('users')
+          .update({
+            point_balance: refundedBalance,
+            locked_points: newLocked,
+            updated_at: nowIso,
+          })
+          .eq('id', spendUser.id);
+
+        await adminClient.from('point_transactions').insert({
+          user_id: spendUser.id,
+          type: 'ORDER_CANCEL_REFUND',
+          amount: pointsUsed,
+          balance_after: refundedBalance,
+          reference_id: orderCodeStr,
+          description: `Hoàn điểm đã dùng do hủy đơn ${orderCodeStr}: ${params.cancelReason.trim()}`,
+        });
+      }
+    }
+  }
+
+  // 2) Revoke/claw back cashback points that the customer earned from this order
+  if (earnedTxs && earnedTxs.length > 0) {
+    const earnedByUser = new Map<string, number>();
+    for (const tx of earnedTxs) {
+      const uid = String(tx.user_id || '');
+      const amt = Number(tx.amount) || 0;
+      if (uid && amt > 0) {
+        earnedByUser.set(uid, (earnedByUser.get(uid) || 0) + amt);
+      }
+    }
+
+    for (const [uid, earnedAmount] of earnedByUser.entries()) {
+      const { data: earnerRow } = await adminClient
+        .from('users')
+        .select('id, point_balance, total_spending')
+        .eq('id', uid)
+        .maybeSingle();
+
+      if (earnerRow && earnedAmount > 0) {
+        revokedCashbackPoints += earnedAmount;
+        const newBalance = Math.max(0, (Number(earnerRow.point_balance) || 0) - earnedAmount);
+        const newSpending = Math.max(0, (Number(earnerRow.total_spending) || 0) - orderTotalDue);
+
+        await adminClient
+          .from('users')
+          .update({
+            point_balance: newBalance,
+            total_spending: newSpending,
+            updated_at: nowIso,
+          })
+          .eq('id', earnerRow.id);
+
+        await adminClient.from('point_transactions').insert({
+          user_id: earnerRow.id,
+          type: 'ORDER_CANCEL_REFUND',
+          amount: -earnedAmount,
+          balance_after: newBalance,
+          reference_id: orderCodeStr,
+          description: `Thu hồi điểm tích lũy (-${earnedAmount.toLocaleString('vi-VN')}đ) do hủy đơn ${orderCodeStr}: ${params.cancelReason.trim()}`,
+        });
+      }
     }
   }
 
@@ -1112,6 +1203,7 @@ export async function cancelPosOrder(params: {
       metadata: {
         previousStatus: currentStatus,
         refundedPoints: pointsUsed,
+        revokedCashbackPoints,
         totalDue: existingRow.total_due,
       },
     });

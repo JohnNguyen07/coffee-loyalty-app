@@ -2371,7 +2371,7 @@ export default function POSPanel() {
               <div>
                 <h3 className={styles.modalTitle}>Hủy Đơn Hàng #{cancellingOrder.orderCode}</h3>
                 <p className={styles.sectionSubDesc}>
-                  Đơn hàng sẽ chuyển sang trạng thái Đã hủy (CANCELLED), lưu vết kiểm toán và hoàn điểm thành viên (nếu có).
+                  Đơn hàng sẽ chuyển sang trạng thái Đã hủy (CANCELLED), lưu vết kiểm toán, tự động thu hồi điểm tích lũy đã cộng từ đơn này và hoàn lại điểm khách đã dùng (nếu có).
                 </p>
               </div>
               <button
