@@ -609,7 +609,7 @@ export async function createPosOrder(
     (cleanPhone ? `Khách (${cleanPhone})` : 'Khách lẻ tại quầy');
 
   const candidateQr =
-    totals.totalDue >= 1000
+    totals.totalDue >= 1000 && totals.pointsUsed === 0
       ? `QR-${totals.totalDue}-${Date.now().toString(36).toUpperCase()}-${Math.random()
           .toString(36)
           .substring(2, 5)
@@ -761,7 +761,8 @@ export async function createPosOrder(
   }
 
   // 7b. Auto-credit cashback points directly to customer wallet when phone is entered at POS
-  if (memberProfile && totals.totalDue > 0) {
+  // Rule: Orders that redeem points/balance from the account (totals.pointsUsed > 0) do NOT earn cashback!
+  if (memberProfile && totals.totalDue > 0 && totals.pointsUsed === 0) {
     const tierRate = Number(memberProfile.tier?.cashback_rate) || 3;
     const cashbackEarned = Math.floor((totals.totalDue * tierRate) / 100);
     const newSpending = (Number(memberProfile.total_spending) || 0) + totals.totalDue;
@@ -837,10 +838,10 @@ export async function createPosOrder(
     finalMemberBalance = newBalance;
   }
 
-  // 8. Generate a QR Loyalty Token for this receipt if totalDue > 0
+  // 8. Generate a QR Loyalty Token for this receipt if totalDue > 0 and no account points were used
   // If memberProfile already received auto-cashback via phone, mark QR as USED so it cannot be double-claimed!
   let qrTokenCode: string | undefined;
-  if (candidateQr && totals.totalDue >= 1000) {
+  if (candidateQr && totals.totalDue >= 1000 && totals.pointsUsed === 0) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: qrRow, error: qrErr } = await adminClient
       .from('qr_tokens')

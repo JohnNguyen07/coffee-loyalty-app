@@ -1495,30 +1495,51 @@ export default function POSPanel() {
                       </div>
                     </div>
                   )}
-                  {/^0\d{8,10}$/.test(customerPhoneInput.replace(/\D/g, '')) && totals.totalDue > 0 && (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        padding: '7px 10px',
-                        borderRadius: 8,
-                        background: '#ecfdf5',
-                        border: '1px solid #a7f3d0',
-                        color: '#065f46',
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <span>
-                        🎁 Tự động tích điểm ({linkedCustomer?.cashback_rate || 3}%):
-                      </span>
-                      <strong>
-                        +{formatVND(Math.floor((totals.totalDue * (linkedCustomer?.cashback_rate || 3)) / 100))} vào ví khách
-                      </strong>
-                    </div>
-                  )}
+                  {/^0\d{8,10}$/.test(customerPhoneInput.replace(/\D/g, '')) &&
+                    (totals.pointsUsed > 0 ? (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          color: '#92400e',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>
+                          ℹ️ Đơn có dùng tiền trong tài khoản (−{formatVND(totals.pointsUsed)}) → Không hoàn tiền tích điểm
+                        </span>
+                      </div>
+                    ) : totals.totalDue > 0 ? (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          background: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          color: '#065f46',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>
+                          🎁 Tự động tích điểm ({linkedCustomer?.cashback_rate || 3}%):
+                        </span>
+                        <strong>
+                          +{formatVND(Math.floor((totals.totalDue * (linkedCustomer?.cashback_rate || 3)) / 100))} vào ví khách
+                        </strong>
+                      </div>
+                    ) : null)}
                 </div>
 
                 {/* Role-Based Discount Section */}
