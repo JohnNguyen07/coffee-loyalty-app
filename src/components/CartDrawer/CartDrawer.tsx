@@ -306,7 +306,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <div className={styles.noticeBoxText}>
                   <strong>Lấy Trực Tiếp Tại Quán</strong>
                   <p>
-                    Đơn hàng đang được chuẩn bị tại quầy Ủ LAB (Hồ Con Rùa). Bạn có thể ghé quán nhận và thanh toán tiền trực tiếp!
+                    Đơn hàng đang được chuẩn bị tại quầy Ủ LAB (124/1 Xô Viết Nghệ Tĩnh, Thạnh Mỹ Tây). Bạn có thể ghé quán nhận và thanh toán tiền trực tiếp!
                   </p>
                 </div>
               </div>
@@ -599,7 +599,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               <div className={styles.actions}>
                 {fulfillmentType === 'DELIVERY' && (
                   <div className={styles.shipNoticeFooter}>
-                    🛵 Đơn COD: Quán sẽ kiểm tra khoảng cách và liên hệ báo phí ship trước khi giao hàng.
+                    🛵 Lưu ý: giá chưa bao gồm tiền ship
                   </div>
                 )}
                 <button
