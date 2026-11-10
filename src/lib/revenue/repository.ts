@@ -70,6 +70,67 @@ let memoryActiveShift: ShiftSession | null = null;
 const memoryShiftHistory: ShiftSession[] = [];
 
 /**
+ * Resiliently fetch orders for revenue reporting with automatic fallback
+ * if foreign-key disambiguation or optional columns are not yet in the DB schema cache.
+ */
+async function queryOrdersForRevenue(
+  adminClient: ReturnType<typeof createAdminClient>,
+  boundaries: { from: string; to: string },
+  channel?: 'ALL' | 'POS' | 'WEB'
+): Promise<Record<string, unknown>[]> {
+  const buildBaseQuery = (selectClause: string, useChannelColumn: boolean) => {
+    let q = adminClient
+      .from('orders')
+      .select(selectClause)
+      .gte('created_at', boundaries.from)
+      .lte('created_at', boundaries.to)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    if (channel && channel !== 'ALL') {
+      if (channel === 'POS') {
+        q = useChannelColumn
+          ? q.or('channel.eq.POS,order_code.ilike.POS-%')
+          : q.ilike('order_code', 'POS-%');
+      } else if (channel === 'WEB') {
+        q = useChannelColumn
+          ? q.or('channel.eq.WEB,order_code.ilike.CF-%,order_code.ilike.ULAB-%')
+          : q.or('order_code.ilike.CF-%,order_code.ilike.ULAB-%');
+      }
+    }
+    return q;
+  };
+
+  try {
+    // 1. Primary query with explicit user_id foreign key disambiguation
+    const { data, error } = await buildBaseQuery(
+      '*, items:order_items(product_name, size, quantity, subtotal, unit_price), user:users!user_id(id, full_name, phone)',
+      true
+    );
+    if (!error && Array.isArray(data)) {
+      return data as unknown as Record<string, unknown>[];
+    }
+
+    // 2. Fallback without user embed ( prevents PGRST200 ambiguous relationship or missing column errors)
+    const { data: fallbackData, error: fallbackError } = await buildBaseQuery(
+      '*, items:order_items(product_name, size, quantity, subtotal, unit_price)',
+      false
+    );
+    if (!fallbackError && Array.isArray(fallbackData)) {
+      return fallbackData as unknown as Record<string, unknown>[];
+    }
+
+    if (fallbackError) {
+      console.error('getRevenueReport fallback query error:', fallbackError);
+    }
+  } catch (err) {
+    console.error('queryOrdersForRevenue unexpected error:', err);
+  }
+
+  return [];
+}
+
+/**
  * Fetch orders and compile the complete revenue & cash reconciliation report.
  */
 export async function getRevenueReport(
@@ -80,29 +141,13 @@ export async function getRevenueReport(
   const preset: DateRangePreset = query.preset || 'TODAY';
   const boundaries = getDateRangeBoundaries(preset, query.customFrom, query.customTo);
 
-  let ordersQuery = adminClient
-    .from('orders')
-    .select('*, items:order_items(product_name, size, quantity, subtotal, unit_price), user:users(id, full_name, phone)')
-    .gte('created_at', boundaries.from)
-    .lte('created_at', boundaries.to)
-    .order('created_at', { ascending: false });
-
-  // Optional channel filter
-  if (query.channel && query.channel !== 'ALL') {
-    if (query.channel === 'POS') {
-      ordersQuery = ordersQuery.or('channel.eq.POS,order_code.ilike.POS-%');
-    } else if (query.channel === 'WEB') {
-      ordersQuery = ordersQuery.or('channel.eq.WEB,order_code.ilike.CF-%,order_code.ilike.ULAB-%');
-    }
-  }
-
-  const { data: rows, error } = await ordersQuery;
-
-  if (error || !rows) {
-    console.error('getRevenueReport query error:', error);
-  }
-
-  const rawRows = (rows as Record<string, unknown>[] | null) || [];
+  // Run all 4 database queries in parallel to avoid serverless timeouts
+  const [rawRows, cashTransactions, activeShift, shiftHistory] = await Promise.all([
+    queryOrdersForRevenue(adminClient, boundaries, query.channel),
+    getCashTransactions(staff.locationId, boundaries.from, boundaries.to),
+    getActiveShiftSession(staff.locationId),
+    getShiftHistory(staff.locationId),
+  ]);
 
   // Transform DB rows into RawOrderForRevenue and DetailedRevenueOrder
   const rawOrders: RawOrderForRevenue[] = [];
@@ -170,14 +215,7 @@ export async function getRevenueReport(
     });
   }
 
-  // 1. Fetch or Fallback Cash Transactions for Cashbook
-  const cashTransactions = await getCashTransactions(
-    staff.locationId,
-    boundaries.from,
-    boundaries.to
-  );
-
-  // 2. Compute total cash payouts from cashbook to feed cashReconciliation
+  // 1. Compute total cash payouts from cashbook to feed cashReconciliation
   const cashPayoutsFromBook = cashTransactions
     .filter((tx) => tx.type === 'PAYMENT')
     .reduce((sum, tx) => sum + tx.amount, 0);
@@ -190,13 +228,9 @@ export async function getRevenueReport(
 
   const summary = calculateRevenueSummary(rawOrders, cashInput);
 
-  // 3. Compute Cashbook summary with running balance
+  // 2. Compute Cashbook summary with running balance
   const openingCashbookBalance = query.openingCash || 0;
   const cashbook = calculateCashbookSummary(openingCashbookBalance, cashTransactions);
-
-  // 4. Fetch Active Shift and Shift History
-  const activeShift = await getActiveShiftSession(staff.locationId);
-  const shiftHistory = await getShiftHistory(staff.locationId);
 
   return {
     boundaries: {
@@ -337,7 +371,7 @@ export async function getActiveShiftSession(locationId: string): Promise<ShiftSe
   const adminClient = createAdminClient();
 
   try {
-    const { data, error } = await adminClient
+    let { data, error } = await adminClient
       .from('cash_drawer_sessions')
       .select('*, opener:users!cash_drawer_sessions_opened_by_fkey(full_name)')
       .eq('location_id', locationId)
@@ -345,6 +379,19 @@ export async function getActiveShiftSession(locationId: string): Promise<ShiftSe
       .order('opened_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (error) {
+      const fallback = await adminClient
+        .from('cash_drawer_sessions')
+        .select('*')
+        .eq('location_id', locationId)
+        .eq('status', 'OPEN')
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (!error && data) {
       const openedAtIso = String(data.opened_at);
@@ -570,13 +617,25 @@ export async function getShiftHistory(locationId: string, limit = 10): Promise<S
   const adminClient = createAdminClient();
 
   try {
-    const { data, error } = await adminClient
+    let { data, error } = await adminClient
       .from('cash_drawer_sessions')
       .select('*, opener:users!cash_drawer_sessions_opened_by_fkey(full_name), closer:users!cash_drawer_sessions_closed_by_fkey(full_name)')
       .eq('location_id', locationId)
       .eq('status', 'CLOSED')
       .order('closed_at', { ascending: false })
       .limit(limit);
+
+    if (error) {
+      const fallback = await adminClient
+        .from('cash_drawer_sessions')
+        .select('*')
+        .eq('location_id', locationId)
+        .eq('status', 'CLOSED')
+        .order('closed_at', { ascending: false })
+        .limit(limit);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (!error && Array.isArray(data) && data.length > 0) {
       return data.map((d) => ({

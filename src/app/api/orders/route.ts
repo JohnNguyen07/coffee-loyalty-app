@@ -191,22 +191,34 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '20');
   const offset = (page - 1) * limit;
 
-  let query = adminClient
-    .from('orders')
-    .select('*, items:order_items(*), user:users(id, full_name, email, phone, current_tier_id)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const buildOrdersQuery = (selectStr: string) => {
+    let q = adminClient
+      .from('orders')
+      .select(selectStr, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-  // Admin sees all, user sees only own orders
-  if (profile.role !== 'ADMIN') {
-    query = query.eq('user_id', profile.id);
+    // Admin sees all, user sees only own orders
+    if (profile.role !== 'ADMIN') {
+      q = q.eq('user_id', profile.id);
+    }
+
+    if (status && status !== 'ALL') {
+      q = q.eq('status', status);
+    }
+    return q;
+  };
+
+  let { data: orders, error, count } = await buildOrdersQuery(
+    '*, items:order_items(*), user:users!user_id(id, full_name, email, phone, current_tier_id)'
+  );
+
+  if (error) {
+    const fallback = await buildOrdersQuery('*, items:order_items(*)');
+    orders = fallback.data;
+    error = fallback.error;
+    count = fallback.count;
   }
-
-  if (status && status !== 'ALL') {
-    query = query.eq('status', status);
-  }
-
-  const { data: orders, error, count } = await query;
 
   if (error) {
     console.error('Orders fetch error:', error);

@@ -63,6 +63,21 @@ export default function RevenuePanel() {
   // Print Z-Report Modal
   const [zReportShift, setZReportShift] = useState<ShiftSession | null>(null);
 
+  // Resilient fetch helper: tries AdBlock-safe /api/admin/cashbook first, falls back to /api/revenue/summary
+  const requestCashbookApi = useCallback(async (querySuffix: string, init?: RequestInit): Promise<Response> => {
+    const primaryUrl = `/api/admin/cashbook${querySuffix}`;
+    const fallbackUrl = `/api/revenue/summary${querySuffix}`;
+    try {
+      const res = await fetch(primaryUrl, init);
+      if (res.status !== 404) {
+        return res;
+      }
+    } catch {
+      // Fallback if primary endpoint could not be reached
+    }
+    return fetch(fallbackUrl, init);
+  }, []);
+
   const fetchRevenueReport = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -78,20 +93,24 @@ export default function RevenuePanel() {
         params.set('channel', channelFilter);
       }
 
-      const res = await fetch(`/api/revenue/summary?${params.toString()}`, { cache: 'no-store' });
-      const data = await res.json();
+      const res = await requestCashbookApi(`?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setErrorMsg(data.error || 'Không thể tải báo cáo doanh thu.');
+        const statusDesc = res.status === 504 ? 'Quá thời gian chờ phản hồi máy chủ (504 Timeout).' : `Mã lỗi HTTP ${res.status}`;
+        setErrorMsg(data?.error || `Không thể tải báo cáo doanh thu (${statusDesc}).`);
+      } else if (!data) {
+        setErrorMsg('Dữ liệu phản hồi từ máy chủ không hợp lệ.');
       } else {
         setReportData(data);
       }
-    } catch {
-      setErrorMsg('Lỗi kết nối máy chủ khi tải báo cáo doanh thu.');
+    } catch (err) {
+      const detail = err instanceof Error && err.message ? ` (${err.message})` : '';
+      setErrorMsg(`Lỗi kết nối máy chủ khi tải báo cáo doanh thu${detail}. Hãy thử tắt trình chặn quảng cáo (AdBlock) hoặc làm mới trang.`);
     } finally {
       setLoading(false);
     }
-  }, [preset, customFrom, customTo, channelFilter]);
+  }, [preset, customFrom, customTo, channelFilter, requestCashbookApi]);
 
   useEffect(() => {
     fetchRevenueReport();
@@ -112,7 +131,7 @@ export default function RevenuePanel() {
     }
     setSubmittingTx(true);
     try {
-      const res = await fetch('/api/revenue/summary', {
+      const res = await requestCashbookApi('', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,8 +144,8 @@ export default function RevenuePanel() {
           notes: txNotes,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
         setSuccessMsg(`✓ Đã lập ${txType === 'RECEIPT' ? 'Phiếu Thu' : 'Phiếu Chi'} #${data.transaction?.code || ''} thành công!`);
         setShowTransactionModal(false);
         setTxAmount('');
@@ -134,7 +153,7 @@ export default function RevenuePanel() {
         setTxNotes('');
         await fetchRevenueReport();
       } else {
-        setErrorMsg(data.error || 'Không thể tạo phiếu thu chi.');
+        setErrorMsg(data?.error || `Không thể tạo phiếu thu chi (HTTP ${res.status}).`);
       }
     } catch {
       setErrorMsg('Lỗi kết nối máy chủ khi lập phiếu.');
@@ -149,7 +168,7 @@ export default function RevenuePanel() {
     const openingCash = Number(openingCashInput.replace(/\D/g, '')) || 0;
     setSubmittingOpenShift(true);
     try {
-      const res = await fetch('/api/revenue/summary', {
+      const res = await requestCashbookApi('', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -159,13 +178,13 @@ export default function RevenuePanel() {
           notes: openShiftNotes,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
         setSuccessMsg(`✓ Đã mở ca bán hàng [${data.shift?.shiftName || shiftNameInput}] thành công!`);
         setShowOpenShiftModal(false);
         await fetchRevenueReport();
       } else {
-        setErrorMsg(data.error || 'Lỗi mở ca bán hàng.');
+        setErrorMsg(data?.error || `Lỗi mở ca bán hàng (HTTP ${res.status}).`);
       }
     } catch {
       setErrorMsg('Lỗi kết nối máy chủ khi mở ca.');
@@ -181,7 +200,7 @@ export default function RevenuePanel() {
     const cashRetained = Number(retainedCashInput.replace(/\D/g, '')) || 0;
     setSubmittingCloseShift(true);
     try {
-      const res = await fetch('/api/revenue/summary', {
+      const res = await requestCashbookApi('', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -192,8 +211,8 @@ export default function RevenuePanel() {
           denominations: denomCounts,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
         setSuccessMsg('✓ Đã chốt ca bán hàng và lưu kết quả đối soát thành công!');
         setShowCloseShiftModal(false);
         setDenomCounts({});
@@ -202,7 +221,7 @@ export default function RevenuePanel() {
         }
         await fetchRevenueReport();
       } else {
-        setErrorMsg(data.error || 'Lỗi khi chốt ca.');
+        setErrorMsg(data?.error || `Lỗi khi chốt ca (HTTP ${res.status}).`);
       }
     } catch {
       setErrorMsg('Lỗi kết nối khi chốt ca.');

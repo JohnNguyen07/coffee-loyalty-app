@@ -22,10 +22,10 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
   const fetchQuickStats = useCallback(async () => {
     try {
       const [allRevRes, todayRevRes, invRes, rbacRes] = await Promise.all([
-        fetch('/api/revenue/summary?preset=ALL_TIME').catch(() => null),
-        fetch('/api/revenue/summary?preset=TODAY').catch(() => null),
-        fetch('/api/inventory/summary').catch(() => null),
-        fetch('/api/rbac/profile').catch(() => null),
+        fetch('/api/admin/cashbook?preset=ALL_TIME', { cache: 'no-store' }).catch(() => fetch('/api/revenue/summary?preset=ALL_TIME').catch(() => null)),
+        fetch('/api/admin/cashbook?preset=TODAY', { cache: 'no-store' }).catch(() => fetch('/api/revenue/summary?preset=TODAY').catch(() => null)),
+        fetch('/api/inventory/summary', { cache: 'no-store' }).catch(() => null),
+        fetch('/api/rbac/profile', { cache: 'no-store' }).catch(() => null),
       ]);
 
       let allTimeRevenue = 0;
@@ -38,16 +38,16 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
       let totalInventoryItems = 0;
 
       if (allRevRes && allRevRes.ok) {
-        const revData = await allRevRes.json();
-        if (revData.summary) {
+        const revData = await allRevRes.json().catch(() => null);
+        if (revData?.summary) {
           allTimeRevenue = revData.summary.metrics?.paidOrderRevenue ?? 0;
           allTimeOrders = revData.summary.metrics?.orderCount ?? 0;
         }
       }
 
       if (todayRevRes && todayRevRes.ok) {
-        const todayData = await todayRevRes.json();
-        if (todayData.summary) {
+        const todayData = await todayRevRes.json().catch(() => null);
+        if (todayData?.summary) {
           todayRevenue = todayData.summary.metrics?.paidOrderRevenue ?? 0;
           todayOrders = todayData.summary.metrics?.orderCount ?? 0;
         }

@@ -949,37 +949,49 @@ export async function listPosOrders(params: {
   const adminClient = createAdminClient();
   const limit = Math.min(Math.max(1, params.limit || 30), 100);
 
-  let query = adminClient
-    .from('orders')
-    .select('*, items:order_items(*), user:users(id, full_name, email, phone)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const buildPosOrdersQuery = (selectStr: string) => {
+    let q = adminClient
+      .from('orders')
+      .select(selectStr, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-  if (params.status && params.status !== 'ALL') {
-    query = query.eq('status', params.status);
-  }
-
-  if (params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date)) {
-    const dayStart = new Date(`${params.date}T00:00:00.000+07:00`).toISOString();
-    const dayEnd = new Date(`${params.date}T23:59:59.999+07:00`).toISOString();
-    query = query.gte('created_at', dayStart).lte('created_at', dayEnd);
-  }
-
-  if (params.search && params.search.trim()) {
-    const clean = escapeFilterInput(params.search.trim());
-    if (clean) {
-      query = query.or(`order_code.ilike.%${clean}%,note.ilike.%${clean}%`);
+    if (params.status && params.status !== 'ALL') {
+      q = q.eq('status', params.status);
     }
-  }
 
-  const { data: rows, error, count } = await query;
+    if (params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date)) {
+      const dayStart = new Date(`${params.date}T00:00:00.000+07:00`).toISOString();
+      const dayEnd = new Date(`${params.date}T23:59:59.999+07:00`).toISOString();
+      q = q.gte('created_at', dayStart).lte('created_at', dayEnd);
+    }
+
+    if (params.search && params.search.trim()) {
+      const clean = escapeFilterInput(params.search.trim());
+      if (clean) {
+        q = q.or(`order_code.ilike.%${clean}%,note.ilike.%${clean}%`);
+      }
+    }
+    return q;
+  };
+
+  let { data: rows, error, count } = await buildPosOrdersQuery(
+    '*, items:order_items(*), user:users!user_id(id, full_name, email, phone)'
+  );
+
+  if (error) {
+    const fallback = await buildPosOrdersQuery('*, items:order_items(*)');
+    rows = fallback.data;
+    error = fallback.error;
+    count = fallback.count;
+  }
 
   if (error || !rows) {
     console.error('listPosOrders error:', error);
     return { orders: [], total: 0 };
   }
 
-  const mapped = (rows as Record<string, unknown>[]).map((r) => mapOrderRowToPosRecord(r));
+  const mapped = (rows as unknown as Record<string, unknown>[]).map((r) => mapOrderRowToPosRecord(r));
   return {
     orders: mapped,
     total: count || mapped.length,
