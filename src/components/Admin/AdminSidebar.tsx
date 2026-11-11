@@ -110,7 +110,7 @@ export default function AdminSidebar({
             id="nav-pos"
           >
             <QrScanIcon size={16} />
-            <span className={styles.navLabel}>POS &amp; Tạo Tem QR</span>
+            <span className={styles.navLabel}>POS &amp; Tích Điểm SĐT</span>
           </button>
         )}
 

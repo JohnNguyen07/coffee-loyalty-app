@@ -63,7 +63,8 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Quick point adjustment modal/form state
-  const [adjustMode, setAdjustMode] = useState<'DEDUCT' | 'ADD'>('DEDUCT');
+  const [adjustMode, setAdjustMode] = useState<'EARN_BY_BILL' | 'DEDUCT'>('EARN_BY_BILL');
+  const [billAmountInput, setBillAmountInput] = useState<number | ''>('');
   const [adjustAmount, setAdjustAmount] = useState<number | ''>('');
   const [orderCode, setOrderCode] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
@@ -219,7 +220,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
     }
   };
 
-  // Handle Point Adjustment (Trừ hoặc Cộng điểm)
+  // Handle Point Adjustment (Cộng điểm theo % hạng thẻ hoặc Trừ điểm tại quầy)
   const handleAdjustPoints = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!detailCustomer) {
@@ -227,15 +228,34 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
       return;
     }
 
-    const amountNum = Number(adjustAmount);
+    const tierRate = Number(detailCustomer.tier?.cashback_rate) || 3;
+    const billNum = Number(billAmountInput) || 0;
+    const amountNum =
+      adjustMode === 'EARN_BY_BILL'
+        ? Math.floor((billNum * tierRate) / 100)
+        : Number(adjustAmount) || 0;
+
+    if (adjustMode === 'EARN_BY_BILL' && billNum < 1000) {
+      setActionMessage({ text: 'Vui lòng nhập giá trị hóa đơn hợp lệ (từ 1.000đ trở lên)', isError: true });
+      return;
+    }
+
     if (!amountNum || amountNum <= 0) {
-      setActionMessage({ text: 'Vui lòng nhập số điểm hợp lệ lớn hơn 0', isError: true });
+      setActionMessage({ text: 'Vui lòng nhập số tiền hợp lệ lớn hơn 0', isError: true });
       return;
     }
 
     if (adjustMode === 'DEDUCT' && detailCustomer.point_balance < amountNum) {
       setActionMessage({
         text: `Khách chỉ còn ${formatVND(detailCustomer.point_balance)}, không đủ để trừ ${formatVND(amountNum)}!`,
+        isError: true,
+      });
+      return;
+    }
+
+    if (adjustMode === 'DEDUCT' && billNum > 0 && amountNum > billNum) {
+      setActionMessage({
+        text: `Số điểm trừ (${formatVND(amountNum)}) không được vượt quá giá trị đơn hàng (${formatVND(billNum)})!`,
         isError: true,
       });
       return;
@@ -253,6 +273,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
           phone: detailCustomer.phone,
           action: adjustMode,
           amount: amountNum,
+          billAmount: billNum > 0 ? billNum : undefined,
           orderCode: orderCode.trim(),
           reason: adjustReason.trim(),
         }),
@@ -262,6 +283,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
       if (res.ok && data.success) {
         setActionMessage({ text: data.message });
         await loadCustomerDetail({ id: detailCustomer.id });
+        setBillAmountInput('');
         setAdjustAmount('');
         setOrderCode('');
         setAdjustReason('');
@@ -662,66 +684,154 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                 </div>
               </div>
 
-              {/* Right Column: Fast Point Deduction Form */}
+              {/* Right Column: Counter Phone Loyalty (Cộng theo % hạng thẻ / Trừ tại quầy) */}
               <div className={styles.card}>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <button
+                    type="button"
+                    className={`${styles.subTabBtn} ${adjustMode === 'EARN_BY_BILL' ? styles.activeSubTab : ''}`}
+                    onClick={() => setAdjustMode('EARN_BY_BILL')}
+                    style={{ flex: 1, justifyContent: 'center' }}
+                  >
+                    ➕ Tích điểm (% Hạng thẻ)
+                  </button>
                   <button
                     type="button"
                     className={`${styles.subTabBtn} ${adjustMode === 'DEDUCT' ? styles.activeSubTab : ''}`}
                     onClick={() => setAdjustMode('DEDUCT')}
                     style={{ flex: 1, justifyContent: 'center' }}
                   >
-                    🔻 Trừ điểm (Áp vào đơn nước)
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.subTabBtn} ${adjustMode === 'ADD' ? styles.activeSubTab : ''}`}
-                    onClick={() => setAdjustMode('ADD')}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    ➕ Cộng điểm thưởng
+                    🔻 Trừ tiền tại quầy
                   </button>
                 </div>
 
-                <form onSubmit={handleAdjustPoints}>
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      {adjustMode === 'DEDUCT' ? 'Số điểm muốn trừ (VNĐ)' : 'Số điểm muốn cộng thưởng (VNĐ)'}
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="VD: 20000"
-                      value={adjustAmount}
-                      onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
-                      className={styles.formInput}
-                      min="1000"
-                      step="1000"
-                      required
-                    />
-
-                    <div className={styles.quickPillRow}>
-                      <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(10000)}>10.000đ</button>
-                      <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(20000)}>20.000đ</button>
-                      <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(30000)}>30.000đ</button>
-                      <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(50000)}>50.000đ</button>
-                      {adjustMode === 'DEDUCT' && (
-                        <button
-                          type="button"
-                          className={styles.quickPill}
-                          onClick={() => setAdjustAmount(detailCustomer.point_balance || 0)}
-                          style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                        >
-                          Trừ hết ({formatVND(detailCustomer.point_balance || 0)})
-                        </button>
-                      )}
+                {adjustMode === 'EARN_BY_BILL' ? (
+                  <div
+                    style={{
+                      marginBottom: 14,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      background: '#ecfdf5',
+                      border: '1px solid #a7f3d0',
+                      color: '#065f46',
+                      fontSize: '0.8rem',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong>🎁 Hạng hiện tại: {detailCustomer.tier?.name || 'Member'} (Hoàn {detailCustomer.tier?.cashback_rate || 3}%)</strong>
+                    <div>
+                      Nhập tổng tiền hóa đơn để tự động cộng <strong>{detailCustomer.tier?.cashback_rate || 3}%</strong> vào ví khách.{' '}
+                      <span style={{ color: '#92400e', fontWeight: 700 }}>
+                        (Lưu ý: Đơn nào có trừ tiền tích lũy thì đơn đó không tích điểm)
+                      </span>
                     </div>
                   </div>
+                ) : (
+                  <div
+                    style={{
+                      marginBottom: 14,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      color: '#92400e',
+                      fontSize: '0.8rem',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong>⚠️ Quy tắc trừ tiền tại quầy:</strong>
+                    <div>
+                      Trừ trực tiếp số dư ví điểm của khách vào đơn nước tại quầy.{' '}
+                      <strong>Đơn có áp dụng trừ tiền sẽ không được tích điểm mới (0đ).</strong>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleAdjustPoints}>
+                  {adjustMode === 'EARN_BY_BILL' ? (
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>
+                        Giá trị đơn hàng / hóa đơn thanh toán (VNĐ) *
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="Nhập tiền đơn nước (VD: 35000, 40000, 75000)..."
+                        value={billAmountInput}
+                        onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
+                        className={styles.formInput}
+                        min="1000"
+                        step="1000"
+                        required
+                      />
+
+                      <div className={styles.quickPillRow}>
+                        {[30000, 35000, 40000, 45000, 70000, 80000, 90000].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            className={styles.quickPill}
+                            onClick={() => setBillAmountInput(val)}
+                          >
+                            {formatVND(val)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>
+                          Số tiền muốn trừ tại quầy (VNĐ) *
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="VD: 15000"
+                          value={adjustAmount}
+                          onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
+                          className={styles.formInput}
+                          min="1000"
+                          step="1000"
+                          required
+                        />
+
+                        <div className={styles.quickPillRow}>
+                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(10000)}>10.000đ</button>
+                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(20000)}>20.000đ</button>
+                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(30000)}>30.000đ</button>
+                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(50000)}>50.000đ</button>
+                          <button
+                            type="button"
+                            className={styles.quickPill}
+                            onClick={() => setAdjustAmount(detailCustomer.point_balance || 0)}
+                            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                          >
+                            Trừ tối đa ({formatVND(detailCustomer.point_balance || 0)})
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>
+                          Tổng tiền đơn nước (Tùy chọn · Để tính tiền khách cần trả thêm)
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="VD: 40000"
+                          value={billAmountInput}
+                          onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
+                          className={styles.formInput}
+                          min="0"
+                          step="1000"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div className={styles.formGroup}>
                     <label className={styles.formLabel}>Mã đơn hàng / Bàn số (Tùy chọn)</label>
                     <input
                       type="text"
-                      placeholder="VD: CF-0012, POS-..., Mang về..."
+                      placeholder="VD: POS-..., CF-0012..."
                       value={orderCode}
                       onChange={(e) => setOrderCode(e.target.value)}
                       className={styles.formInput}
@@ -732,46 +842,75 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                     <label className={styles.formLabel}>Ghi chú / Lý do</label>
                     <input
                       type="text"
-                      placeholder={adjustMode === 'DEDUCT' ? 'VD: Trừ điểm thanh toán đơn nước' : 'VD: Thưởng tích cực / tri ân'}
+                      placeholder={
+                        adjustMode === 'DEDUCT'
+                          ? 'VD: Trừ tiền tích lũy tại quầy'
+                          : 'VD: Khách đọc SĐT tích điểm tại quầy'
+                      }
                       value={adjustReason}
                       onChange={(e) => setAdjustReason(e.target.value)}
                       className={styles.formInput}
                     />
                   </div>
 
-                  {typeof adjustAmount === 'number' && adjustAmount > 0 && (
+                  {adjustMode === 'EARN_BY_BILL' && typeof billAmountInput === 'number' && billAmountInput > 0 && (
                     <div className={styles.previewBox}>
                       <div>
-                        <div className={styles.previewLabel}>Số dư sau thao tác:</div>
+                        <div className={styles.previewLabel}>
+                          Điểm cộng ({detailCustomer.tier?.cashback_rate || 3}% hạng {detailCustomer.tier?.name || 'Member'}):
+                        </div>
+                        <div className={styles.previewValue} style={{ color: '#1b8a5a' }}>
+                          +{formatVND(Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100))}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                        <div>Số dư ví mới:</div>
+                        <strong style={{ color: '#1b8a5a', fontSize: '0.95rem' }}>
+                          {formatVND(
+                            (detailCustomer.point_balance || 0) +
+                              Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100)
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {adjustMode === 'DEDUCT' && typeof adjustAmount === 'number' && adjustAmount > 0 && (
+                    <div className={styles.previewBox}>
+                      <div>
+                        <div className={styles.previewLabel}>Số dư ví sau khi trừ tại quầy:</div>
                         <div
                           className={styles.previewValue}
                           style={{
-                            color: adjustMode === 'DEDUCT'
-                              ? ((detailCustomer.point_balance - adjustAmount) < 0 ? '#d9381e' : '#1b8a5a')
-                              : '#1b8a5a',
+                            color: detailCustomer.point_balance - adjustAmount < 0 ? '#d9381e' : '#1b8a5a',
                           }}
                         >
-                          {adjustMode === 'DEDUCT'
-                            ? formatVND(detailCustomer.point_balance - adjustAmount)
-                            : formatVND(detailCustomer.point_balance + adjustAmount)}
+                          {formatVND(detailCustomer.point_balance - adjustAmount)}
                         </div>
+                        {typeof billAmountInput === 'number' && billAmountInput > 0 && (
+                          <div style={{ fontSize: '0.8rem', color: '#0f172a', marginTop: 4 }}>
+                            Khách trả thêm tại quầy: <strong>{formatVND(Math.max(0, billAmountInput - adjustAmount))}</strong>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                        {adjustMode === 'DEDUCT' ? 'Giảm từ ví khách' : 'Tăng thêm vào ví'}
+                      <div style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: 700, textAlign: 'right' }}>
+                        Trừ ví: −{formatVND(adjustAmount)}
+                        <br />
+                        Điểm cộng đơn này: 0đ
                       </div>
                     </div>
                   )}
 
                   <button
                     type="submit"
-                    className={`${styles.submitBtn} ${adjustMode === 'ADD' ? styles.addPointsBtn : ''}`}
+                    className={`${styles.submitBtn} ${adjustMode === 'EARN_BY_BILL' ? styles.addPointsBtn : ''}`}
                     disabled={adjustSubmitting}
                   >
                     {adjustSubmitting
                       ? 'Đang xử lý...'
                       : adjustMode === 'DEDUCT'
-                        ? 'Xác nhận Trừ Điểm Khách Hàng'
-                        : 'Xác nhận Cộng Điểm Thưởng'}
+                        ? '✓ Xác nhận Trừ Tiền Tại Quầy (Không Tích Điểm)'
+                        : `✓ Cộng +${detailCustomer.tier?.cashback_rate || 3}% Điểm Theo Hạng Thẻ`}
                   </button>
                 </form>
               </div>

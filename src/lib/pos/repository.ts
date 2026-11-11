@@ -10,6 +10,7 @@ import {
   extractPosOrderMetadata,
   formatItemOptionsSummary,
   generatePosOrderCode,
+  resolveTierCashbackRate,
   serializePosFallbackNote,
   validatePosOrderCancel,
   type DiscountType,
@@ -228,19 +229,31 @@ export async function getPosMenuCatalog() {
           .filter((item) => {
             if (item.category_id !== cat.id) return false;
             const lower = item.name.trim().toLowerCase();
-            // Exclude discontinued Cold Brew Vải from active menu catalog
-            if (lower === 'cold brew vải' || lower === 'cold brew vai') return false;
+            // Exclude discontinued Cold Brew Vải and standalone Matcha Oat (now a free milk choice)
+            if (
+              lower === 'cold brew vải' ||
+              lower === 'cold brew vai' ||
+              lower === 'matcha oat'
+            ) {
+              return false;
+            }
             return true;
           })
           .map((item) => {
             const lowerDbName = item.name.trim().toLowerCase();
             const isStrawberryMatcha =
               lowerDbName === 'strawberry matcha' || lowerDbName === 'strawberry matcha latte';
+            const isMatchaKemBeo =
+              lowerDbName === 'matcha kem béo' ||
+              lowerDbName === 'matcha kem beo' ||
+              lowerDbName === 'matcha kem muối' ||
+              lowerDbName === 'matcha kem muoi';
             const staticMatch =
               staticCat?.items.find(
                 (m) =>
                   m.name.toLowerCase() === lowerDbName ||
-                  (isStrawberryMatcha && m.id === 'strawberry-matcha')
+                  (isStrawberryMatcha && m.id === 'strawberry-matcha') ||
+                  (isMatchaKemBeo && m.id === 'matcha-kem-beo')
               ) ||
               allMenuItems.find(
                 (m) => m.name.toLowerCase() === lowerDbName && m.categorySlug === cat.slug
@@ -277,11 +290,14 @@ export async function getPosMenuCatalog() {
             return {
               id: pid,
               name: staticMatch?.name || item.name,
+              description: staticMatch?.description || item.description || undefined,
               category: cat.name,
               categorySlug: cat.slug,
               isSignature: Boolean(item.is_signature ?? staticMatch?.isSignature),
+              badgeLabel: staticMatch?.badgeLabel,
+              hasMilkChoice: staticMatch?.hasMilkChoice,
               tag: staticMatch?.tag,
-              shelfLife: staticMatch?.shelfLife || item.description || undefined,
+              shelfLife: staticMatch?.shelfLife || undefined,
               sizes: finalSizes,
               isAvailable,
             };
@@ -313,12 +329,20 @@ export async function getPosMenuCatalog() {
               });
             }
           }
+          // Sort catItems to match canonical menu order first, then any custom DB items
+          const orderIndex = new Map(staticCat.items.map((it, idx) => [it.id, idx]));
+          catItems.sort((a, b) => {
+            const ia = orderIndex.has(a.id) ? orderIndex.get(a.id)! : 999;
+            const ib = orderIndex.has(b.id) ? orderIndex.get(b.id)! : 999;
+            return ia - ib;
+          });
         }
 
         return {
           name: cat.name,
           slug: cat.slug,
           icon: staticCat?.icon || '☕',
+          subtitle: staticCat?.subtitle,
           items: catItems,
         };
       });
@@ -534,6 +558,7 @@ export async function createPosOrder(
           .insert({
             full_name: autoName,
             phone: cleanPhone,
+            email: `member.${cleanPhone}@ulab.vn`,
             role: 'USER',
             current_tier_id: memberTier.id,
             point_balance: 0,
@@ -608,14 +633,6 @@ export async function createPosOrder(
     memberProfile?.full_name ||
     (cleanPhone ? `Khách (${cleanPhone})` : 'Khách lẻ tại quầy');
 
-  const candidateQr =
-    totals.totalDue >= 1000 && totals.pointsUsed === 0
-      ? `QR-${totals.totalDue}-${Date.now().toString(36).toUpperCase()}-${Math.random()
-          .toString(36)
-          .substring(2, 5)
-          .toUpperCase()}`
-      : undefined;
-
   const fallbackNote = serializePosFallbackNote({
     channel: 'POS',
     orderType: payload.orderType || 'TAKEAWAY',
@@ -629,7 +646,6 @@ export async function createPosOrder(
     customerName,
     customerPhone: cleanPhone,
     cashierName: staff.fullName,
-    qrTokenCode: candidateQr,
     userNote: payload.note?.trim() || '',
   });
 
@@ -745,9 +761,14 @@ export async function createPosOrder(
 
   if (memberProfile && totals.pointsUsed > 0) {
     finalMemberBalance = Math.max(0, (finalMemberBalance || 0) - totals.pointsUsed);
+    const updatedSpending = (Number(memberProfile.total_spending) || 0) + totals.totalDue;
     await adminClient
       .from('users')
-      .update({ point_balance: finalMemberBalance, updated_at: now.toISOString() })
+      .update({
+        point_balance: finalMemberBalance,
+        total_spending: updatedSpending,
+        updated_at: now.toISOString(),
+      })
       .eq('id', memberProfile.id);
 
     await adminClient.from('point_transactions').insert({
@@ -756,14 +777,17 @@ export async function createPosOrder(
       amount: -totals.pointsUsed,
       balance_after: finalMemberBalance,
       reference_id: String(insertedOrder!.order_code),
-      description: `Dùng điểm tại quầy POS cho đơn ${insertedOrder!.order_code}`,
+      description: `Trừ điểm tại quầy POS cho đơn ${insertedOrder!.order_code} (Đơn trừ tiền không tích điểm mới)`,
     });
   }
 
   // 7b. Auto-credit cashback points directly to customer wallet when phone is entered at POS
   // Rule: Orders that redeem points/balance from the account (totals.pointsUsed > 0) do NOT earn cashback!
   if (memberProfile && totals.totalDue > 0 && totals.pointsUsed === 0) {
-    const tierRate = Number(memberProfile.tier?.cashback_rate) || 3;
+    const tierRate = resolveTierCashbackRate(
+      memberProfile.tier?.code,
+      Number(memberProfile.tier?.cashback_rate)
+    );
     const cashbackEarned = Math.floor((totals.totalDue * tierRate) / 100);
     const newSpending = (Number(memberProfile.total_spending) || 0) + totals.totalDue;
     let newBalance = (finalMemberBalance || 0) + cashbackEarned;
@@ -808,7 +832,7 @@ export async function createPosOrder(
         amount: cashbackEarned,
         balance_after: newBalance - tierBonus,
         reference_id: String(insertedOrder!.order_code),
-        description: `Tích điểm tự động (${tierRate}%) qua SĐT cho đơn ${insertedOrder!.order_code}`,
+        description: `Tích điểm tại quầy (${tierRate}% hạng ${memberProfile.tier?.name || 'Member'}) qua SĐT cho đơn ${insertedOrder!.order_code}`,
       });
     }
 
@@ -838,29 +862,8 @@ export async function createPosOrder(
     finalMemberBalance = newBalance;
   }
 
-  // 8. Generate a QR Loyalty Token for this receipt if totalDue > 0 and no account points were used
-  // If memberProfile already received auto-cashback via phone, mark QR as USED so it cannot be double-claimed!
-  let qrTokenCode: string | undefined;
-  if (candidateQr && totals.totalDue >= 1000 && totals.pointsUsed === 0) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: qrRow, error: qrErr } = await adminClient
-      .from('qr_tokens')
-      .insert({
-        code: candidateQr,
-        drink_value: totals.totalDue,
-        status: memberProfile ? 'USED' : 'ACTIVE',
-        created_by: staff.dbUserId,
-        scanned_by: memberProfile ? memberProfile.id : null,
-        scanned_at: memberProfile ? now.toISOString() : null,
-        expires_at: expiresAt,
-      })
-      .select('code')
-      .maybeSingle();
-
-    if (!qrErr && qrRow?.code) {
-      qrTokenCode = qrRow.code;
-    }
-  }
+  // 8. QR Sticker generation retired — Phone-based loyalty is now handled directly above.
+  const qrTokenCode: string | undefined = undefined;
 
   // 9. Write audit log (best-effort if migration 0001 is active)
   try {
@@ -1241,3 +1244,250 @@ export async function cancelPosOrder(params: {
     order: mapOrderRowToPosRecord(updatedRow!),
   };
 }
+
+/**
+ * Apply Phone-Based Loyalty when a Web/PENDING order is confirmed or marked paid by staff.
+ * - Rule: If the order used wallet points (`points_used > 0`), it MUST NOT earn cashback (`pointsEarned = 0`).
+ * - If `points_used === 0` and `eligibleAmount > 0`, credits tier % cashback (`3%`, `5%`, `7%`, `10%`) idempotently.
+ */
+export async function applyPhoneLoyaltyForConfirmedOrder(orderId: string): Promise<{
+  pointsEarned: number;
+  memberPointBalance?: number;
+}> {
+  const adminClient = createAdminClient();
+  const { data: orderRow } = await adminClient
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (!orderRow) {
+    return { pointsEarned: 0 };
+  }
+
+  const orderCode = String(orderRow.order_code || '');
+  const pointsUsed = Number(orderRow.points_used) || 0;
+  const totalDue = Number(orderRow.total_due) || 0;
+  const rawNote = String(orderRow.note || '');
+
+  // Extract shipping fee from note if present so cashback only applies to drink payment
+  let shippingFee = 0;
+  const shipMatch = rawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
+  if (shipMatch) {
+    shippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
+  }
+  const eligibleDrinkAmount = Math.max(0, totalDue - shippingFee);
+
+  // Resolve member profile by user_id or phone number in order/note
+  type MemberRow = {
+    id: string;
+    full_name: string | null;
+    phone: string | null;
+    point_balance: number;
+    total_spending?: number;
+    current_tier_id?: string;
+    upgraded_to_silver?: boolean;
+    upgraded_to_gold?: boolean;
+    upgraded_to_diamond?: boolean;
+    tier?: { id: string; code: string; name: string; cashback_rate: number } | null;
+  };
+  let member: MemberRow | null = null;
+
+  if (orderRow.user_id) {
+    const { data: byId } = await adminClient
+      .from('users')
+      .select(
+        'id, full_name, phone, point_balance, total_spending, current_tier_id, upgraded_to_silver, upgraded_to_gold, upgraded_to_diamond, tier:tiers(id, code, name, cashback_rate)'
+      )
+      .eq('id', orderRow.user_id)
+      .maybeSingle();
+    if (byId) {
+      const rawTier = Array.isArray(byId.tier) ? byId.tier[0] : byId.tier;
+      member = {
+        ...byId,
+        tier: (rawTier as { id: string; code: string; name: string; cashback_rate: number } | null) || null,
+      };
+    }
+  }
+
+  let extractedPhone = String((orderRow as Record<string, unknown>).customer_phone || '').replace(/\D/g, '');
+  let extractedName = String((orderRow as Record<string, unknown>).customer_name || '').trim();
+  if (!extractedPhone) {
+    const khMatch = rawNote.match(/KH:\s*([^|(]+)(?:\(([^)]+)\))?/);
+    if (khMatch) {
+      if (!extractedName && khMatch[1]?.trim()) extractedName = khMatch[1].trim();
+      if (khMatch[2]?.trim()) extractedPhone = khMatch[2].replace(/\D/g, '');
+    }
+  }
+
+  // If user_id points to a staff/admin fallback account or wasn't linked, prefer matching customer phone if present
+  if ((!member || (extractedPhone && member.phone !== extractedPhone)) && /^0\d{8,10}$/.test(extractedPhone)) {
+    const { data: byPhone } = await adminClient
+      .from('users')
+      .select(
+        'id, full_name, phone, point_balance, total_spending, current_tier_id, upgraded_to_silver, upgraded_to_gold, upgraded_to_diamond, tier:tiers(id, code, name, cashback_rate)'
+      )
+      .eq('phone', extractedPhone)
+      .maybeSingle();
+
+    if (byPhone) {
+      const rawTier = Array.isArray(byPhone.tier) ? byPhone.tier[0] : byPhone.tier;
+      member = {
+        ...byPhone,
+        tier: (rawTier as { id: string; code: string; name: string; cashback_rate: number } | null) || null,
+      };
+    } else {
+      const { data: memberTier } = await adminClient
+        .from('tiers')
+        .select('id, code, name, cashback_rate')
+        .eq('code', 'MEMBER')
+        .maybeSingle();
+      if (memberTier) {
+        const autoName = extractedName || `Thành viên ${extractedPhone.slice(-4)}`;
+        const { data: created } = await adminClient
+          .from('users')
+          .insert({
+            full_name: autoName,
+            phone: extractedPhone,
+            email: `member.${extractedPhone}@ulab.vn`,
+            role: 'USER',
+            current_tier_id: memberTier.id,
+            point_balance: 0,
+            total_spending: 0,
+            locked_points: 0,
+          })
+          .select(
+            'id, full_name, phone, point_balance, total_spending, current_tier_id, upgraded_to_silver, upgraded_to_gold, upgraded_to_diamond'
+          )
+          .maybeSingle();
+        if (created) {
+          member = {
+            ...created,
+            tier: {
+              id: memberTier.id,
+              code: memberTier.code,
+              name: memberTier.name,
+              cashback_rate: Number(memberTier.cashback_rate) || 3,
+            },
+          };
+        }
+      }
+    }
+  }
+
+  if (!member) {
+    return { pointsEarned: 0 };
+  }
+
+  // Rule: Orders with points_used > 0 NEVER earn cashback!
+  if (pointsUsed > 0) {
+    return {
+      pointsEarned: 0,
+      memberPointBalance: Number(member.point_balance) || 0,
+    };
+  }
+
+  if (eligibleDrinkAmount <= 0 || !orderCode) {
+    return {
+      pointsEarned: 0,
+      memberPointBalance: Number(member.point_balance) || 0,
+    };
+  }
+
+  // Idempotency check: has this orderCode already earned CASHBACK?
+  const { data: existingTx } = await adminClient
+    .from('point_transactions')
+    .select('id, amount')
+    .eq('reference_id', orderCode)
+    .eq('type', 'CASHBACK')
+    .maybeSingle();
+
+  if (existingTx) {
+    return {
+      pointsEarned: Number(existingTx.amount) || 0,
+      memberPointBalance: Number(member.point_balance) || 0,
+    };
+  }
+
+  const tierRate = resolveTierCashbackRate(member.tier?.code, Number(member.tier?.cashback_rate));
+  const cashbackEarned = Math.floor((eligibleDrinkAmount * tierRate) / 100);
+  if (cashbackEarned <= 0) {
+    return {
+      pointsEarned: 0,
+      memberPointBalance: Number(member.point_balance) || 0,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const newSpending = (Number(member.total_spending) || 0) + eligibleDrinkAmount;
+  let newBalance = (Number(member.point_balance) || 0) + cashbackEarned;
+  let newTierId = member.current_tier_id;
+  let newTierName = member.tier?.name || 'Member';
+  let tierBonus = 0;
+  const tierFlagUpdates: Record<string, boolean> = {};
+
+  const { data: allTiers } = await adminClient
+    .from('tiers')
+    .select('id, code, name, min_spending')
+    .order('min_spending', { ascending: false });
+
+  if (allTiers && allTiers.length > 0) {
+    for (const t of allTiers) {
+      if (newSpending >= Number(t.min_spending)) {
+        if (t.id !== member.current_tier_id) {
+          newTierId = t.id;
+          newTierName = t.name;
+          if (t.code === 'SILVER' && !member.upgraded_to_silver) {
+            tierBonus = 100000;
+            tierFlagUpdates.upgraded_to_silver = true;
+          } else if (t.code === 'GOLD' && !member.upgraded_to_gold) {
+            tierBonus = 200000;
+            tierFlagUpdates.upgraded_to_gold = true;
+          } else if (t.code === 'DIAMOND' && !member.upgraded_to_diamond) {
+            tierBonus = 45000;
+            tierFlagUpdates.upgraded_to_diamond = true;
+          }
+          newBalance += tierBonus;
+        }
+        break;
+      }
+    }
+  }
+
+  await adminClient.from('point_transactions').insert({
+    user_id: member.id,
+    type: 'CASHBACK',
+    amount: cashbackEarned,
+    balance_after: newBalance - tierBonus,
+    reference_id: orderCode,
+    description: `Tích điểm (${tierRate}% hạng ${member.tier?.name || 'Member'}) qua SĐT cho đơn ${orderCode}`,
+  });
+
+  if (tierBonus > 0) {
+    await adminClient.from('point_transactions').insert({
+      user_id: member.id,
+      type: 'TIER_UP_BONUS',
+      amount: tierBonus,
+      balance_after: newBalance,
+      reference_id: newTierName,
+      description: `Thưởng thăng hạng ${newTierName} ✨`,
+    });
+  }
+
+  await adminClient
+    .from('users')
+    .update({
+      point_balance: newBalance,
+      total_spending: newSpending,
+      ...(newTierId ? { current_tier_id: newTierId } : {}),
+      ...tierFlagUpdates,
+      updated_at: nowIso,
+    })
+    .eq('id', member.id);
+
+  return {
+    pointsEarned: cashbackEarned + tierBonus,
+    memberPointBalance: newBalance,
+  };
+}
+

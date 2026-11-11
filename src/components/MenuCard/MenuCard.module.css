@@ -158,6 +158,57 @@
   letter-spacing: -0.01em;
 }
 
+.description {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  font-style: italic;
+  line-height: 1.35;
+  margin: 0;
+}
+
+/* ── Milk & Add-on Customization Pills ── */
+.customGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.customLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.customPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customPill {
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.customPill:hover {
+  border-color: var(--sb-accent);
+  color: var(--sb-green);
+}
+
+.customPillActive {
+  background: rgba(212, 233, 226, 0.55);
+  border-color: var(--sb-accent);
+  color: var(--sb-house);
+  font-weight: 700;
+}
+
 /* ── Starbucks PDP Cup-Size Selector ── */
 .sizeRow {
   display: flex;
@@ -316,7 +367,14 @@
     font-size: 0.9375rem;
   }
   .description {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+  }
+  .customLabel {
+    font-size: 0.65rem;
+  }
+  .customPill {
+    padding: 3px 7px;
+    font-size: 0.65rem;
   }
   .cupIconRing {
     display: none;

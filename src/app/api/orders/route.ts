@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
-import { allMenuItems } from '@/data/menu';
+import { allMenuItems, MENU_ADDONS } from '@/data/menu';
 import { cookies } from 'next/headers';
 
 async function resolveProfile(user: { id: string; email?: string | null } | null, customerPhone?: string) {
@@ -79,13 +79,45 @@ export async function POST(request: NextRequest) {
 
   const { profile, adminClient } = await resolveProfile(user, customer_phone);
 
-  // Normalize items and calculate subtotal using SERVER-SIDE prices
+  // Normalize items and calculate subtotal using SERVER-SIDE prices (including add-ons)
   const normalizedItems = items.map(
-    (item: { item_id?: string; name?: string; product_name?: string; size_label?: string; size?: string; unit_price: number; quantity: number }) => {
-      const menuItem = allMenuItems.find(m => m.id === item.item_id || m.name === (item.product_name || item.name));
+    (item: {
+      item_id?: string;
+      name?: string;
+      product_name?: string;
+      size_label?: string;
+      size?: string;
+      unit_price: number;
+      quantity: number;
+      addons?: string[];
+      milk_option?: string;
+    }) => {
       const sizeLabel = item.size_label || item.size || 'M';
-      const sizeInfo = menuItem?.sizes.find(s => s.label === sizeLabel);
-      const verifiedPrice = sizeInfo?.price ?? Number(item.unit_price) ?? 0;
+      const rawName = (item.name || item.product_name || '').split(' [')[0].trim();
+      const menuItem =
+        allMenuItems.find(
+          (m) => m.id === item.item_id && m.sizes.some((s) => s.label === sizeLabel)
+        ) ||
+        allMenuItems.find((m) => m.id === item.item_id) ||
+        allMenuItems.find(
+          (m) =>
+            m.name.toLowerCase() === rawName.toLowerCase() &&
+            m.sizes.some((s) => s.label === sizeLabel)
+        ) ||
+        allMenuItems.find((m) => m.name.toLowerCase() === rawName.toLowerCase());
+
+      const sizeInfo = menuItem?.sizes.find((s) => s.label === sizeLabel);
+      const isBottled = sizeLabel === 'Chai' || menuItem?.categorySlug === 'cold-brew-chai';
+      const addonTotal =
+        !isBottled && Array.isArray(item.addons)
+          ? Array.from(new Set(item.addons)).reduce((sum, addonId) => {
+              const found = MENU_ADDONS.find((a) => a.id === addonId);
+              return sum + (found ? found.price : 0);
+            }, 0)
+          : 0;
+
+      const basePrice = sizeInfo?.price ?? Math.max(0, (Number(item.unit_price) || 0) - addonTotal);
+      const verifiedPrice = basePrice + addonTotal;
       const qty = Math.max(1, Number(item.quantity) || 1);
       const prodName = item.product_name || item.name || menuItem?.name || 'Món nước';
 

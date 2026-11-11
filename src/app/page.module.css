@@ -1222,3 +1222,96 @@
   display: block;
 }
 
+
+
+/* ── Official Menu Add-ons & Craft Notes Grid ── */
+.menuNotesGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+  padding: 0 var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .menuNotesGrid {
+    grid-template-columns: 340px 1fr;
+    gap: var(--space-5);
+  }
+}
+
+.menuAddonCard {
+  background: #FFFFFF;
+  border: 1.5px solid rgba(30, 57, 50, 0.18);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.menuAddonHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(30, 57, 50, 0.14);
+  padding-bottom: 8px;
+}
+
+.menuAddonTitle {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  color: var(--sb-house);
+  letter-spacing: 0.04em;
+}
+
+.menuAddonSub {
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.menuAddonRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menuAddonRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink-deep);
+}
+
+.menuAddonRow strong {
+  color: var(--sb-green);
+  font-weight: 800;
+}
+
+.menuCraftNoteCard {
+  background: #F4F0E8;
+  border: 1px solid rgba(30, 57, 50, 0.12);
+  border-radius: 12px;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--ink-deep);
+  line-height: 1.55;
+}
+
+.menuCraftNoteCard p {
+  margin: 0;
+}
+
+.menuCraftNoteCard strong {
+  color: var(--sb-house);
+}

@@ -132,6 +132,15 @@ export function canOperatePos(role: MvpRole): boolean {
 }
 
 /**
+ * Check if a role can look up customer phone numbers, deduct points at the counter,
+ * and credit tier % cashback at the counter.
+ * CASHIER, MANAGER, ADMIN, OWNER can perform counter loyalty operations. INVENTORY_STAFF cannot.
+ */
+export function canManageCounterLoyalty(role: MvpRole): boolean {
+  return role === 'OWNER' || role === 'ADMIN' || role === 'MANAGER' || role === 'CASHIER';
+}
+
+/**
  * Check if a role can manage inventory (goods receipts, production batches, audits).
  * INVENTORY_STAFF, MANAGER, ADMIN, OWNER can manage inventory. CASHIER cannot.
  */
@@ -268,8 +277,8 @@ export function canAccessMenuTab(role: MvpRole, tab: string): boolean {
   }
 
   if (role === 'CASHIER') {
-    // Cashier only accesses POS sales and order lookup
-    return tab === 'pos' || tab === 'orders';
+    // Cashier accesses POS sales, order lookup, and customer phone loyalty at the counter
+    return tab === 'pos' || tab === 'orders' || tab === 'customers';
   }
 
   if (role === 'INVENTORY_STAFF') {

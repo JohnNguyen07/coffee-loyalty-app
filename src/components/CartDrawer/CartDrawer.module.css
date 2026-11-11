@@ -1001,3 +1001,92 @@
   border-radius: 6px;
   border: 1px solid #bae6fd;
 }
+
+
+/* ── Cart Item Milk & Add-on Selectors ── */
+.itemDetails {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.itemHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.itemMeta {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.itemFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.itemCatBadge {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--sb-green);
+}
+
+.qtyText {
+  min-width: 20px;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink-deep);
+}
+
+.cartOptRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cartOptLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  min-width: 62px;
+}
+
+.cartOptChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cartOptChip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cartOptChip:hover {
+  border-color: var(--sb-accent);
+  color: var(--sb-green);
+}
+
+.cartOptChipActive {
+  background: rgba(212, 233, 226, 0.55);
+  border-color: var(--sb-accent);
+  color: var(--sb-house);
+  font-weight: 700;
+}

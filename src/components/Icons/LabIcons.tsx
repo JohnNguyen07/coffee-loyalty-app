@@ -86,7 +86,7 @@ export function DrinkIllustration({
     const isColdWhisk = itemId.includes('cold-whisk');
     const isCoco = itemId.includes('coco');
     const isOat = itemId.includes('oat');
-    const isKemMuoi = itemId.includes('kem-muoi');
+    const isKemBeo = itemId.includes('kem-beo') || itemId.includes('kem-muoi');
     const isStrawberry = itemId.includes('strawber') || itemId.includes('dau');
 
     return (
@@ -105,7 +105,7 @@ export function DrinkIllustration({
           fill={
             isStrawberry
               ? 'rgba(244, 63, 94, 0.16)'
-              : isKemMuoi
+              : isKemBeo
                 ? 'rgba(203, 162, 88, 0.16)'
                 : 'rgba(0, 117, 74, 0.11)'
           }
@@ -166,8 +166,8 @@ export function DrinkIllustration({
           fill="url(#matchaLayerGrad)"
         />
 
-        {/* Top layer: Rich velvet cream for Kem Muối or ceremonial foam */}
-        {isKemMuoi ? (
+        {/* Top layer: Rich velvet cream for Kem Béo or ceremonial foam */}
+        {isKemBeo ? (
           <g>
             <path
               d="M41.8 34H98.2L96.5 54C89.5 56 83.5 52 78 54C72.5 56 67 52 61 54C55 55 49 52 43.5 54L41.8 34Z"
@@ -223,10 +223,12 @@ export function DrinkIllustration({
 
   // Cold Brew Series (18h Steeped Specialty Cold Brew with Botanicals)
   const isOrangeLemongrass = itemId.includes('cam-sa');
-  const isLychee = itemId.includes('vai');
+  const isMulberry = itemId.includes('dau-tam');
+  const isStrawberryBrew = itemId.includes('strawberry');
+  const isPinkGrapefruit = itemId.includes('buoi-hong');
   const isLemon = itemId.includes('chanh-vang');
   const isCoconut = itemId.includes('nuoc-dua');
-  const isSaltedCream = itemId.includes('kem-muoi');
+  const isCreamTop = itemId.includes('kem-beo') || itemId.includes('kem-muoi');
 
   return (
     <svg
@@ -244,11 +246,15 @@ export function DrinkIllustration({
         fill={
           isOrangeLemongrass
             ? 'rgba(234, 136, 52, 0.14)'
-            : isLychee
-              ? 'rgba(224, 122, 134, 0.14)'
-              : isLemon
-                ? 'rgba(238, 189, 49, 0.15)'
-                : 'rgba(203, 162, 88, 0.14)'
+            : isMulberry
+              ? 'rgba(147, 51, 234, 0.14)'
+              : isStrawberryBrew
+                ? 'rgba(244, 63, 94, 0.15)'
+                : isPinkGrapefruit
+                  ? 'rgba(251, 113, 133, 0.16)'
+                  : isLemon
+                    ? 'rgba(238, 189, 49, 0.15)'
+                    : 'rgba(203, 162, 88, 0.14)'
         }
       />
       <ellipse cx="70" cy="124" rx="30" ry="5" fill="rgba(0,0,0,0.10)" />
@@ -262,17 +268,42 @@ export function DrinkIllustration({
           <path d="M18 8V28M8 18H28" stroke="#FFEDD5" strokeWidth="1.3" />
         </g>
       )}
+      {isPinkGrapefruit && (
+        <g transform="translate(76, 14) rotate(16)">
+          <circle cx="18" cy="18" r="15" fill="#FB7185" stroke="#E11D48" strokeWidth="1.8" />
+          <circle cx="18" cy="18" r="12" fill="#FFE4E6" />
+          <circle cx="18" cy="18" r="9.8" fill="#F43F5E" />
+          <path d="M18 8V28M8 18H28M11 11L25 25M25 11L11 25" stroke="#FFE4E6" strokeWidth="1.2" />
+        </g>
+      )}
+      {isMulberry && (
+        <g transform="translate(78, 15)">
+          <circle cx="12" cy="14" r="6" fill="#581C87" />
+          <circle cx="18" cy="13" r="6" fill="#6B21A8" />
+          <circle cx="15" cy="19" r="6.5" fill="#4C1D95" />
+          <circle cx="14" cy="9" r="5" fill="#7E22CE" />
+          <path d="M15 4C15 2 18 1 20 3" stroke="#15803D" strokeWidth="2" strokeLinecap="round" />
+        </g>
+      )}
+      {isStrawberryBrew && (
+        <g transform="translate(78, 14) rotate(12)">
+          <path
+            d="M15 6C21 6 25 11 23 19C21 26 17 29 15 29C13 29 9 26 7 19C5 11 9 6 15 6Z"
+            fill="#E11D48"
+            stroke="#9F1239"
+            strokeWidth="1.5"
+          />
+          <path d="M11 5L15 8L19 5" stroke="#15803D" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="13" cy="14" r="0.9" fill="#FFE4E6" />
+          <circle cx="17" cy="15" r="0.9" fill="#FFE4E6" />
+          <circle cx="15" cy="20" r="0.9" fill="#FFE4E6" />
+        </g>
+      )}
       {isLemon && (
         <g transform="translate(76, 14) rotate(12)">
           <circle cx="18" cy="18" r="15" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.8" />
           <circle cx="18" cy="18" r="11.5" fill="#FEF9C3" />
           <path d="M18 7V29M7 18H29" stroke="#EAB308" strokeWidth="1.3" />
-        </g>
-      )}
-      {isLychee && (
-        <g transform="translate(78, 16)">
-          <circle cx="14" cy="16" r="11" fill="#FFF1F2" stroke="#FDA4AF" strokeWidth="2" />
-          <circle cx="14" cy="16" r="4" fill="#881337" opacity="0.7" />
         </g>
       )}
 
@@ -290,7 +321,17 @@ export function DrinkIllustration({
       {/* Cold Brew Liquid */}
       <path
         d="M41.8 40H98.2L92 113C91.5 117.5 87.7 121 83 121H57C52.3 121 48.5 117.5 48 113L41.8 40Z"
-        fill={isCoconut ? 'url(#coldBrewCocoGrad)' : 'url(#coldBrewAmberGrad)'}
+        fill={
+          isCoconut
+            ? 'url(#coldBrewCocoGrad)'
+            : isMulberry
+              ? 'url(#coldBrewMulberryGrad)'
+              : isStrawberryBrew
+                ? 'url(#coldBrewStrawberryGrad)'
+                : isPinkGrapefruit
+                  ? 'url(#coldBrewGrapefruitGrad)'
+                  : 'url(#coldBrewAmberGrad)'
+        }
       />
 
       {/* Ice cubes */}
@@ -298,8 +339,8 @@ export function DrinkIllustration({
       <rect x="71" y="55" width="15" height="15" rx="3.5" transform="rotate(14 71 55)" fill="rgba(255,255,255,0.32)" stroke="rgba(255,255,255,0.7)" strokeWidth="1" />
       <rect x="57" y="76" width="15" height="15" rx="3.5" transform="rotate(5 57 76)" fill="rgba(255,255,255,0.28)" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
 
-      {/* Kem Muối Velvet Foam Layer */}
-      {isSaltedCream && (
+      {/* Kem Béo Velvet Foam Layer */}
+      {isCreamTop && (
         <g>
           <path
             d="M41.8 40H98.2L96 60C89 62 83 58 78 60C72 62 67 58 61 60C55 61 49 58 44 60L41.8 40Z"
@@ -332,6 +373,21 @@ export function DrinkIllustration({
           <stop offset="0%" stopColor="#3B1A0E" />
           <stop offset="55%" stopColor="#6D3218" />
           <stop offset="100%" stopColor="#B45B28" />
+        </linearGradient>
+        <linearGradient id="coldBrewMulberryGrad" x1="70" y1="40" x2="70" y2="121" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#3B1A0E" />
+          <stop offset="52%" stopColor="#581C4F" />
+          <stop offset="100%" stopColor="#86198F" />
+        </linearGradient>
+        <linearGradient id="coldBrewStrawberryGrad" x1="70" y1="40" x2="70" y2="121" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#3B1A0E" />
+          <stop offset="50%" stopColor="#7C2D12" />
+          <stop offset="100%" stopColor="#E11D48" />
+        </linearGradient>
+        <linearGradient id="coldBrewGrapefruitGrad" x1="70" y1="40" x2="70" y2="121" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#3B1A0E" />
+          <stop offset="52%" stopColor="#9A3412" />
+          <stop offset="100%" stopColor="#F43F5E" />
         </linearGradient>
         <linearGradient id="coldBrewCocoGrad" x1="70" y1="40" x2="70" y2="121" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#3B1A0E" />

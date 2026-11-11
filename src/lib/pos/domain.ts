@@ -33,10 +33,10 @@ export const ICE_OPTIONS = [
 ] as const;
 
 export const ADDON_OPTIONS: PosAddonOption[] = [
-  { id: 'kem-muoi', name: 'Kem Muối', price: 7000 },
-  { id: 'shot-cold-brew', name: 'Thêm Shot Cold Brew', price: 10000 },
-  { id: 'sua-yen-mach', name: 'Đổi Sữa Yến Mạch', price: 5000 },
-  { id: 'tran-chau-trang', name: 'Trân Châu Trắng', price: 6000 },
+  { id: 'kem-beo', name: 'Kem Béo', price: 5000 },
+  { id: '1g-matcha-fuji', name: '1g Matcha Fuji', price: 5000 },
+  { id: 'sua-oat', name: 'Đổi Sữa Oat', price: 0 },
+  { id: 'sua-thanh-trung', name: 'Sữa thanh trùng', price: 0 },
 ];
 
 export const CASHIER_MAX_DISCOUNT_PERCENT = 10;
@@ -151,13 +151,15 @@ export function normalizePosItems(
         }
       }
 
-      // 4. Fallback: match by name only (including Strawberry Matcha <-> Strawberry Matcha Latte alias)
+      // 4. Fallback: match by name only (including Strawberry Matcha & Matcha Kem Béo aliases)
       if (!matchedItem) {
         matchedItem = catalog.find(
           (m) =>
             m.name.toLowerCase() === cleanName ||
             (m.id === 'strawberry-matcha' &&
-              (cleanName === 'strawberry matcha' || cleanName === 'strawberry matcha latte'))
+              (cleanName === 'strawberry matcha' || cleanName === 'strawberry matcha latte')) ||
+            (m.id === 'matcha-kem-beo' &&
+              (cleanName === 'matcha kem béo' || cleanName === 'matcha kem beo' || cleanName === 'matcha kem muối' || cleanName === 'matcha kem muoi'))
         );
       }
 
@@ -539,3 +541,90 @@ export function extractPosOrderMetadata(orderRow: Record<string, unknown>): PosO
     userNote: cleanUserNote || parsedMeta.userNote || '',
   };
 }
+
+// ============================================================
+// COUNTER PHONE LOYALTY DOMAIN (ĐỌC SĐT TẠI QUẦY - CỘNG % HẠNG THẺ / TRỪ TẠI QUẦY)
+// ============================================================
+
+export const TIER_CASHBACK_RATES: Record<string, number> = {
+  MEMBER: 3,
+  SILVER: 5,
+  GOLD: 7,
+  DIAMOND: 10,
+};
+
+export function resolveTierCashbackRate(tierCode?: string | null, explicitRate?: number | null): number {
+  if (typeof explicitRate === 'number' && explicitRate > 0) {
+    return explicitRate;
+  }
+  const code = String(tierCode || 'MEMBER').trim().toUpperCase();
+  return TIER_CASHBACK_RATES[code] ?? 3;
+}
+
+export interface CounterLoyaltyInput {
+  billAmount: number;
+  pointsRequested?: number;
+  availableMemberPoints?: number;
+  tierCode?: string | null;
+  tierCashbackRate?: number | null;
+}
+
+export interface CounterLoyaltyOutcome {
+  billAmount: number;
+  pointsUsed: number;
+  totalDue: number;
+  cashbackRate: number;
+  pointsEarned: number;
+  eligibleForCashback: boolean;
+  reasonIfNoCashback?: string;
+}
+
+/**
+ * Pure domain calculation for Counter Phone Loyalty:
+ * - Deducts points at the counter (`pointsUsed`) up to `min(availableMemberPoints, billAmount)`.
+ * - Rule: Any order that deducts wallet points (`pointsUsed > 0`) MUST NOT earn cashback (`pointsEarned = 0`).
+ * - When `pointsUsed === 0` and `totalDue > 0`, credits `%` cashback according to the member's tier (`3%`, `5%`, `7%`, `10%`).
+ */
+export function calculateCounterLoyaltyOutcome(input: CounterLoyaltyInput): CounterLoyaltyOutcome {
+  const billAmount = Math.max(0, Math.floor(Number(input.billAmount) || 0));
+  const available = Math.max(0, Math.floor(Number(input.availableMemberPoints) || 0));
+  const requested = Math.max(0, Math.floor(Number(input.pointsRequested) || 0));
+  const pointsUsed = Math.min(requested, available, billAmount);
+  const totalDue = Math.max(0, billAmount - pointsUsed);
+  const cashbackRate = resolveTierCashbackRate(input.tierCode, input.tierCashbackRate);
+
+  if (pointsUsed > 0) {
+    return {
+      billAmount,
+      pointsUsed,
+      totalDue,
+      cashbackRate,
+      pointsEarned: 0,
+      eligibleForCashback: false,
+      reasonIfNoCashback: 'Đơn hàng có trừ tiền tích lũy tại quầy nên không tích điểm mới.',
+    };
+  }
+
+  if (totalDue <= 0) {
+    return {
+      billAmount,
+      pointsUsed: 0,
+      totalDue: 0,
+      cashbackRate,
+      pointsEarned: 0,
+      eligibleForCashback: false,
+      reasonIfNoCashback: 'Giá trị thanh toán bằng 0đ nên không phát sinh điểm tích lũy.',
+    };
+  }
+
+  const pointsEarned = Math.floor((totalDue * cashbackRate) / 100);
+  return {
+    billAmount,
+    pointsUsed: 0,
+    totalDue,
+    cashbackRate,
+    pointsEarned,
+    eligibleForCashback: true,
+  };
+}
+

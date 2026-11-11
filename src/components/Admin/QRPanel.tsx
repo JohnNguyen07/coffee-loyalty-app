@@ -23,7 +23,7 @@ interface QRToken {
   scan_url?: string;
 }
 
-const commonPrices = [30000, 35000, 40000, 45000, 69000, 74000];
+const commonPrices = [30000, 35000, 40000, 45000, 50000, 80000, 90000];
 
 interface QRPanelProps {
   initialSubTab?: QRSubTab;

@@ -90,7 +90,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
         <div>
           <h1 className={styles.title}>Cấu Hình Tích Điểm — Ủ LAB Rewards®</h1>
           <p className={styles.subtitle}>
-            Quản lý 4 hạng thành viên, tỷ lệ hoàn điểm khi khách quét QR trên ly và sổ cái lịch sử cộng/trừ điểm.
+            Quản lý 4 hạng thành viên, tỷ lệ hoàn điểm theo % hạng thẻ khi khách đọc SĐT tại quầy (Lưu ý: Đơn có trừ tiền không tích điểm mới) và sổ cái lịch sử cộng/trừ điểm.
           </p>
         </div>
       </div>
@@ -214,9 +214,9 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
 
           {/* Inline Cashback Simulator */}
           <div className={styles.detailCard} style={{ marginTop: 20 }}>
-            <h3 className={styles.sectionTitle}>Mô phỏng số điểm hoàn khi khách quét tem QR</h3>
+            <h3 className={styles.sectionTitle}>Mô phỏng số điểm hoàn khi khách đọc SĐT tại quầy</h3>
             <p className={styles.subtitle}>
-              Nhập giá trị ly nước để kiểm tra số điểm hoàn tự động cộng vào ví khách theo từng hạng:
+              Nhập giá trị đơn hàng để kiểm tra số điểm hoàn tự động cộng vào ví khách theo % từng hạng thẻ (Chỉ áp dụng cho đơn không trừ tiền tích lũy):
             </p>
             <div className={styles.toolbar} style={{ marginTop: 12 }}>
               <input

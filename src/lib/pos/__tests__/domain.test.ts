@@ -7,6 +7,8 @@ import {
   generatePosOrderCode,
   serializePosFallbackNote,
   extractPosOrderMetadata,
+  calculateCounterLoyaltyOutcome,
+  resolveTierCashbackRate,
 } from '../domain';
 import { buildBaristaTicketHtml, buildCustomerReceiptHtml } from '../print-templates';
 
@@ -22,14 +24,14 @@ describe('M01 POS Domain Logic', () => {
           options: {
             sweetness: '70% đường',
             ice: 'Ít đá',
-            addons: ['kem-muoi'], // +7,000đ
+            addons: ['kem-beo'], // +5,000đ
           },
           itemNote: 'Khuấy đều',
         },
         {
           itemId: 'pure-black-cold-brew',
           productName: 'Pure Black Cold Brew',
-          sizeLabel: 'Chai', // 69,000đ
+          sizeLabel: 'Chai', // 80,000đ
           quantity: 1,
         },
       ],
@@ -40,10 +42,10 @@ describe('M01 POS Domain Logic', () => {
 
     assert.equal(result.validation.valid, true);
     assert.equal(result.totals.totalQuantity, 3);
-    // (40,000 + 7,000) * 2 + 69,000 = 94,000 + 69,000 = 163,000
-    assert.equal(result.totals.subtotal, 163000);
-    assert.equal(result.totals.totalDue, 163000);
-    assert.equal(result.totals.changeDue, 37000);
+    // (40,000 + 5,000) * 2 + 80,000 = 90,000 + 80,000 = 170,000
+    assert.equal(result.totals.subtotal, 170000);
+    assert.equal(result.totals.totalDue, 170000);
+    assert.equal(result.totals.changeDue, 30000);
   });
 
   it('enforces role-based discount limits for CASHIER vs MANAGER/ADMIN', () => {
@@ -89,7 +91,7 @@ describe('M01 POS Domain Logic', () => {
         {
           itemId: 'matcha-latte',
           productName: 'Matcha Latte',
-          sizeLabel: 'M', // 34,000đ
+          sizeLabel: 'M', // 40,000đ
           quantity: 1,
         },
       ],
@@ -211,7 +213,7 @@ describe('M01 POS Domain Logic', () => {
     assert.match(receiptHtml, /28\.000đ/);
   });
 
-  it('correctly prices Cold Brew Chanh Vang Chai at 74.000đ without colliding with Cup size M 29.000đ', () => {
+  it('correctly prices Cold Brew Chanh Vang Chai at 90.000đ without colliding with Cup size M 30.000đ', () => {
     // 1. Bottled version with sizeLabel Chai and id cold-brew-chanh-vang-chai
     const bottleResult = calculatePosOrderTotals({
       items: [
@@ -227,9 +229,9 @@ describe('M01 POS Domain Logic', () => {
       staffRole: 'CASHIER',
     });
     assert.equal(bottleResult.validation.valid, true);
-    assert.equal(bottleResult.totals.items[0].unitPrice, 74000);
+    assert.equal(bottleResult.totals.items[0].unitPrice, 90000);
     assert.equal(bottleResult.totals.items[0].sizeLabel, 'Chai');
-    assert.equal(bottleResult.totals.subtotal, 74000);
+    assert.equal(bottleResult.totals.subtotal, 90000);
 
     // 2. Resilient resolution: even if itemId was loosely cold-brew-chanh-vang but size is Chai
     const resilientBottleResult = calculatePosOrderTotals({
@@ -239,7 +241,7 @@ describe('M01 POS Domain Logic', () => {
           productName: 'Cold Brew Chanh Vàng',
           sizeLabel: 'Chai',
           quantity: 2,
-          unitPriceOverride: 74000,
+          unitPriceOverride: 90000,
         },
       ],
       paymentMethod: 'CASH',
@@ -247,9 +249,9 @@ describe('M01 POS Domain Logic', () => {
       staffRole: 'CASHIER',
     });
     assert.equal(resilientBottleResult.validation.valid, true);
-    assert.equal(resilientBottleResult.totals.items[0].unitPrice, 74000);
+    assert.equal(resilientBottleResult.totals.items[0].unitPrice, 90000);
     assert.equal(resilientBottleResult.totals.items[0].sizeLabel, 'Chai');
-    assert.equal(resilientBottleResult.totals.subtotal, 148000);
+    assert.equal(resilientBottleResult.totals.subtotal, 180000);
 
     // 3. Cup version size M (30,000đ) and size L (35,000đ)
     const cupResult = calculatePosOrderTotals({
@@ -277,24 +279,133 @@ describe('M01 POS Domain Logic', () => {
     assert.equal(cupResult.totals.subtotal, 65000);
   });
 
-  it('includes Strawberry Matcha Latte in POS catalog and calculates Size M price accurately', () => {
+  it('includes Strawberry Matcha, Matcha Kem Béo, and new Cold Brew items in POS catalog accurately', () => {
     const res = calculatePosOrderTotals({
       items: [
         {
           itemId: 'strawberry-matcha',
-          productName: 'Strawberry Matcha Latte',
+          productName: 'Strawberry Matcha',
           sizeLabel: 'M',
-          quantity: 2,
+          quantity: 1,
+          options: {
+            addons: ['sua-oat', '1g-matcha-fuji'], // 0đ + 5,000đ
+          },
+        },
+        {
+          itemId: 'matcha-kem-beo',
+          productName: 'Matcha Kem Béo',
+          sizeLabel: 'M',
+          quantity: 1,
+        },
+        {
+          itemId: 'cold-brew-dau-tam',
+          productName: 'Cold Brew Dâu Tằm',
+          sizeLabel: 'M',
+          quantity: 1,
+        },
+        {
+          itemId: 'cold-brew-strawberry',
+          productName: 'Cold Brew Strawberry',
+          sizeLabel: 'L',
+          quantity: 1,
+        },
+        {
+          itemId: 'cold-brew-buoi-hong',
+          productName: 'Cold Brew Bưởi Hồng',
+          sizeLabel: 'M',
+          quantity: 1,
         },
       ],
       paymentMethod: 'CASH',
-      amountReceived: 100000,
+      amountReceived: 300000,
       staffRole: 'CASHIER',
     });
 
     assert.equal(res.validation.valid, true);
-    assert.equal(res.totals.items[0].productName, 'Strawberry Matcha Latte');
-    assert.equal(res.totals.items[0].unitPrice, 45000);
-    assert.equal(res.totals.subtotal, 90000);
+    assert.equal(res.totals.items[0].productName, 'Strawberry Matcha');
+    assert.equal(res.totals.items[0].unitPrice, 50000); // 45,000 + 5,000
+    assert.equal(res.totals.items[1].productName, 'Matcha Kem Béo');
+    assert.equal(res.totals.items[1].unitPrice, 45000);
+    assert.equal(res.totals.items[2].unitPrice, 35000);
+    assert.equal(res.totals.items[3].unitPrice, 40000);
+    assert.equal(res.totals.items[4].unitPrice, 35000);
+    assert.equal(res.totals.subtotal, 205000);
+  });
+
+  it('calculates Counter Phone Loyalty cashback accurately by member tier % (3%, 5%, 7%, 10%) when no points are deducted', () => {
+    assert.equal(resolveTierCashbackRate('MEMBER'), 3);
+    assert.equal(resolveTierCashbackRate('SILVER'), 5);
+    assert.equal(resolveTierCashbackRate('GOLD'), 7);
+    assert.equal(resolveTierCashbackRate('DIAMOND'), 10);
+
+    // Member (3%) buying 100.000đ -> +3.000đ
+    const memberRes = calculateCounterLoyaltyOutcome({
+      billAmount: 100000,
+      pointsRequested: 0,
+      availableMemberPoints: 20000,
+      tierCode: 'MEMBER',
+    });
+    assert.equal(memberRes.pointsUsed, 0);
+    assert.equal(memberRes.totalDue, 100000);
+    assert.equal(memberRes.cashbackRate, 3);
+    assert.equal(memberRes.pointsEarned, 3000);
+    assert.equal(memberRes.eligibleForCashback, true);
+
+    // Silver (5%) buying 80.000đ -> +4.000đ
+    const silverRes = calculateCounterLoyaltyOutcome({
+      billAmount: 80000,
+      pointsRequested: 0,
+      availableMemberPoints: 50000,
+      tierCode: 'SILVER',
+    });
+    assert.equal(silverRes.pointsEarned, 4000);
+    assert.equal(silverRes.eligibleForCashback, true);
+
+    // Gold (7%) buying 90.000đ -> +6.300đ
+    const goldRes = calculateCounterLoyaltyOutcome({
+      billAmount: 90000,
+      pointsRequested: 0,
+      availableMemberPoints: 50000,
+      tierCode: 'GOLD',
+    });
+    assert.equal(goldRes.pointsEarned, 6300);
+    assert.equal(goldRes.eligibleForCashback, true);
+
+    // Diamond (10%) buying 45.000đ -> +4.500đ
+    const diamondRes = calculateCounterLoyaltyOutcome({
+      billAmount: 45000,
+      pointsRequested: 0,
+      availableMemberPoints: 100000,
+      tierCode: 'DIAMOND',
+    });
+    assert.equal(diamondRes.pointsEarned, 4500);
+    assert.equal(diamondRes.eligibleForCashback, true);
+  });
+
+  it('strictly enforces rule: any order that deducts points at counter (pointsUsed > 0) earns 0 cashback points', () => {
+    // Customer has 25.000đ in wallet, buys 45.000đ drink, deducts 15.000đ at counter
+    const deductPartial = calculateCounterLoyaltyOutcome({
+      billAmount: 45000,
+      pointsRequested: 15000,
+      availableMemberPoints: 25000,
+      tierCode: 'GOLD', // Even Gold 7% earns 0 when deducting points!
+    });
+    assert.equal(deductPartial.pointsUsed, 15000);
+    assert.equal(deductPartial.totalDue, 30000);
+    assert.equal(deductPartial.pointsEarned, 0);
+    assert.equal(deductPartial.eligibleForCashback, false);
+    assert.match(deductPartial.reasonIfNoCashback || '', /không tích điểm/);
+
+    // Customer has 50.000đ in wallet, buys 40.000đ drink, deducts full 40.000đ
+    const deductFull = calculateCounterLoyaltyOutcome({
+      billAmount: 40000,
+      pointsRequested: 50000, // Capped at billAmount (40.000đ)
+      availableMemberPoints: 50000,
+      tierCode: 'DIAMOND',
+    });
+    assert.equal(deductFull.pointsUsed, 40000);
+    assert.equal(deductFull.totalDue, 0);
+    assert.equal(deductFull.pointsEarned, 0);
+    assert.equal(deductFull.eligibleForCashback, false);
   });
 });

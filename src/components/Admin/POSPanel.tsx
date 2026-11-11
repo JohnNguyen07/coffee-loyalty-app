@@ -27,6 +27,7 @@ import {
   buildCustomerReceiptHtml,
 } from '@/lib/pos/print-templates';
 import type { PosOrderRecord } from '@/lib/pos/repository';
+import CustomersPanel from './CustomersPanel';
 import QRCode from 'qrcode';
 
 interface PosCartLine {
@@ -1012,7 +1013,7 @@ export default function POSPanel() {
               className={`${styles.modeSwitchBtn} ${activeMode === 'qr' ? styles.modeSwitchActive : ''}`}
               onClick={() => setActiveMode('qr')}
             >
-              🏷️ Tạo Tem QR Lẻ (75×100mm)
+              📱 Tích / Trừ Điểm SĐT Tại Quầy
             </button>
           </div>
         </div>
@@ -1093,14 +1094,18 @@ export default function POSPanel() {
                                 <div className={styles.posDrinkTop}>
                                   <span className={styles.posDrinkName}>{item.name}</span>
                                   {item.isSignature && (
-                                    <span className={styles.sigTag}>★ Signature</span>
+                                    <span className={styles.sigTag}>
+                                      ★ {item.badgeLabel || 'Signature'}
+                                    </span>
                                   )}
                                   {isOut && (
                                     <span className={styles.outTag}>Hết hàng</span>
                                   )}
                                 </div>
-                                {item.shelfLife && (
-                                  <span className={styles.shelfLifeHint}>{item.shelfLife}</span>
+                                {(item.description || item.shelfLife) && (
+                                  <span className={styles.shelfLifeHint}>
+                                    {item.description || `Bảo quản lạnh: ${item.shelfLife}`}
+                                  </span>
                                 )}
                                 <div className={styles.posDrinkSizes}>
                                   {item.sizes.map((sz) => (
@@ -1334,7 +1339,7 @@ export default function POSPanel() {
                                   </div>
 
                                   <div className={styles.optRow}>
-                                    <span className={styles.optLabel}>Topping / Thêm:</span>
+                                    <span className={styles.optLabel}>Thêm / Đổi Sữa:</span>
                                     <div className={styles.optChips}>
                                       {ADDON_OPTIONS.map((addon) => {
                                         const selected = line.addons.includes(addon.id);
@@ -1348,7 +1353,10 @@ export default function POSPanel() {
                                             }
                                           >
                                             {selected ? '✓ ' : '+ '}
-                                            {addon.name} (+{formatVND(addon.price)})
+                                            {addon.name}{' '}
+                                            {addon.price > 0
+                                              ? `(+${formatVND(addon.price)})`
+                                              : '(Miễn phí)'}
                                           </button>
                                         );
                                       })}
@@ -1410,11 +1418,13 @@ export default function POSPanel() {
 
                 {/* Optional Customer Lookup & Loyalty Redemption */}
                 <div className={styles.checkoutSection}>
-                  <label className={styles.fieldLabel}>Khách hàng (Tùy chọn · Để trống nếu khách lẻ)</label>
+                  <label className={styles.fieldLabel}>
+                    📱 Đọc SĐT Tích / Trừ Điểm Tại Quầy (Cộng 3%–10% theo hạng thẻ)
+                  </label>
                   <div className={styles.customerLookupRow}>
                     <input
                       type="tel"
-                      placeholder="SĐT thành viên..."
+                      placeholder="Nhập SĐT khách đọc tại quầy..."
                       value={customerPhoneInput}
                       onChange={(e) => setCustomerPhoneInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -1461,9 +1471,9 @@ export default function POSPanel() {
                     </div>
                   )}
                   {linkedCustomer && linkedCustomer.point_balance > 0 && (
-                    <div className={styles.pointsRedeemRow}>
-                      <span>Dùng điểm ví ({formatVND(linkedCustomer.point_balance)}):</span>
-                      <div className={styles.pointsRedeemControls}>
+                    <div className={styles.pointsRedeemRow} style={{ flexWrap: 'wrap', gap: 6 }}>
+                      <span>Trừ tại quầy (Ví: {formatVND(linkedCustomer.point_balance)}):</span>
+                      <div className={styles.pointsRedeemControls} style={{ flexWrap: 'wrap' }}>
                         <input
                           type="number"
                           min={0}
@@ -1474,14 +1484,27 @@ export default function POSPanel() {
                             setPointsToUse(
                               Math.min(
                                 Math.max(0, Number(e.target.value) || 0),
-                                linkedCustomer.point_balance
+                                linkedCustomer.point_balance,
+                                totals.subtotal
                               )
                             )
                           }
                           placeholder="0"
                           className={styles.pointsSmallInput}
                         />
-                         <button
+                        {[10000, 20000]
+                          .filter((v) => v <= Math.min(linkedCustomer.point_balance, totals.subtotal))
+                          .map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              className={styles.miniChip}
+                              onClick={() => setPointsToUse(v)}
+                            >
+                              -{formatVND(v)}
+                            </button>
+                          ))}
+                        <button
                           type="button"
                           className={styles.miniChip}
                           onClick={() =>
@@ -1490,8 +1513,17 @@ export default function POSPanel() {
                             )
                           }
                         >
-                          Tối đa
+                          Trừ tối đa
                         </button>
+                        {pointsToUse > 0 && (
+                          <button
+                            type="button"
+                            className={styles.miniChip}
+                            onClick={() => setPointsToUse(0)}
+                          >
+                            Bỏ trừ
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1513,7 +1545,7 @@ export default function POSPanel() {
                         }}
                       >
                         <span>
-                          ℹ️ Đơn có dùng tiền trong tài khoản (−{formatVND(totals.pointsUsed)}) → Không hoàn tiền tích điểm
+                          ⚠️ Đơn có trừ tiền tại quầy (−{formatVND(totals.pointsUsed)}) → Không cộng tích điểm mới (0đ)
                         </span>
                       </div>
                     ) : totals.totalDue > 0 ? (
@@ -1533,7 +1565,7 @@ export default function POSPanel() {
                         }}
                       >
                         <span>
-                          🎁 Tự động tích điểm ({linkedCustomer?.cashback_rate || 3}%):
+                          🎁 Cộng theo hạng {linkedCustomer?.tier_name || 'Member'} (+{linkedCustomer?.cashback_rate || 3}%):
                         </span>
                         <strong>
                           +{formatVND(Math.floor((totals.totalDue * (linkedCustomer?.cashback_rate || 3)) / 100))} vào ví khách
@@ -1956,238 +1988,9 @@ export default function POSPanel() {
         </>
       ) : (
         /* ══════════════════════════════════════════════════════════════
-            LEGACY QR STICKER GENERATOR (75x100mm) — PRESERVED
+            COUNTER PHONE LOYALTY (TRA CỨU SĐT · CỘNG % HẠNG THẺ / TRỪ TẠI QUẦY)
            ══════════════════════════════════════════════════════════════ */
-        <>
-          <div className={styles.posGrid}>
-            <div className={styles.leftCol}>
-              <div className={styles.cardBox}>
-                <div className={styles.cardHeaderRow}>
-                  <h2 className={styles.sectionTitle}>1. Chọn nhanh theo Món trong Menu</h2>
-                  <div className={styles.catFilterPills}>
-                    <button
-                      type="button"
-                      className={`${styles.catPill} ${qrCatSlug === 'all' ? styles.catPillActive : ''}`}
-                      onClick={() => setQrCatSlug('all')}
-                    >
-                      Tất cả
-                    </button>
-                    {categories.map((c) => (
-                      <button
-                        key={c.slug}
-                        type="button"
-                        className={`${styles.catPill} ${qrCatSlug === c.slug ? styles.catPillActive : ''}`}
-                        onClick={() => setQrCatSlug(c.slug)}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={styles.menuDrinkGrid}>
-                  {categories
-                    .filter((c) => qrCatSlug === 'all' || c.slug === qrCatSlug)
-                    .flatMap((cat) =>
-                      cat.items.map((item) => (
-                        <div key={item.id} className={styles.posDrinkCard}>
-                          <span className={styles.posDrinkName}>{item.name}</span>
-                          <div className={styles.posDrinkSizes}>
-                            {item.sizes.map((sz) => (
-                              <button
-                                key={sz.label}
-                                type="button"
-                                className={styles.posSizeBtn}
-                                disabled={isGenerating}
-                                onClick={() => {
-                                  setSelectedPrice(sz.price);
-                                  setCustomPrice('');
-                                  generateQR(sz.price, `${item.name} (${sz.label})`);
-                                }}
-                              >
-                                <span className={styles.posSizeLabel}>{sz.label}</span>
-                                <span className={styles.posSizePrice}>{formatVND(sz.price)}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                </div>
-              </div>
-
-              <div className={styles.cardBox}>
-                <div className={styles.cardHeaderRow}>
-                  <h2 className={styles.sectionTitle}>2. Chọn Mệnh Giá Nhanh (1 Tem · Khổ 75×100mm)</h2>
-                </div>
-                <div className={styles.priceGrid}>
-                  {quickPrices.map((price) => (
-                    <button
-                      type="button"
-                      key={price}
-                      className={`${styles.priceBtn} ${selectedPrice === price ? styles.priceActive : ''}`}
-                      onClick={() => {
-                        setSelectedPrice(price);
-                        setCustomPrice('');
-                        generateQR(price, undefined);
-                      }}
-                      disabled={isGenerating}
-                    >
-                      {formatVND(price)}
-                    </button>
-                  ))}
-                </div>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const p = parseInt(customPrice.replace(/\D/g, ''), 10);
-                    if (p && p >= 1000) {
-                      setSelectedPrice(null);
-                      generateQR(p, undefined);
-                    }
-                  }}
-                  className={styles.customRow}
-                >
-                  <input
-                    type="number"
-                    placeholder="Hoặc nhập tổng tiền hóa đơn (VD: 105000)..."
-                    value={customPrice}
-                    onChange={(e) => setCustomPrice(e.target.value)}
-                    className={styles.input}
-                    min={1000}
-                    step={1000}
-                  />
-                  <button
-                    type="submit"
-                    className={styles.generateBtn}
-                    disabled={isGenerating || !customPrice}
-                  >
-                    {isGenerating ? <span className={styles.spinner} /> : 'Tạo 1 tem QR'}
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            <div className={styles.rightCol}>
-              <div className={styles.qrPreviewCard} ref={printRef}>
-                {currentQR ? (
-                  <>
-                    <span className={styles.previewBadge}>TEM QR VỪA TẠO (75×100mm · 1 TỜ)</span>
-                    {currentQR.label && <div className={styles.qrDrinkLabel}>{currentQR.label}</div>}
-                    <div className={styles.qrPrice}>{formatVND(currentQR.price)}</div>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={currentQR.qrDataUrl} alt="QR Code" className={styles.qrImage} />
-                    <span className={styles.qrCode}>{currentQR.code}</span>
-                    <button
-                      type="button"
-                      className={styles.printBtn}
-                      onClick={() =>
-                        handlePrintSingleQR(
-                          currentQR.code,
-                          currentQR.price,
-                          currentQR.qrDataUrl,
-                          currentQR.label
-                        )
-                      }
-                    >
-                      🖨️ In 1 Tem QR (Khổ 75×100mm · 1 Tờ)
-                    </button>
-                  </>
-                ) : (
-                  <div className={styles.emptyPreview}>
-                    <div className={styles.emptyQrIcon}>QR</div>
-                    <h3>Chưa chọn món hoặc mệnh giá</h3>
-                    <p>Bấm vào một món nước hoặc mệnh giá bên trái để tạo 1 tem QR khổ 75×100mm.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.section} style={{ marginTop: 28 }}>
-            <div className={styles.tableHeaderBar}>
-              <div>
-                <h2 className={styles.sectionTitle}>Danh sách Mã QR ({dbStats.total} mã)</h2>
-              </div>
-              <div className={styles.tableFilterActions}>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'USED')}
-                  className={styles.filterSelect}
-                >
-                  <option value="ALL">Tất cả trạng thái</option>
-                  <option value="ACTIVE">Chưa quét (ACTIVE)</option>
-                  <option value="USED">Đã quét (USED)</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Tìm mã QR..."
-                  value={searchCode}
-                  onChange={(e) => setSearchCode(e.target.value)}
-                  className={styles.searchInput}
-                />
-                <button type="button" onClick={fetchDBTokens} className={styles.refreshBtn}>
-                  Làm mới
-                </button>
-              </div>
-            </div>
-            <div className={styles.tableCard}>
-              {loadingTokens ? (
-                <div className={styles.tableEmpty}>Đang tải danh sách mã QR...</div>
-              ) : dbTokens.length === 0 ? (
-                <div className={styles.tableEmpty}>Chưa có mã QR nào.</div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className={styles.qrTable}>
-                    <thead>
-                      <tr>
-                        <th>Mã QR</th>
-                        <th>Giá trị</th>
-                        <th>Trạng thái</th>
-                        <th style={{ textAlign: 'right' }}>Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dbTokens.map((t) => (
-                        <tr key={t.code}>
-                          <td className={styles.codeMono}>{t.code}</td>
-                          <td className={styles.priceCell}>{formatVND(t.drink_value)}</td>
-                          <td>
-                            <span className={t.status === 'USED' ? styles.badgeUsed : styles.badgeActive}>
-                              {t.status === 'USED' ? 'Đã tích điểm' : 'Chưa quét'}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div className={styles.rowActions}>
-                              <button
-                                type="button"
-                                className={styles.rowBtn}
-                                onClick={() => handlePrintSingleQR(t.code, t.drink_value)}
-                              >
-                                In tem
-                              </button>
-                              <button
-                                type="button"
-                                className={styles.rowBtn}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(buildScanUrl(t.code));
-                                  setCopiedCode(t.code);
-                                  setTimeout(() => setCopiedCode(null), 2000);
-                                }}
-                              >
-                                {copiedCode === t.code ? '✓ Đã chép' : 'Copy link'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </>
+        <CustomersPanel initialSubTab="detail" />
       )}
 
       {/* ══════════════════════════════════════════════════════════════
@@ -2288,7 +2091,26 @@ export default function POSPanel() {
                       <span>Tiền thừa:</span>
                       <strong>{formatVND(completedOrder.changeDue)}</strong>
                     </div>
-                    {completedOrder.pointsEarned && completedOrder.pointsEarned > 0 && (
+                    {completedOrder.pointsUsed > 0 ? (
+                      <div
+                        className={styles.sheetSumRow}
+                        style={{
+                          marginTop: 6,
+                          paddingTop: 6,
+                          borderTop: '1px dashed #cbd5e1',
+                          color: '#92400e',
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span>ℹ️ Đơn áp dụng trừ tiền ví:</span>
+                        <strong>
+                          Không tích điểm mới (0đ)
+                          {completedOrder.memberPointBalance !== undefined
+                            ? ` · Ví còn: ${formatVND(completedOrder.memberPointBalance)}`
+                            : ''}
+                        </strong>
+                      </div>
+                    ) : completedOrder.pointsEarned && completedOrder.pointsEarned > 0 ? (
                       <div
                         className={styles.sheetSumRow}
                         style={{
@@ -2307,16 +2129,14 @@ export default function POSPanel() {
                             : ''}
                         </strong>
                       </div>
-                    )}
+                    ) : null}
                   </div>
-                  {completedOrderQrDataUrl && completedOrder.qrTokenCode && (
-                    <div className={styles.sheetQrSection}>
-                      <span>Quét mã QR tích điểm Ủ LAB Rewards (3–10%)</span>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={completedOrderQrDataUrl} alt="QR Tích điểm" />
-                      <code>{completedOrder.qrTokenCode}</code>
-                    </div>
-                  )}
+                  <div className={styles.sheetQrSection}>
+                    <span>Ủ LAB Rewards® — Tích Điểm Bằng SĐT Tại Quầy</span>
+                    <small style={{ color: '#475569', display: 'block', marginTop: 4 }}>
+                      Đọc SĐT tại quầy để tích điểm 3%–10% theo hạng thẻ và trừ tiền trực tiếp tại quầy (Đơn trừ tiền không tích điểm mới).
+                    </small>
+                  </div>
                 </div>
               ) : (
                 <div className={styles.baristaTicketsPreviewList}>

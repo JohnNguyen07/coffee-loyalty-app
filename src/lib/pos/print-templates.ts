@@ -429,16 +429,24 @@ export function buildCustomerReceiptHtml(
         </div>
       </div>
 
-      ${
-        qrDataUrl && order.qrTokenCode
-          ? `<div class="qr-box">
-              <div><strong>QUÉT QR TÍCH ĐIỂM Ủ LAB REWARDS</strong></div>
-              <img class="qr-img" src="${qrDataUrl}" alt="QR Tích điểm" />
-              <div style="font-size:7.5pt;font-family:monospace;">${escapeHtml(order.qrTokenCode)}</div>
-              <div style="font-size:7.5pt;">Mở Camera ĐT quét nhận hoàn điểm 3% – 10%</div>
-            </div>`
-          : ''
-      }
+      <div class="qr-box">
+        <div><strong>Ủ LAB REWARDS® · TÍCH ĐIỂM SỐ ĐIỆN THOẠI</strong></div>
+        ${
+          order.pointsUsed > 0
+            ? `<div style="font-size:8pt;margin-top:1mm;">Đã trừ tại quầy: <strong>-${formatVND(order.pointsUsed)}</strong></div>
+               <div style="font-size:7.5pt;color:#4B5563;">Đơn có trừ tiền ví → Không tích điểm mới (0đ)${
+                 order.memberPointBalance !== undefined ? ` · Ví còn: ${formatVND(order.memberPointBalance)}` : ''
+               }</div>`
+            : order.pointsEarned && order.pointsEarned > 0
+              ? `<div style="font-size:8.5pt;margin-top:1mm;">Điểm cộng đơn này: <strong>+${formatVND(order.pointsEarned)}</strong></div>
+                 ${
+                   order.memberPointBalance !== undefined
+                     ? `<div style="font-size:7.5pt;">Số dư ví hiện tại: <strong>${formatVND(order.memberPointBalance)}</strong></div>`
+                     : ''
+                 }`
+              : `<div style="font-size:7.5pt;margin-top:1mm;">Đọc SĐT tại quầy để tích điểm 3% – 10% theo hạng thẻ và trừ tiền trực tiếp tại quầy.</div>`
+        }
+      </div>
 
       <div class="footer">
         Cảm ơn quý khách đã ghé Ủ LAB!<br/>

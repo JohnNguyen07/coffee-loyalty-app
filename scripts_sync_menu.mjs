@@ -18,6 +18,7 @@ const menuData = [
     items: [
       {
         name: 'Original Cold Brew',
+        description: 'Cà phê ủ lạnh 18h',
         sort_order: 1,
         sizes: [
           { size_label: 'M', price: 30000, sort_order: 1 },
@@ -26,6 +27,7 @@ const menuData = [
       },
       {
         name: 'Cold Brew Cam Sả',
+        description: 'Hương cam vàng kết hợp sả thanh nhẹ',
         sort_order: 2,
         is_signature: true,
         sizes: [
@@ -34,8 +36,36 @@ const menuData = [
         ],
       },
       {
-        name: 'Cold Brew Chanh Vàng',
+        name: 'Cold Brew Dâu Tằm',
+        description: 'Vị ngọt thanh từ dâu tằm tự nhiên',
         sort_order: 3,
+        sizes: [
+          { size_label: 'M', price: 35000, sort_order: 1 },
+          { size_label: 'L', price: 40000, sort_order: 2 },
+        ],
+      },
+      {
+        name: 'Cold Brew Strawberry',
+        description: 'Hòa quyện dâu tây chua ngọt thanh mát',
+        sort_order: 4,
+        sizes: [
+          { size_label: 'M', price: 35000, sort_order: 1 },
+          { size_label: 'L', price: 40000, sort_order: 2 },
+        ],
+      },
+      {
+        name: 'Cold Brew Bưởi Hồng',
+        description: 'Hương bưởi hồng tươi mới, sảng khoái',
+        sort_order: 5,
+        sizes: [
+          { size_label: 'M', price: 35000, sort_order: 1 },
+          { size_label: 'L', price: 40000, sort_order: 2 },
+        ],
+      },
+      {
+        name: 'Cold Brew Chanh Vàng',
+        description: 'Cà phê ủ lạnh dùng với syrup chanh vàng',
+        sort_order: 6,
         sizes: [
           { size_label: 'M', price: 30000, sort_order: 1 },
           { size_label: 'L', price: 35000, sort_order: 2 },
@@ -43,7 +73,8 @@ const menuData = [
       },
       {
         name: 'Cold Brew Nước Dừa',
-        sort_order: 4,
+        description: 'Cà phê ủ lạnh dùng với nước dừa tươi',
+        sort_order: 7,
         sizes: [
           { size_label: 'M', price: 30000, sort_order: 1 },
           { size_label: 'L', price: 35000, sort_order: 2 },
@@ -58,46 +89,35 @@ const menuData = [
     items: [
       {
         name: 'Matcha Latte',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
         sort_order: 1,
-        sizes: [
-          { size_label: 'M', price: 40000, sort_order: 1 },
-        ],
+        sizes: [{ size_label: 'M', price: 40000, sort_order: 1 }],
+      },
+      {
+        name: 'Matcha Kem Béo',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
+        sort_order: 2,
+        is_signature: true,
+        sizes: [{ size_label: 'M', price: 45000, sort_order: 1 }],
+      },
+      {
+        name: 'Strawberry Matcha',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
+        sort_order: 3,
+        sizes: [{ size_label: 'M', price: 45000, sort_order: 1 }],
       },
       {
         name: 'Matcha Coco',
-        sort_order: 2,
-        sizes: [
-          { size_label: 'M', price: 40000, sort_order: 1 },
-        ],
-      },
-      {
-        name: 'Matcha Oat',
-        sort_order: 3,
-        sizes: [
-          { size_label: 'M', price: 40000, sort_order: 1 },
-        ],
+        description: '5g matcha kết hợp với nước dừa',
+        sort_order: 4,
+        sizes: [{ size_label: 'M', price: 40000, sort_order: 1 }],
       },
       {
         name: 'Matcha Cold Whisk',
-        sort_order: 4,
-        is_signature: true,
-        sizes: [
-          { size_label: 'M', price: 45000, sort_order: 1 },
-        ],
-      },
-      {
-        name: 'Strawberry Matcha Latte',
+        description: '7g matcha đánh lạnh · Sữa thanh trùng / Sữa Oat',
         sort_order: 5,
-        sizes: [
-          { size_label: 'M', price: 45000, sort_order: 1 },
-        ],
-      },
-      {
-        name: 'Matcha Kem Muối',
-        sort_order: 6,
-        sizes: [
-          { size_label: 'M', price: 45000, sort_order: 1 },
-        ],
+        is_signature: true,
+        sizes: [{ size_label: 'M', price: 45000, sort_order: 1 }],
       },
     ],
   },
@@ -108,19 +128,15 @@ const menuData = [
     items: [
       {
         name: 'Cold Brew Chanh Vàng',
-        description: 'Hạn dùng: 5 – 7 ngày',
+        description: 'Bottled Craft · Bảo quản lạnh: 5–7 ngày',
         sort_order: 1,
-        sizes: [
-          { size_label: 'Chai', price: 74000, sort_order: 1 },
-        ],
+        sizes: [{ size_label: 'Chai', price: 90000, sort_order: 1 }],
       },
       {
         name: 'Pure Black Cold Brew',
-        description: 'Hạn dùng: 7 – 10 ngày',
+        description: 'Zero Sugar · Bảo quản lạnh: 7–10 ngày',
         sort_order: 2,
-        sizes: [
-          { size_label: 'Chai', price: 69000, sort_order: 1 },
-        ],
+        sizes: [{ size_label: 'Chai', price: 80000, sort_order: 1 }],
       },
     ],
   },

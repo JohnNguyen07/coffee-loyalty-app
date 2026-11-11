@@ -272,9 +272,10 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     assert.strictEqual(canAccessMenuTab('MANAGER', 'settings'), false);
     assert.strictEqual(canAccessMenuTab('MANAGER', 'locations'), false);
 
-    // Cashier chỉ được vào POS và Tra cứu Đơn
+    // Cashier được vào POS, Tra cứu Đơn và Tích/Trừ điểm Khách hàng tại quầy
     assert.strictEqual(canAccessMenuTab('CASHIER', 'pos'), true);
     assert.strictEqual(canAccessMenuTab('CASHIER', 'orders'), true);
+    assert.strictEqual(canAccessMenuTab('CASHIER', 'customers'), true);
     assert.strictEqual(canAccessMenuTab('CASHIER', 'inventory'), false);
     assert.strictEqual(canAccessMenuTab('CASHIER', 'revenue'), false);
     assert.strictEqual(canAccessMenuTab('CASHIER', 'settings'), false);

@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
     const admin = staff || (await verifyAdmin());
-    if (!admin) {
+    if (!admin || (staff && staff.staffRole === 'INVENTORY_STAFF')) {
       return NextResponse.json({ error: 'Không có quyền truy cập' }, { status: 403 });
     }
 
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
     const admin = staff || (await verifyAdmin());
-    if (!admin) {
+    if (!admin || (staff && staff.staffRole === 'INVENTORY_STAFF')) {
       return NextResponse.json({ error: 'Không có quyền tạo khách hàng' }, { status: 403 });
     }
 
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         phone: cleanPhone,
         email: syntheticEmail,
-        role: 'CUSTOMER',
+        role: 'USER',
         current_tier_id: memberTier?.id || null,
         point_balance: initialPoints,
         total_spending: 0,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     if (initialPoints > 0) {
       await adminClient.from('point_transactions').insert({
         user_id: created.id,
-        type: 'ADMIN_ADD',
+        type: 'WELCOME_BONUS',
         amount: initialPoints,
         balance_after: initialPoints,
         description: 'Tặng điểm khởi tạo thành viên mới tại quầy',

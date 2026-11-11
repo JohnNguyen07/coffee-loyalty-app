@@ -83,6 +83,7 @@ export default function Home() {
           const matchesSearch =
             !q ||
             item.name.toLowerCase().includes(q) ||
+            (item.description && item.description.toLowerCase().includes(q)) ||
             cat.name.toLowerCase().includes(q);
           const matchesSig = !onlySignature || Boolean(item.isSignature);
           return matchesSearch && matchesSig;
@@ -206,6 +207,38 @@ export default function Home() {
               ))}
             </div>
           )}
+
+          {/* Official Menu Add-ons & Ingredient Notes Box */}
+          <div className={styles.menuNotesGrid}>
+            <div className={styles.menuAddonCard}>
+              <div className={styles.menuAddonHeader}>
+                <span className={styles.menuAddonTitle}>LỰA CHỌN THÊM</span>
+                <span className={styles.menuAddonSub}>Đồng giá 5.000đ</span>
+              </div>
+              <div className={styles.menuAddonRows}>
+                <div className={styles.menuAddonRow}>
+                  <span>+ Kem Béo</span>
+                  <strong>+5.000đ</strong>
+                </div>
+                <div className={styles.menuAddonRow}>
+                  <span>+ 1g Matcha Fuji</span>
+                  <strong>+5.000đ</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.menuCraftNoteCard}>
+              <p>
+                <strong>Cold Brew 18h:</strong> Chiết xuất lạnh chậm 18 giờ từ hạt Arabica Cầu Đất, giữ trọn hương vị tự nhiên và hậu vị ngọt dịu thanh sâu.
+              </p>
+              <p>
+                <strong>Matcha Fuji MK4:</strong> Bột trà xanh nguyên chất nhập khẩu, cho hương thơm béo ngậy, mịn màng đậm đà vị umami.
+              </p>
+              <p>
+                <strong>Tùy chọn Sữa:</strong> Miễn phí chuyển đổi giữa Sữa thanh trùng và Sữa yến mạch (Oat) cho các món Matcha chỉ định.
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* ── ZONE 3: HOUSE GREEN & GOLD REWARDS CEREMONY BAND ── */}
@@ -214,13 +247,13 @@ export default function Home() {
             <div className={styles.rewardsIntro}>
               <div className={styles.rewardsGoldEyebrow}>
                 <StarSolidIcon size={14} />
-                <span>Ủ LAB REWARDS® · TÍCH ĐIỂM BẮT ĐẦU TỪ NGÀY 9</span>
+                <span>Ủ LAB REWARDS® · TÍCH ĐIỂM BẰNG SỐ ĐIỆN THOẠI TẠI QUẦY</span>
               </div>
               <h2 className={styles.rewardsHeadline}>
-                Ly nước trên tay, hoàn điểm vào ví ngay tức thì
+                Đọc số điện thoại tại quầy, tích &amp; trừ điểm tức thì
               </h2>
               <p className={styles.rewardsBody}>
-                Mỗi ly Matcha và Cold Brew tại Ủ LAB đều đi kèm tem mã QR tích điểm riêng. Chỉ cần mở <strong>Camera điện thoại</strong> quét mã trên ly để truy cập đường link nhận hoàn điểm từ <strong>3% đến 10%</strong> và trừ trực tiếp vào những đơn đặt hàng tiếp theo.
+                Khi mua Matcha và Cold Brew tại Ủ LAB, bạn chỉ cần <strong>đọc Số Điện Thoại cho thu ngân tại quầy</strong> (hoặc nhập SĐT khi đặt đơn). Hệ thống tự động cộng hoàn điểm từ <strong>3% đến 10% theo hạng thẻ</strong> vào ví và hỗ trợ <strong>trừ tiền tích lũy trực tiếp tại quầy</strong> (Lưu ý: Đơn hàng có áp dụng trừ tiền ví sẽ không tích điểm mới).
               </p>
 
               <div className={styles.rewardsCtaGroup}>
@@ -311,9 +344,9 @@ export default function Home() {
             </div>
             <div className={styles.stepCard}>
               <span className={styles.stepNumber}>03</span>
-              <h3 className={styles.stepTitle}>Mở Camera điện thoại quét tem</h3>
+              <h3 className={styles.stepTitle}>Đọc SĐT tích &amp; trừ điểm tại quầy</h3>
               <p className={styles.stepDesc}>
-                Dùng Camera mặc định trên điện thoại quét tem QR dán trên ly để mở link nhận hoàn điểm tự động vào ví.
+                Đọc số điện thoại tại quầy thu ngân để cộng tự động 3%–10% theo hạng thẻ hoặc trừ tiền ví trực tiếp (Đơn trừ tiền không tích điểm mới).
               </p>
             </div>
           </div>

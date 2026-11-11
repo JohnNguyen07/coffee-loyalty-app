@@ -132,14 +132,16 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                 </div>
               </div>
 
-              {/* Native Camera QR Hint */}
+              {/* Counter Phone Loyalty Hint */}
               <div className={styles.scanActionBtn} style={{ cursor: 'default' }}>
                 <span className={styles.scanActionIcon}>
                   <QrScanIcon size={20} />
                 </span>
                 <div className={styles.actionText}>
-                  <strong>Tích điểm bằng Camera điện thoại</strong>
-                  <small>Quét mã QR dán trên ly nước để mở link nhận hoàn điểm tự động</small>
+                  <strong>Đọc Số Điện Thoại tích &amp; trừ điểm tại quầy</strong>
+                  <small>
+                    Thu ngân nhập SĐT tại quầy để cộng hoàn điểm {profile.tier?.cashback_rate || 3}% theo hạng thẻ hoặc trừ tiền trực tiếp (Lưu ý: Đơn có trừ tiền không tích điểm mới)
+                  </small>
                 </div>
               </div>
 
@@ -194,7 +196,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                     <div className={styles.txEmpty}>
                       Chưa có giao dịch tích điểm nào.
                       <br />
-                      Hãy quét mã QR trên ly nước để nhận hoàn điểm ngay!
+                      Hãy đọc số điện thoại tại quầy khi mua nước để nhận hoàn điểm 3%–10% theo hạng thẻ!
                     </div>
                   ) : (
                     transactions.map((tx) => {

@@ -2,7 +2,13 @@
 
 import { useState, useRef } from 'react';
 import styles from './MenuCard.module.css';
-import { MenuItem, formatVND } from '@/data/menu';
+import {
+  MenuItem,
+  MENU_ADDONS,
+  MILK_OPTIONS,
+  type MilkOption,
+  formatVND,
+} from '@/data/menu';
 import { useCartStore } from '@/store/cart';
 import {
   DrinkIllustration,
@@ -17,15 +23,37 @@ interface MenuCardProps {
 
 export default function MenuCard({ item, index }: MenuCardProps) {
   const [selectedSize, setSelectedSize] = useState(0);
+  const [selectedMilk, setSelectedMilk] = useState<MilkOption>('Sữa thanh trùng');
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const addItem = useCartStore((s) => s.addItem);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const currentPrice = item.sizes[selectedSize]?.price || item.sizes[0].price;
+  const isBottled =
+    item.categorySlug === 'cold-brew-chai' ||
+    item.sizes[selectedSize]?.label === 'Chai';
+
+  const basePrice = item.sizes[selectedSize]?.price || item.sizes[0].price;
+  const addonTotal = isBottled
+    ? 0
+    : selectedAddons.reduce((sum, id) => {
+        const found = MENU_ADDONS.find((a) => a.id === id);
+        return sum + (found ? found.price : 0);
+      }, 0);
+  const currentPrice = basePrice + addonTotal;
   const estimatedCashback = Math.round(currentPrice * 0.05);
 
+  const toggleAddon = (addonId: string) => {
+    setSelectedAddons((prev) =>
+      prev.includes(addonId) ? prev.filter((id) => id !== addonId) : [...prev, addonId]
+    );
+  };
+
   const handleAdd = () => {
-    addItem(item, selectedSize);
+    addItem(item, selectedSize, {
+      milkOption: item.hasMilkChoice ? selectedMilk : undefined,
+      addons: isBottled ? [] : selectedAddons,
+    });
     setIsAdding(true);
     setTimeout(() => setIsAdding(false), 650);
   };
@@ -35,6 +63,8 @@ export default function MenuCard({ item, index }: MenuCardProps) {
     if (item.categorySlug === 'cold-brew') return styles.coldBrew;
     return styles.cannedBrew;
   };
+
+  const badgeText = item.badgeLabel || (item.tag === 'Special' ? 'Special' : 'Signature');
 
   return (
     <article
@@ -58,7 +88,7 @@ export default function MenuCard({ item, index }: MenuCardProps) {
           {item.isSignature ? (
             <span className={styles.signatureBadge}>
               <StarSolidIcon size={11} />
-              <span>Signature</span>
+              <span>{badgeText}</span>
             </span>
           ) : item.tag ? (
             <span className={styles.craftTag}>{item.tag}</span>
@@ -78,6 +108,9 @@ export default function MenuCard({ item, index }: MenuCardProps) {
       <div className={styles.content}>
         <div className={styles.headerInfo}>
           <h3 className={styles.name}>{item.name}</h3>
+          {item.description && (
+            <p className={styles.description}>{item.description}</p>
+          )}
         </div>
 
         {/* Starbucks PDP Style Cup Size Selector */}
@@ -90,7 +123,9 @@ export default function MenuCard({ item, index }: MenuCardProps) {
                 ? 'Size M'
                 : cleanLabel === 'L'
                   ? 'Size L'
-                  : cleanLabel;
+                  : cleanLabel === 'Chai'
+                    ? 'Chai đóng sẵn'
+                    : cleanLabel;
 
             return (
               <button
@@ -112,10 +147,58 @@ export default function MenuCard({ item, index }: MenuCardProps) {
           })}
         </div>
 
+        {/* Free Milk Switch for Designated Matcha Items */}
+        {!isBottled && item.hasMilkChoice && (
+          <div className={styles.customGroup}>
+            <span className={styles.customLabel}>Tùy chọn sữa (Miễn phí):</span>
+            <div className={styles.customPills}>
+              {MILK_OPTIONS.map((milk) => {
+                const active = selectedMilk === milk;
+                return (
+                  <button
+                    key={milk}
+                    type="button"
+                    className={`${styles.customPill} ${active ? styles.customPillActive : ''}`}
+                    onClick={() => setSelectedMilk(milk)}
+                    aria-pressed={active}
+                  >
+                    {active ? `✓ ${milk}` : milk}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Add-ons (+ Kem Béo / + 1g Matcha Fuji — Đồng giá 5.000đ) */}
+        {!isBottled && (
+          <div className={styles.customGroup}>
+            <span className={styles.customLabel}>Lựa chọn thêm (+5.000đ):</span>
+            <div className={styles.customPills}>
+              {MENU_ADDONS.map((addon) => {
+                const active = selectedAddons.includes(addon.id);
+                return (
+                  <button
+                    key={addon.id}
+                    type="button"
+                    className={`${styles.customPill} ${active ? styles.customPillActive : ''}`}
+                    onClick={() => toggleAddon(addon.id)}
+                    aria-pressed={active}
+                  >
+                    {active ? `✓ +${addon.name}` : `+ ${addon.name}`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Price & Pill CTA Footer */}
         <div className={styles.footer}>
           <div className={styles.priceBlock}>
-            <span className={styles.priceLabel}>Giá bán</span>
+            <span className={styles.priceLabel}>
+              {addonTotal > 0 ? `Giá (+${formatVND(addonTotal)} thêm)` : 'Giá bán'}
+            </span>
             <span className={styles.price}>{formatVND(currentPrice)}</span>
           </div>
 

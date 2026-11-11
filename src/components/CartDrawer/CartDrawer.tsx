@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import styles from './CartDrawer.module.css';
-import { formatVND } from '@/data/menu';
+import { formatVND, MENU_ADDONS, MILK_OPTIONS } from '@/data/menu';
 import { useCartStore, type CartItem } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -29,9 +29,6 @@ interface OrderSuccessInfo {
 }
 
 const FANPAGE_ID = process.env.NEXT_PUBLIC_MESSENGER_FANPAGE_ID || '61595629718216';
-const FACEBOOK_PAGE_URL =
-  process.env.NEXT_PUBLIC_FACEBOOK_PAGE_URL ||
-  'https://www.facebook.com/p/%E1%BB%A6-LAB-61595629718216/';
 
 const QUICK_NOTES = ['Ít ngọt', 'Đá riêng', 'Không đường', 'Nhiều đá'];
 
@@ -60,6 +57,17 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+function formatCartItemLabel(ci: CartItem): string {
+  const parts: string[] = [ci.sizeLabel];
+  if (ci.milkOption) {
+    parts.push(ci.milkOption);
+  }
+  if (ci.addons && ci.addons.length > 0) {
+    parts.push(ci.addons.map((a) => `+${a.name}`).join(', '));
+  }
+  return parts.join(' · ');
+}
+
 export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const {
     items,
@@ -70,6 +78,8 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     getTotalDue,
     updateQuantity,
     removeItem,
+    updateItemMilk,
+    toggleItemAddon,
   } = useCartStore();
   const { profile, spendPoints } = useAuth();
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -157,7 +167,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     const orderItemsText = items
       .map(
         (ci: CartItem) =>
-          `• ${ci.quantity}x ${ci.menuItem.name} (${ci.sizeLabel}) - ${formatVND(ci.price * ci.quantity)}`
+          `• ${ci.quantity}x ${ci.menuItem.name} (${formatCartItemLabel(ci)}) - ${formatVND(ci.price * ci.quantity)}`
       )
       .join('\n');
 
@@ -211,13 +221,28 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: items.map((ci: CartItem) => ({
-          item_id: ci.menuItem.id,
-          name: ci.menuItem.name,
-          size_label: ci.sizeLabel,
-          unit_price: ci.price,
-          quantity: ci.quantity,
-        })),
+        items: items.map((ci: CartItem) => {
+          const optParts: string[] = [];
+          if (ci.milkOption) optParts.push(ci.milkOption);
+          if (ci.addons && ci.addons.length > 0) {
+            optParts.push(ci.addons.map((a) => `+${a.name}`).join(', '));
+          }
+          const displayProductName =
+            optParts.length > 0
+              ? `${ci.menuItem.name} [${optParts.join(' · ')}]`
+              : ci.menuItem.name;
+
+          return {
+            item_id: ci.menuItem.id,
+            name: ci.menuItem.name,
+            product_name: displayProductName,
+            size_label: ci.sizeLabel,
+            unit_price: ci.price,
+            quantity: ci.quantity,
+            milk_option: ci.milkOption,
+            addons: (ci.addons || []).map((a) => a.id),
+          };
+        }),
         points_used: pointsToUse,
         note: combinedOrderNote,
         customer_name: cleanName,
@@ -375,63 +400,125 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             <div className={styles.scrollBody}>
               {/* Cart Items List */}
               <div className={styles.itemsList}>
-                {items.map((ci: CartItem) => (
-                  <div
-                    key={`${ci.menuItem.id}-${ci.sizeIndex}`}
-                    className={styles.cartItem}
-                  >
-                    <div className={styles.itemThumb}>
-                      <span className={styles.itemCatBadge}>
-                        {ci.menuItem.category === 'matcha' ? 'MATCHA' : 'BREW'}
-                      </span>
-                    </div>
-
-                    <div className={styles.itemDetails}>
-                      <div className={styles.itemHeader}>
-                        <h4 className={styles.itemName}>{ci.menuItem.name}</h4>
-                        <button
-                          type="button"
-                          className={styles.removeBtn}
-                          onClick={() => removeItem(ci.menuItem.id, ci.sizeIndex)}
-                          aria-label={`Xoá ${ci.menuItem.name}`}
-                        >
-                          &times;
-                        </button>
-                      </div>
-
-                      <span className={styles.itemMeta}>Size: {ci.sizeLabel}</span>
-
-                      <div className={styles.itemFooter}>
-                        <div className={styles.qtyControl}>
-                          <button
-                            type="button"
-                            className={styles.qtyBtn}
-                            onClick={() =>
-                              updateQuantity(ci.menuItem.id, ci.sizeIndex, ci.quantity - 1)
-                            }
-                            aria-label="Giảm số lượng"
-                          >
-                            −
-                          </button>
-                          <span className={styles.qtyText}>{ci.quantity}</span>
-                          <button
-                            type="button"
-                            className={styles.qtyBtn}
-                            onClick={() =>
-                              updateQuantity(ci.menuItem.id, ci.sizeIndex, ci.quantity + 1)
-                            }
-                            aria-label="Tăng số lượng"
-                          >
-                            +
-                          </button>
-                        </div>
-                        <span className={styles.itemPrice}>
-                          {formatVND(ci.price * ci.quantity)}
+                {items.map((ci: CartItem) => {
+                  const isBottled =
+                    ci.sizeLabel === 'Chai' || ci.menuItem.categorySlug === 'cold-brew-chai';
+                  return (
+                    <div
+                      key={ci.cartKey || `${ci.menuItem.id}-${ci.sizeIndex}`}
+                      className={styles.cartItem}
+                    >
+                      <div className={styles.itemThumb}>
+                        <span className={styles.itemCatBadge}>
+                          {ci.menuItem.categorySlug === 'matcha' ? 'MATCHA' : 'BREW'}
                         </span>
                       </div>
+
+                      <div className={styles.itemDetails}>
+                        <div className={styles.itemHeader}>
+                          <h4 className={styles.itemName}>{ci.menuItem.name}</h4>
+                          <button
+                            type="button"
+                            className={styles.removeBtn}
+                            onClick={() =>
+                              removeItem(ci.menuItem.id, ci.sizeIndex, ci.cartKey)
+                            }
+                            aria-label={`Xoá ${ci.menuItem.name}`}
+                          >
+                            &times;
+                          </button>
+                        </div>
+
+                        <span className={styles.itemMeta}>
+                          Size: <strong>{ci.sizeLabel}</strong> ({formatVND(ci.basePrice || ci.price)})
+                        </span>
+
+                        {/* Milk Switch inside Cart for designated Matcha items */}
+                        {!isBottled && ci.menuItem.hasMilkChoice && (
+                          <div className={styles.cartOptRow}>
+                            <span className={styles.cartOptLabel}>Sữa (0đ):</span>
+                            <div className={styles.cartOptChips}>
+                              {MILK_OPTIONS.map((milk) => {
+                                const active = (ci.milkOption || 'Sữa thanh trùng') === milk;
+                                return (
+                                  <button
+                                    key={milk}
+                                    type="button"
+                                    className={`${styles.cartOptChip} ${active ? styles.cartOptChipActive : ''}`}
+                                    onClick={() => updateItemMilk(ci.cartKey, milk)}
+                                  >
+                                    {active ? `✓ ${milk}` : milk}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Add-on Toggles inside Cart (+ Kem Béo / + 1g Matcha Fuji — Đồng giá 5.000đ) */}
+                        {!isBottled && (
+                          <div className={styles.cartOptRow}>
+                            <span className={styles.cartOptLabel}>Thêm (+5k):</span>
+                            <div className={styles.cartOptChips}>
+                              {MENU_ADDONS.map((addon) => {
+                                const active = (ci.addons || []).some((a) => a.id === addon.id);
+                                return (
+                                  <button
+                                    key={addon.id}
+                                    type="button"
+                                    className={`${styles.cartOptChip} ${active ? styles.cartOptChipActive : ''}`}
+                                    onClick={() => toggleItemAddon(ci.cartKey, addon.id)}
+                                  >
+                                    {active ? `✓ +${addon.name}` : `+ ${addon.name}`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className={styles.itemFooter}>
+                          <div className={styles.qtyControl}>
+                            <button
+                              type="button"
+                              className={styles.qtyBtn}
+                              onClick={() =>
+                                updateQuantity(
+                                  ci.menuItem.id,
+                                  ci.sizeIndex,
+                                  ci.quantity - 1,
+                                  ci.cartKey
+                                )
+                              }
+                              aria-label="Giảm số lượng"
+                            >
+                              −
+                            </button>
+                            <span className={styles.qtyText}>{ci.quantity}</span>
+                            <button
+                              type="button"
+                              className={styles.qtyBtn}
+                              onClick={() =>
+                                updateQuantity(
+                                  ci.menuItem.id,
+                                  ci.sizeIndex,
+                                  ci.quantity + 1,
+                                  ci.cartKey
+                                )
+                              }
+                              aria-label="Tăng số lượng"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <span className={styles.itemPrice}>
+                            {formatVND(ci.price * ci.quantity)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Customer Info & Fulfillment Options */}

@@ -24,7 +24,7 @@ export default function ProductsPanel() {
   const [newPriceM, setNewPriceM] = useState('40000');
   const [newPriceL, setNewPriceL] = useState('35000');
   const [newHasSizeL, setNewHasSizeL] = useState(false);
-  const [newPriceBottle, setNewPriceBottle] = useState('69000');
+  const [newPriceBottle, setNewPriceBottle] = useState('80000');
   const [creatingProduct, setCreatingProduct] = useState(false);
 
   // Auto-dismiss toast
@@ -161,7 +161,7 @@ export default function ProductsPanel() {
 
     const isBottleCat = newCatSlug === 'cold-brew-chai';
     const sizes = isBottleCat
-      ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 69000) }]
+      ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 80000) }]
       : newHasSizeL || newCatSlug === 'cold-brew'
         ? [
             { label: 'M', price: Math.max(1000, Number(newPriceM) || 30000) },
@@ -301,8 +301,10 @@ export default function ProductsPanel() {
                 <tr key={item.id} className={`${styles.tableRow} ${isOut ? styles.tableRowOut : ''}`}>
                   <td>
                     <div className={styles.itemName}>{item.name}</div>
-                    {item.shelfLife && (
-                      <div className={styles.itemSub}>Bảo quản lạnh: {item.shelfLife}</div>
+                    {(item.description || item.shelfLife) && (
+                      <div className={styles.itemSub}>
+                        {item.description || `Bảo quản lạnh: ${item.shelfLife}`}
+                      </div>
                     )}
                   </td>
                   <td>
@@ -324,7 +326,7 @@ export default function ProductsPanel() {
                     {item.isSignature ? (
                       <span className={`${styles.badge} ${styles.badgeGold}`}>
                         <StarSolidIcon size={11} />
-                        <span>Signature</span>
+                        <span>{item.badgeLabel || 'Signature'}</span>
                       </span>
                     ) : (
                       <span className={styles.mutedText}>{item.tag || 'Tiêu chuẩn'}</span>

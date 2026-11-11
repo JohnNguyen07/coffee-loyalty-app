@@ -1,4 +1,4 @@
-// Menu data extracted from current offerings
+// Menu data synced with Ủ LAB latest menu
 // Categories: Cold Brew, Matcha, Cold Brew Chai
 
 export interface MenuItemSize {
@@ -6,13 +6,30 @@ export interface MenuItemSize {
   price: number;
 }
 
+export interface MenuAddon {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export const MENU_ADDONS: MenuAddon[] = [
+  { id: 'kem-beo', name: 'Kem Béo', price: 5000 },
+  { id: '1g-matcha-fuji', name: '1g Matcha Fuji', price: 5000 },
+];
+
+export const MILK_OPTIONS = ['Sữa thanh trùng', 'Sữa Oat'] as const;
+export type MilkOption = (typeof MILK_OPTIONS)[number];
+
 export interface MenuItem {
   id: string;
   name: string;
+  description?: string;
   category: string;
   categorySlug: string;
   sizes: MenuItemSize[];
   isSignature?: boolean;
+  badgeLabel?: string; // 'Signature' | 'Special'
+  hasMilkChoice?: boolean; // Free switch between Sữa thanh trùng & Sữa Oat
   shelfLife?: string; // For bottled products
   tag?: string;
   isAvailable?: boolean;
@@ -31,10 +48,12 @@ export const menuData: MenuCategory[] = [
     name: 'Cold Brew',
     slug: 'cold-brew',
     icon: '🧊',
+    subtitle: 'Size M / Size L · Chiết xuất lạnh chậm 18 giờ từ hạt Arabica Cầu Đất',
     items: [
       {
         id: 'original-cold-brew',
         name: 'Original Cold Brew',
+        description: 'Cà phê ủ lạnh 18h',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
         tag: '18h Steeped',
@@ -46,10 +65,48 @@ export const menuData: MenuCategory[] = [
       {
         id: 'cold-brew-cam-sa',
         name: 'Cold Brew Cam Sả',
+        description: 'Hương cam vàng kết hợp sả thanh nhẹ',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
-        tag: 'Best Seller',
+        tag: 'Signature',
         isSignature: true,
+        badgeLabel: 'Signature',
+        sizes: [
+          { label: 'M', price: 35000 },
+          { label: 'L', price: 40000 },
+        ],
+      },
+      {
+        id: 'cold-brew-dau-tam',
+        name: 'Cold Brew Dâu Tằm',
+        description: 'Vị ngọt thanh từ dâu tằm tự nhiên',
+        category: 'Cold Brew',
+        categorySlug: 'cold-brew',
+        tag: 'Dâu Tằm',
+        sizes: [
+          { label: 'M', price: 35000 },
+          { label: 'L', price: 40000 },
+        ],
+      },
+      {
+        id: 'cold-brew-strawberry',
+        name: 'Cold Brew Strawberry',
+        description: 'Hòa quyện dâu tây chua ngọt thanh mát',
+        category: 'Cold Brew',
+        categorySlug: 'cold-brew',
+        tag: 'Strawberry',
+        sizes: [
+          { label: 'M', price: 35000 },
+          { label: 'L', price: 40000 },
+        ],
+      },
+      {
+        id: 'cold-brew-buoi-hong',
+        name: 'Cold Brew Bưởi Hồng',
+        description: 'Hương bưởi hồng tươi mới, sảng khoái',
+        category: 'Cold Brew',
+        categorySlug: 'cold-brew',
+        tag: 'Bưởi Hồng',
         sizes: [
           { label: 'M', price: 35000 },
           { label: 'L', price: 40000 },
@@ -58,6 +115,7 @@ export const menuData: MenuCategory[] = [
       {
         id: 'cold-brew-chanh-vang',
         name: 'Cold Brew Chanh Vàng',
+        description: 'Cà phê ủ lạnh dùng với syrup chanh vàng',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
         tag: 'Refreshing',
@@ -69,6 +127,7 @@ export const menuData: MenuCategory[] = [
       {
         id: 'cold-brew-nuoc-dua',
         name: 'Cold Brew Nước Dừa',
+        description: 'Cà phê ủ lạnh dùng với nước dừa tươi',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
         tag: 'Tropical',
@@ -83,33 +142,54 @@ export const menuData: MenuCategory[] = [
     name: 'Matcha',
     slug: 'matcha',
     icon: '🍵',
+    subtitle: 'Size M · Bột trà xanh Fuji MK4 nguyên chất · Miễn phí đổi Sữa thanh trùng / Sữa Oat',
     items: [
       {
         id: 'matcha-latte',
         name: 'Matcha Latte',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
         tag: 'Fuji MK4',
+        hasMilkChoice: true,
         sizes: [
           { label: 'M', price: 40000 },
+        ],
+      },
+      {
+        id: 'matcha-kem-beo',
+        name: 'Matcha Kem Béo',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Signature',
+        isSignature: true,
+        badgeLabel: 'Signature',
+        hasMilkChoice: true,
+        sizes: [
+          { label: 'M', price: 45000 },
+        ],
+      },
+      {
+        id: 'strawberry-matcha',
+        name: 'Strawberry Matcha',
+        description: '5g matcha · Sữa thanh trùng / Sữa Oat',
+        category: 'Matcha',
+        categorySlug: 'matcha',
+        tag: 'Dâu Tươi',
+        hasMilkChoice: true,
+        sizes: [
+          { label: 'M', price: 45000 },
         ],
       },
       {
         id: 'matcha-coco',
         name: 'Matcha Coco',
+        description: '5g matcha kết hợp với nước dừa',
         category: 'Matcha',
         categorySlug: 'matcha',
         tag: 'Light & Fresh',
-        sizes: [
-          { label: 'M', price: 40000 },
-        ],
-      },
-      {
-        id: 'matcha-oat',
-        name: 'Matcha Oat',
-        category: 'Matcha',
-        categorySlug: 'matcha',
-        tag: 'Plant-Based',
+        hasMilkChoice: false,
         sizes: [
           { label: 'M', price: 40000 },
         ],
@@ -117,30 +197,13 @@ export const menuData: MenuCategory[] = [
       {
         id: 'matcha-cold-whisk',
         name: 'Matcha Cold Whisk',
+        description: '7g matcha đánh lạnh · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
-        tag: 'Craft Signature',
-        sizes: [
-          { label: 'M', price: 45000 },
-        ],
+        tag: 'Special',
         isSignature: true,
-      },
-      {
-        id: 'strawberry-matcha',
-        name: 'Strawberry Matcha Latte',
-        category: 'Matcha',
-        categorySlug: 'matcha',
-        tag: 'Dâu Tươi',
-        sizes: [
-          { label: 'M', price: 45000 },
-        ],
-      },
-      {
-        id: 'matcha-kem-muoi',
-        name: 'Matcha Kem Muối',
-        category: 'Matcha',
-        categorySlug: 'matcha',
-        tag: 'Béo Mịn',
+        badgeLabel: 'Special',
+        hasMilkChoice: true,
         sizes: [
           { label: 'M', price: 45000 },
         ],
@@ -151,28 +214,31 @@ export const menuData: MenuCategory[] = [
     name: 'Cold Brew Chai',
     slug: 'cold-brew-chai',
     icon: '🍾',
+    subtitle: 'Chai đóng sẵn tiện lợi · Ủ lạnh thủ công 18 giờ',
     items: [
       {
         id: 'cold-brew-chanh-vang-chai',
         name: 'Cold Brew Chanh Vàng',
+        description: 'Bottled Craft · Bảo quản lạnh: 5–7 ngày',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
         tag: 'Bottled Craft',
         sizes: [
-          { label: 'Chai', price: 74000 },
+          { label: 'Chai', price: 90000 },
         ],
-        shelfLife: '5 – 7 ngày',
+        shelfLife: '5–7 ngày',
       },
       {
         id: 'pure-black-cold-brew',
         name: 'Pure Black Cold Brew',
+        description: 'Zero Sugar · Bảo quản lạnh: 7–10 ngày',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
         tag: 'Zero Sugar',
         sizes: [
-          { label: 'Chai', price: 69000 },
+          { label: 'Chai', price: 80000 },
         ],
-        shelfLife: '7 – 10 ngày',
+        shelfLife: '7–10 ngày',
       },
     ],
   },

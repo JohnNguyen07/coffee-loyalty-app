@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyAdmin, verifyPosStaff } from '@/lib/auth-utils';
 import { NextRequest, NextResponse } from 'next/server';
-import { cancelPosOrder } from '@/lib/pos/repository';
+import { cancelPosOrder, applyPhoneLoyaltyForConfirmedOrder } from '@/lib/pos/repository';
 
 // PATCH /api/orders/[id] — Update order status and payment (admin/cashier)
 export async function PATCH(
@@ -102,7 +102,8 @@ export async function PATCH(
         .single();
 
       if (!colErr && updatedWithCols) {
-        return NextResponse.json({ success: true, order: updatedWithCols });
+        const loyalty = await applyPhoneLoyaltyForConfirmedOrder(id);
+        return NextResponse.json({ success: true, order: updatedWithCols, loyalty });
       }
     } catch {
       // fallback if payment_method or payment_status columns don't exist in Supabase
@@ -123,7 +124,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Lỗi cập nhật trạng thái thanh toán' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, order: fallbackUpdated });
+    const loyalty = await applyPhoneLoyaltyForConfirmedOrder(id);
+    return NextResponse.json({ success: true, order: fallbackUpdated, loyalty });
   }
 
   // Handle Cancel with Audit Reason & Point Refund via cancelPosOrder
@@ -148,7 +150,8 @@ export async function PATCH(
     );
 
     if (!error && result) {
-      return NextResponse.json({ success: true, ...result });
+      const loyalty = action === 'confirm' ? await applyPhoneLoyaltyForConfirmedOrder(id) : undefined;
+      return NextResponse.json({ success: true, ...result, loyalty });
     }
   } catch {
     // fallback if RPC unmigrated
@@ -171,5 +174,6 @@ export async function PATCH(
     return NextResponse.json({ error: `Không thể ${action === 'confirm' ? 'xác nhận' : 'hủy'} đơn` }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, order: directUpdated });
+  const loyalty = action === 'confirm' ? await applyPhoneLoyaltyForConfirmedOrder(id) : undefined;
+  return NextResponse.json({ success: true, order: directUpdated, loyalty });
 }
