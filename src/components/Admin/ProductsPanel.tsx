@@ -303,7 +303,7 @@ export default function ProductsPanel() {
                     <div className={styles.itemName}>{item.name}</div>
                     {(item.description || item.shelfLife) && (
                       <div className={styles.itemSub}>
-                        {item.description || `Bảo quản lạnh: ${item.shelfLife}`}
+                        {item.description || item.shelfLife}
                       </div>
                     )}
                   </td>
@@ -539,11 +539,11 @@ export default function ProductsPanel() {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
-                      Thời hạn bảo quản lạnh (Tùy chọn)
+                      Mô tả ngắn (Tùy chọn)
                     </label>
                     <input
                       type="text"
-                      placeholder="VD: 5 – 7 ngày"
+                      placeholder="VD: Cà phê ủ lạnh đóng chai"
                       value={newShelfLife}
                       onChange={(e) => setNewShelfLife(e.target.value)}
                       className={styles.searchInput}

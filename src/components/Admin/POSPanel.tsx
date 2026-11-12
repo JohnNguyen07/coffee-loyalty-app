@@ -1104,7 +1104,7 @@ export default function POSPanel() {
                                 </div>
                                 {(item.description || item.shelfLife) && (
                                   <span className={styles.shelfLifeHint}>
-                                    {item.description || `Bảo quản lạnh: ${item.shelfLife}`}
+                                    {item.description || item.shelfLife}
                                   </span>
                                 )}
                                 <div className={styles.posDrinkSizes}>

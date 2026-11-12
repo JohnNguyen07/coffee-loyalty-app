@@ -98,10 +98,6 @@ export default function MenuCard({ item, index }: MenuCardProps) {
             +{formatVND(estimatedCashback)} ★
           </span>
         </div>
-
-        {item.shelfLife && (
-          <span className={styles.shelfBadge}>Bảo quản lạnh: {item.shelfLife}</span>
-        )}
       </div>
 
       {/* Card Body */}

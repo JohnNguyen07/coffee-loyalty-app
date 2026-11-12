@@ -231,26 +231,24 @@ export const menuData: MenuCategory[] = [
       {
         id: 'cold-brew-chanh-vang-chai',
         name: 'Cold Brew Chanh Vàng',
-        description: 'Bottled Craft · Bảo quản lạnh: 5–7 ngày',
+        description: 'Bottled Craft · Cà phê ủ lạnh chanh vàng đóng chai',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
         tag: 'Bottled Craft',
         sizes: [
           { label: 'Chai', price: 90000 },
         ],
-        shelfLife: '5–7 ngày',
       },
       {
         id: 'pure-black-cold-brew',
         name: 'Pure Black Cold Brew',
-        description: 'Zero Sugar · Bảo quản lạnh: 7–10 ngày',
+        description: 'Zero Sugar · Cà phê ủ lạnh nguyên bản đóng chai',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
         tag: 'Zero Sugar',
         sizes: [
           { label: 'Chai', price: 80000 },
         ],
-        shelfLife: '7–10 ngày',
       },
     ],
   },

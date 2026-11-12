@@ -295,7 +295,6 @@ export async function getPosMenuCatalog() {
               badgeLabel: staticMatch?.badgeLabel,
               hasMilkChoice: staticMatch?.hasMilkChoice,
               tag: staticMatch?.tag,
-              shelfLife: staticMatch?.shelfLife || undefined,
               sizes: finalSizes,
               isAvailable,
             };

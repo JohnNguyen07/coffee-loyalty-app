@@ -137,13 +137,13 @@ const menuData = [
     items: [
       {
         name: 'Cold Brew Chanh Vàng',
-        description: 'Bottled Craft · Bảo quản lạnh: 5–7 ngày',
+        description: 'Bottled Craft · Cà phê ủ lạnh chanh vàng đóng chai',
         sort_order: 1,
         sizes: [{ size_label: 'Chai', price: 90000, sort_order: 1 }],
       },
       {
         name: 'Pure Black Cold Brew',
-        description: 'Zero Sugar · Bảo quản lạnh: 7–10 ngày',
+        description: 'Zero Sugar · Cà phê ủ lạnh nguyên bản đóng chai',
         sort_order: 2,
         sizes: [{ size_label: 'Chai', price: 80000, sort_order: 1 }],
       },

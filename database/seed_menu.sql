@@ -118,12 +118,12 @@ BEGIN
   -- ═══════════════════════════════════
 
   INSERT INTO menu_items (category_id, name, description, sort_order)
-  VALUES (v_chai_id, 'Cold Brew Chanh Vàng', 'Bottled Craft · Bảo quản lạnh: 5–7 ngày', 1) RETURNING id INTO v_item_id;
+  VALUES (v_chai_id, 'Cold Brew Chanh Vàng', 'Bottled Craft · Cà phê ủ lạnh chanh vàng đóng chai', 1) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'Chai', 90000, 1);
 
   INSERT INTO menu_items (category_id, name, description, sort_order)
-  VALUES (v_chai_id, 'Pure Black Cold Brew', 'Zero Sugar · Bảo quản lạnh: 7–10 ngày', 2) RETURNING id INTO v_item_id;
+  VALUES (v_chai_id, 'Pure Black Cold Brew', 'Zero Sugar · Cà phê ủ lạnh nguyên bản đóng chai', 2) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'Chai', 80000, 1);
 
