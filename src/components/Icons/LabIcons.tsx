@@ -226,6 +226,7 @@ export function DrinkIllustration({
   const isMulberry = itemId.includes('dau-tam');
   const isStrawberryBrew = itemId.includes('strawberry');
   const isPinkGrapefruit = itemId.includes('buoi-hong');
+  const isLychee = itemId.includes('vai');
   const isLemon = itemId.includes('chanh-vang');
   const isCoconut = itemId.includes('nuoc-dua');
   const isCreamTop = itemId.includes('kem-beo') || itemId.includes('kem-muoi');
@@ -252,14 +253,23 @@ export function DrinkIllustration({
                 ? 'rgba(244, 63, 94, 0.15)'
                 : isPinkGrapefruit
                   ? 'rgba(251, 113, 133, 0.16)'
-                  : isLemon
-                    ? 'rgba(238, 189, 49, 0.15)'
-                    : 'rgba(203, 162, 88, 0.14)'
+                  : isLychee
+                    ? 'rgba(251, 146, 60, 0.14)'
+                    : isLemon
+                      ? 'rgba(238, 189, 49, 0.15)'
+                      : 'rgba(203, 162, 88, 0.14)'
         }
       />
       <ellipse cx="70" cy="124" rx="30" ry="5" fill="rgba(0,0,0,0.10)" />
 
       {/* Botanical garnish behind rim */}
+      {isLychee && (
+        <g transform="translate(76, 14)">
+          <circle cx="16" cy="16" r="11" fill="#FFF7ED" stroke="#FB7185" strokeWidth="2" />
+          <circle cx="16" cy="16" r="4.5" fill="#431407" />
+          <circle cx="14.5" cy="14.5" r="1.3" fill="#FFFFFF" opacity="0.8" />
+        </g>
+      )}
       {isOrangeLemongrass && (
         <g transform="translate(76, 14) rotate(15)">
           <circle cx="18" cy="18" r="15" fill="#F97316" stroke="#C2410C" strokeWidth="1.8" />

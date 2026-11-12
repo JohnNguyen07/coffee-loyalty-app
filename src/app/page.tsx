@@ -105,15 +105,15 @@ export default function Home() {
       />
 
       <main className={styles.main}>
-        {/* ── NOTICE BANNER: LOYALTY START DATE ── */}
+        {/* ── NOTICE BANNER: LOYALTY PHONE AT COUNTER ── */}
         <div className={styles.loyaltyNoticeBanner}>
           <div className={styles.loyaltyNoticeInner}>
             <span className={styles.loyaltyNoticeBadge}>
               <StarSolidIcon size={13} />
-              <span>THÔNG BÁO</span>
+              <span>Ủ LAB REWARDS</span>
             </span>
             <p className={styles.loyaltyNoticeText}>
-              Chương trình <strong>tích điểm thành viên Ủ LAB Rewards</strong> sẽ chính thức bắt đầu áp dụng từ <strong>ngày 9</strong>. Đăng ký tài khoản ngay hôm nay để nhận trước <strong>10.000đ</strong> vào ví thưởng!
+              Chương trình <strong>tích điểm thành viên Ủ LAB Rewards</strong>: Chỉ cần <strong>đọc Số Điện Thoại tại quầy thu ngân</strong> để tích điểm hoàn từ <strong>3% – 10% theo hạng thẻ</strong> và trừ tiền trực tiếp tại quầy (Lưu ý: Đơn có trừ tiền không tích điểm mới). Đăng ký nhận ngay <strong>10.000đ</strong>!
             </p>
           </div>
         </div>
@@ -247,13 +247,13 @@ export default function Home() {
             <div className={styles.rewardsIntro}>
               <div className={styles.rewardsGoldEyebrow}>
                 <StarSolidIcon size={14} />
-                <span>Ủ LAB REWARDS® · TÍCH ĐIỂM BẰNG SỐ ĐIỆN THOẠI TẠI QUẦY</span>
+                <span>Ủ LAB REWARDS® · ĐỌC SỐ ĐIỆN THOẠI TÍCH &amp; TRỪ ĐIỂM TẠI QUẦY</span>
               </div>
               <h2 className={styles.rewardsHeadline}>
                 Đọc số điện thoại tại quầy, tích &amp; trừ điểm tức thì
               </h2>
               <p className={styles.rewardsBody}>
-                Khi mua Matcha và Cold Brew tại Ủ LAB, bạn chỉ cần <strong>đọc Số Điện Thoại cho thu ngân tại quầy</strong> (hoặc nhập SĐT khi đặt đơn). Hệ thống tự động cộng hoàn điểm từ <strong>3% đến 10% theo hạng thẻ</strong> vào ví và hỗ trợ <strong>trừ tiền tích lũy trực tiếp tại quầy</strong> (Lưu ý: Đơn hàng có áp dụng trừ tiền ví sẽ không tích điểm mới).
+                Khi đến mua Matcha và Cold Brew tại Ủ LAB, bạn chỉ cần <strong>đọc Số Điện Thoại cho thu ngân tại quầy</strong> (hoặc nhập SĐT khi đặt hàng). Thu ngân/POS sẽ nhập SĐT để cộng điểm tự động từ <strong>3% đến 10% theo hạng thẻ</strong> và hỗ trợ <strong>trừ tiền tích lũy trực tiếp tại quầy</strong> (Lưu ý: Đơn nào có trừ tiền thì đơn đó không tích điểm mới).
               </p>
 
               <div className={styles.rewardsCtaGroup}>
@@ -303,7 +303,7 @@ export default function Home() {
                     </div>
                     <div className={styles.tierCashbackBig}>
                       Hoàn {tier.cashbackRate}%
-                      <span> / mỗi ly</span>
+                      <span> / mỗi đơn</span>
                     </div>
                     <ul className={styles.tierBenefits}>
                       <li>
@@ -434,7 +434,7 @@ export default function Home() {
                 </div>
               </div>
               <p className={styles.footerDesc}>
-                Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, tích điểm minh bạch trên từng ly nước.
+                Phòng thí nghiệm hương vị chuyên biệt về Matcha Fuji MK4 đánh chasen thủ công và Cold Brew ủ lạnh 18 giờ. Đặt món nhanh, đọc số điện thoại tích &amp; trừ điểm trực tiếp tại quầy.
               </p>
               <p className={styles.footerDesc}>
                 📍 Địa chỉ: <strong>{STORE_ADDRESS}</strong>

@@ -223,18 +223,17 @@ export async function getPosMenuCatalog() {
       .order('sort_order', { ascending: true });
 
     if (dbCategories && dbCategories.length > 0 && dbItems && dbItems.length > 0) {
-      const categories: MenuCategory[] = dbCategories.map((cat) => {
+      const validDbCategories = dbCategories.filter(
+        (cat) => cat.slug !== 'cold-brew-dong-lon'
+      );
+      const categories: MenuCategory[] = validDbCategories.map((cat) => {
         const staticCat = menuData.find((c) => c.slug === cat.slug);
         const catItems: MenuItem[] = dbItems
           .filter((item) => {
             if (item.category_id !== cat.id) return false;
             const lower = item.name.trim().toLowerCase();
-            // Exclude discontinued Cold Brew Vải and standalone Matcha Oat (now a free milk choice)
-            if (
-              lower === 'cold brew vải' ||
-              lower === 'cold brew vai' ||
-              lower === 'matcha oat'
-            ) {
+            // Exclude standalone Matcha Oat (now a free milk choice)
+            if (lower === 'matcha oat') {
               return false;
             }
             return true;
@@ -258,8 +257,7 @@ export async function getPosMenuCatalog() {
               allMenuItems.find(
                 (m) => m.name.toLowerCase() === lowerDbName && m.categorySlug === cat.slug
               ) ||
-              allMenuItems.find((m) => m.id === item.id) ||
-              allMenuItems.find((m) => m.name.toLowerCase() === lowerDbName);
+              allMenuItems.find((m) => m.id === item.id);
             const pid = staticMatch?.id || item.id;
             const rawSizes = Array.isArray(item.sizes) ? (item.sizes as DbSizeRow[]) : [];
             const sortedSizes = rawSizes

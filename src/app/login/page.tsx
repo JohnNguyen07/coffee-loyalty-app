@@ -71,7 +71,7 @@ function LoginContent() {
             </div>
             <h1 className={styles.logoText}>Đăng nhập thành viên</h1>
             <p className={styles.description}>
-              Quản lý ví điểm thưởng và nhận hoàn điểm tới 10% cho mỗi ly nước
+              Đọc SĐT tại quầy để tích điểm 3%–10% theo hạng thẻ và trừ tiền trực tiếp
             </p>
           </div>
 

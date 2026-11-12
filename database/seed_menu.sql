@@ -70,12 +70,17 @@ BEGIN
     (v_item_id, 'M', 35000, 1), (v_item_id, 'L', 40000, 2);
 
   INSERT INTO menu_items (category_id, name, description, sort_order)
-  VALUES (v_coldbrew_id, 'Cold Brew Chanh Vàng', 'Cà phê ủ lạnh dùng với syrup chanh vàng', 6) RETURNING id INTO v_item_id;
+  VALUES (v_coldbrew_id, 'Cold Brew Vải', 'Hương vải thiều ngọt thanh, thơm mát', 6) RETURNING id INTO v_item_id;
+  INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
+    (v_item_id, 'M', 35000, 1), (v_item_id, 'L', 40000, 2);
+
+  INSERT INTO menu_items (category_id, name, description, sort_order)
+  VALUES (v_coldbrew_id, 'Cold Brew Chanh Vàng', 'Cà phê ủ lạnh dùng với syrup chanh vàng', 7) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'M', 30000, 1), (v_item_id, 'L', 35000, 2);
 
   INSERT INTO menu_items (category_id, name, description, sort_order)
-  VALUES (v_coldbrew_id, 'Cold Brew Nước Dừa', 'Cà phê ủ lạnh dùng với nước dừa tươi', 7) RETURNING id INTO v_item_id;
+  VALUES (v_coldbrew_id, 'Cold Brew Nước Dừa', 'Cà phê ủ lạnh dùng với nước dừa tươi', 8) RETURNING id INTO v_item_id;
   INSERT INTO menu_item_sizes (menu_item_id, size_label, price, sort_order) VALUES
     (v_item_id, 'M', 30000, 1), (v_item_id, 'L', 35000, 2);
 

@@ -315,9 +315,27 @@ describe('M01 POS Domain Logic', () => {
           sizeLabel: 'M',
           quantity: 1,
         },
+        {
+          itemId: 'cold-brew-vai',
+          productName: 'Cold Brew Vải',
+          sizeLabel: 'M',
+          quantity: 1,
+        },
+        {
+          itemId: 'cold-brew-vai',
+          productName: 'Cold Brew Vải',
+          sizeLabel: 'L',
+          quantity: 1,
+        },
+        {
+          itemId: 'pure-black-cold-brew',
+          productName: 'Pure Black Cold Brew',
+          sizeLabel: 'Chai',
+          quantity: 1,
+        },
       ],
       paymentMethod: 'CASH',
-      amountReceived: 300000,
+      amountReceived: 400000,
       staffRole: 'CASHIER',
     });
 
@@ -329,7 +347,12 @@ describe('M01 POS Domain Logic', () => {
     assert.equal(res.totals.items[2].unitPrice, 35000);
     assert.equal(res.totals.items[3].unitPrice, 40000);
     assert.equal(res.totals.items[4].unitPrice, 35000);
-    assert.equal(res.totals.subtotal, 205000);
+    assert.equal(res.totals.items[5].productName, 'Cold Brew Vải');
+    assert.equal(res.totals.items[5].unitPrice, 35000);
+    assert.equal(res.totals.items[6].unitPrice, 40000);
+    assert.equal(res.totals.items[7].productName, 'Pure Black Cold Brew');
+    assert.equal(res.totals.items[7].unitPrice, 80000);
+    assert.equal(res.totals.subtotal, 360000);
   });
 
   it('calculates Counter Phone Loyalty cashback accurately by member tier % (3%, 5%, 7%, 10%) when no points are deducted', () => {

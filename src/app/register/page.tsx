@@ -255,7 +255,7 @@ function RegisterContent() {
                       <span className={styles.benefitIcon}>
                         <QrScanIcon size={16} />
                       </span>
-                      <span>Hoàn 3% – 10% mỗi ly</span>
+                      <span>Hoàn 3% – 10% mỗi đơn</span>
                     </div>
                     <div className={styles.benefit}>
                       <span className={styles.benefitIcon}>

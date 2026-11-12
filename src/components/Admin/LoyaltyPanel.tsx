@@ -226,7 +226,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
                 className={styles.searchInput}
                 step={1000}
               />
-              {[30000, 35000, 40000, 45000, 69000, 74000].map((p) => (
+              {[30000, 35000, 40000, 45000, 80000, 90000].map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -248,7 +248,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
                     </span>
                     <span className={styles.statValue}>+{formatVND(earned)}</span>
                     <span className={styles.statChange}>
-                      Cho ly giá {formatVND(samplePrice)}
+                      Cho đơn giá {formatVND(samplePrice)}
                     </span>
                   </div>
                 );
@@ -268,7 +268,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
               className={styles.selectInput}
             >
               <option value="ALL">Tất cả loại giao dịch</option>
-              <option value="CASHBACK">Hoàn điểm quét QR (CASHBACK)</option>
+              <option value="CASHBACK">Hoàn điểm theo % hạng thẻ (CASHBACK)</option>
               <option value="ADMIN_ADJUST">Quầy điều chỉnh (ADMIN_ADJUST)</option>
               <option value="REDEMPTION">Đổi điểm trừ đơn (REDEMPTION)</option>
               <option value="REGISTER_BONUS">Thưởng đăng ký (REGISTER_BONUS)</option>

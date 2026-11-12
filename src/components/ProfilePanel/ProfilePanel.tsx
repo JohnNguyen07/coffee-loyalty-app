@@ -127,7 +127,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                     </div>
                   </div>
                   <span className={styles.cashbackPill}>
-                    Hoàn {profile.tier?.cashback_rate || 3}% / ly
+                    Hoàn {profile.tier?.cashback_rate || 3}% / đơn
                   </span>
                 </div>
               </div>
@@ -284,7 +284,7 @@ export default function ProfilePanel({ isOpen, onClose }: ProfilePanelProps) {
                   Tham gia thành viên nhận ngay 10.000đ
                 </h3>
                 <p className={styles.guestWelcomeDesc}>
-                  Tích điểm thưởng từ <strong>3% đến 10%</strong> cho mỗi ly Matcha &amp; Cold Brew, sử dụng điểm trừ trực tiếp cho đơn hàng tiếp theo.
+                  Đọc số điện thoại tại quầy để tích điểm từ <strong>3% đến 10% theo hạng thẻ</strong> và trừ tiền trực tiếp tại quầy (Lưu ý: Đơn có trừ tiền không tích điểm mới).
                 </p>
 
                 <div className={styles.guestActionRow}>

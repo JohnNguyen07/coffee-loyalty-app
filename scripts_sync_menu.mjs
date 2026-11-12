@@ -63,9 +63,18 @@ const menuData = [
         ],
       },
       {
+        name: 'Cold Brew Vải',
+        description: 'Hương vải thiều ngọt thanh, thơm mát',
+        sort_order: 6,
+        sizes: [
+          { size_label: 'M', price: 35000, sort_order: 1 },
+          { size_label: 'L', price: 40000, sort_order: 2 },
+        ],
+      },
+      {
         name: 'Cold Brew Chanh Vàng',
         description: 'Cà phê ủ lạnh dùng với syrup chanh vàng',
-        sort_order: 6,
+        sort_order: 7,
         sizes: [
           { size_label: 'M', price: 30000, sort_order: 1 },
           { size_label: 'L', price: 35000, sort_order: 2 },
@@ -74,7 +83,7 @@ const menuData = [
       {
         name: 'Cold Brew Nước Dừa',
         description: 'Cà phê ủ lạnh dùng với nước dừa tươi',
-        sort_order: 7,
+        sort_order: 8,
         sizes: [
           { size_label: 'M', price: 30000, sort_order: 1 },
           { size_label: 'L', price: 35000, sort_order: 2 },
@@ -245,7 +254,7 @@ async function sync() {
       else console.log(`  ✓ Synced: ${item.name} -> ${item.sizes.map((s) => `${s.size_label}: ${s.price}`).join(', ')}`);
     }
 
-    // Remove obsolete items in this category (e.g., Cold Brew Vải)
+    // Remove obsolete items in this category
     for (const oldItem of existingCatItems || []) {
       if (!keptIds.has(oldItem.id)) {
         await client
@@ -256,6 +265,30 @@ async function sync() {
         console.log(`  - Removed obsolete menu item: ${oldItem.name}`);
       }
     }
+  }
+
+  // Remove obsolete category cold-brew-dong-lon if present
+  const { data: oldCanCat } = await client
+    .from('menu_categories')
+    .select('id, name, slug')
+    .eq('slug', 'cold-brew-dong-lon')
+    .maybeSingle();
+
+  if (oldCanCat?.id) {
+    const { data: oldCanItems } = await client
+      .from('menu_items')
+      .select('id, name')
+      .eq('category_id', oldCanCat.id);
+    for (const oi of oldCanItems || []) {
+      await client
+        .from('inventory_items')
+        .update({ linked_menu_item_id: null })
+        .eq('linked_menu_item_id', oi.id);
+      await client.from('menu_items').delete().eq('id', oi.id);
+      console.log(`  - Removed obsolete item in ${oldCanCat.slug}: ${oi.name}`);
+    }
+    await client.from('menu_categories').delete().eq('id', oldCanCat.id);
+    console.log(`  - Removed obsolete category: ${oldCanCat.name} (${oldCanCat.slug})`);
   }
 
   console.log('\n--- Verifying Historical Revenue After Sync ---');

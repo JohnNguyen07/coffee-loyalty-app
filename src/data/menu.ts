@@ -113,6 +113,18 @@ export const menuData: MenuCategory[] = [
         ],
       },
       {
+        id: 'cold-brew-vai',
+        name: 'Cold Brew Vải',
+        description: 'Hương vải thiều ngọt thanh, thơm mát',
+        category: 'Cold Brew',
+        categorySlug: 'cold-brew',
+        tag: 'Vải Thiều',
+        sizes: [
+          { label: 'M', price: 35000 },
+          { label: 'L', price: 40000 },
+        ],
+      },
+      {
         id: 'cold-brew-chanh-vang',
         name: 'Cold Brew Chanh Vàng',
         description: 'Cà phê ủ lạnh dùng với syrup chanh vàng',
