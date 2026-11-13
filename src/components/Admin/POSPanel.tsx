@@ -1341,7 +1341,15 @@ export default function POSPanel() {
                                   <div className={styles.optRow}>
                                     <span className={styles.optLabel}>Thêm / Đổi Sữa:</span>
                                     <div className={styles.optChips}>
-                                      {ADDON_OPTIONS.map((addon) => {
+                                      {ADDON_OPTIONS.filter((addon) => {
+                                        if (addon.id === '1g-matcha-fuji') {
+                                          const slug = (catalogItem?.categorySlug || '').toLowerCase();
+                                          const cat = (catalogItem?.category || '').toLowerCase();
+                                          const name = (line.productName || '').toLowerCase();
+                                          return slug === 'matcha' || cat.includes('matcha') || name.includes('matcha');
+                                        }
+                                        return true;
+                                      }).map((addon) => {
                                         const selected = line.addons.includes(addon.id);
                                         return (
                                           <button

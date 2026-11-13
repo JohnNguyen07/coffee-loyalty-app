@@ -57,7 +57,7 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
               <StarSolidIcon size={12} />
             </span>
             <span className={styles.rewardsStripText}>
-              <strong>THÔNG BÁO:</strong> Chương trình tích điểm thành viên sẽ chính thức bắt đầu từ <strong>ngày 9</strong> · Hoàn điểm 3% – 10% mọi ly nước &amp; tặng 10.000đ thành viên mới
+              <strong>Ủ LAB REWARDS:</strong> Đọc Số Điện Thoại tại quầy thu ngân để tích hoàn điểm <strong>3% – 10% theo hạng thẻ</strong> &amp; trừ tiền trực tiếp tại quầy (Tặng 10.000đ thành viên mới)
             </span>
           </div>
           <div className={styles.rewardsStripRight}>
@@ -109,7 +109,9 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
                   <span>Ưu đãi Thành viên</span>
                 </a>
               )}
-              {profile?.role === 'ADMIN' && (
+              {(profile?.role === 'ADMIN' ||
+                (profile?.role && String(profile.role) !== 'USER') ||
+                Boolean((profile as { staff_role?: string } | null)?.staff_role)) && (
                 <Link
                   href="/admin"
                   className={`${styles.navLink} ${pathname.startsWith('/admin') ? styles.navActive : ''}`}

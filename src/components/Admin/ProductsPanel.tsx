@@ -24,7 +24,7 @@ export default function ProductsPanel() {
   const [newPriceM, setNewPriceM] = useState('40000');
   const [newPriceL, setNewPriceL] = useState('35000');
   const [newHasSizeL, setNewHasSizeL] = useState(false);
-  const [newPriceBottle, setNewPriceBottle] = useState('80000');
+  const [newPriceBottle, setNewPriceBottle] = useState('70000');
   const [creatingProduct, setCreatingProduct] = useState(false);
 
   // Auto-dismiss toast
@@ -161,7 +161,7 @@ export default function ProductsPanel() {
 
     const isBottleCat = newCatSlug === 'cold-brew-chai';
     const sizes = isBottleCat
-      ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 80000) }]
+      ? [{ label: 'Chai', price: Math.max(1000, Number(newPriceBottle) || 70000) }]
       : newHasSizeL || newCatSlug === 'cold-brew'
         ? [
             { label: 'M', price: Math.max(1000, Number(newPriceM) || 30000) },

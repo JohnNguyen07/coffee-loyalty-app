@@ -47,14 +47,14 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
     setLoadingTx(true);
     try {
       const params = new URLSearchParams();
-      if (txTypeFilter !== 'ALL') params.set('type', txTypeFilter);
+      if (txTypeFilter !== 'ALL') params.set('txType', txTypeFilter);
       params.set('limit', '100');
 
-      const res = await fetch(`/api/admin/transactions?${params.toString()}`);
+      const res = await fetch(`/api/admin/loyalty?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setTransactions(data.transactions || []);
-        setTxTotal(data.total || 0);
+        setTxTotal(data.totalTransactions || data.total || 0);
       }
     } catch (err) {
       console.error('Fetch transactions error:', err);
@@ -226,7 +226,7 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
                 className={styles.searchInput}
                 step={1000}
               />
-              {[30000, 35000, 40000, 45000, 80000, 90000].map((p) => (
+              {[30000, 35000, 40000, 45000, 70000, 75000].map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -269,8 +269,9 @@ export default function LoyaltyPanel({ initialSubTab = 'tiers' }: LoyaltyPanelPr
             >
               <option value="ALL">Tất cả loại giao dịch</option>
               <option value="CASHBACK">Hoàn điểm theo % hạng thẻ (CASHBACK)</option>
+              <option value="ORDER_DEDUCT">Trừ điểm tại quầy / đơn hàng (ORDER_DEDUCT)</option>
+              <option value="ORDER_CANCEL_REFUND">Hoàn / Thu hồi điểm hủy đơn (ORDER_CANCEL_REFUND)</option>
               <option value="ADMIN_ADJUST">Quầy điều chỉnh (ADMIN_ADJUST)</option>
-              <option value="REDEMPTION">Đổi điểm trừ đơn (REDEMPTION)</option>
               <option value="REGISTER_BONUS">Thưởng đăng ký (REGISTER_BONUS)</option>
               <option value="TIER_UP_BONUS">Thưởng lên hạng (TIER_UP_BONUS)</option>
             </select>

@@ -273,6 +273,7 @@ export default function OrdersPanel() {
     setProcessingId(orderId);
     setActionBanner(null);
     try {
+      let loyaltyBonusMsg = '';
       if (isSupabaseConfigured()) {
         const res = await fetch(`/api/orders/${orderId}`, {
           method: 'PATCH',
@@ -288,6 +289,9 @@ export default function OrdersPanel() {
           setActionBanner({ text: data.error || 'Không thể thực hiện thao tác.', isError: true });
           setProcessingId(null);
           return;
+        }
+        if (data?.loyalty?.pointsEarned && Number(data.loyalty.pointsEarned) > 0) {
+          loyaltyBonusMsg = ` · Đã cộng tự động +${formatVND(Number(data.loyalty.pointsEarned))} vào ví SĐT khách hàng!`;
         }
       }
 
@@ -316,10 +320,10 @@ export default function OrdersPanel() {
       setActionBanner({
         text:
           action === 'cancel'
-            ? 'Đã hủy đơn hàng và hoàn điểm (nếu có) thành công.'
+            ? 'Đã hủy đơn hàng và hoàn/thu hồi điểm (nếu có) thành công.'
             : action === 'mark_paid'
-              ? 'Đã xác nhận đơn và ghi nhận thu tiền vào Quỹ Tiền.'
-              : 'Đã xác nhận đơn hàng.',
+              ? `Đã xác nhận đơn và ghi nhận thu tiền vào Quỹ Tiền.${loyaltyBonusMsg}`
+              : `Đã xác nhận đơn hàng.${loyaltyBonusMsg}`,
       });
     } catch {
       setActionBanner({ text: 'Lỗi kết nối máy chủ.', isError: true });

@@ -221,7 +221,7 @@ export default function Home() {
                   <strong>+5.000đ</strong>
                 </div>
                 <div className={styles.menuAddonRow}>
-                  <span>+ 1g Matcha Fuji</span>
+                  <span>+ 1g Matcha Fuji (Dòng Matcha)</span>
                   <strong>+5.000đ</strong>
                 </div>
               </div>

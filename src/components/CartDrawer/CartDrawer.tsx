@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import styles from './CartDrawer.module.css';
-import { formatVND, MENU_ADDONS, MILK_OPTIONS } from '@/data/menu';
+import { formatVND, getAddonsForItem, MILK_OPTIONS } from '@/data/menu';
 import { useCartStore, type CartItem } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -81,7 +81,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     updateItemMilk,
     toggleItemAddon,
   } = useCartStore();
-  const { profile, spendPoints } = useAuth();
+  const { profile, spendPoints, refreshProfile } = useAuth();
   const drawerRef = useRef<HTMLDivElement>(null);
 
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('PICKUP');
@@ -92,11 +92,48 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const [formError, setFormError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState<OrderSuccessInfo | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [phoneLookupMember, setPhoneLookupMember] = useState<{
+    full_name?: string;
+    point_balance?: number;
+    tier?: { code: string; name: string; cashback_rate: number } | null;
+  } | null>(null);
 
   const subtotal = getSubtotal();
-  const userPointBalance = profile?.point_balance || 0;
-  const maxUsablePoints = Math.min(userPointBalance, subtotal);
+  const activeMember = profile || phoneLookupMember;
+  const userPointBalance = profile?.point_balance ?? phoneLookupMember?.point_balance ?? 0;
+  const activeTierRate = Number(activeMember?.tier?.cashback_rate) || 3;
+  const activeTierName = activeMember?.tier?.name || 'Member';
+  const maxUsablePoints = profile ? Math.min(userPointBalance, subtotal) : 0;
   const totalDue = getTotalDue();
+  const estimatedOrderCashback = pointsToUse > 0 ? 0 : Math.floor((totalDue * activeTierRate) / 100);
+
+  useEffect(() => {
+    const cleanPhone = customerPhone.replace(/[\s\-()]/g, '');
+    if (!profile && /^0\d{8,10}$/.test(cleanPhone)) {
+      let active = true;
+      fetch(`/api/user/by-phone?phone=${encodeURIComponent(cleanPhone)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!active) return;
+          if (data?.found && data?.user) {
+            setPhoneLookupMember(data.user);
+            if (!customerName && data.user.full_name) {
+              setCustomerName(data.user.full_name);
+            }
+          } else {
+            setPhoneLookupMember(null);
+          }
+        })
+        .catch(() => {
+          if (active) setPhoneLookupMember(null);
+        });
+      return () => {
+        active = false;
+      };
+    } else {
+      setPhoneLookupMember(null);
+    }
+  }, [customerPhone, profile, customerName]);
 
   useEffect(() => {
     if (profile?.full_name && !customerName) {
@@ -217,41 +254,47 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       .filter(Boolean)
       .join(' | ');
 
-    fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: items.map((ci: CartItem) => {
-          const optParts: string[] = [];
-          if (ci.milkOption) optParts.push(ci.milkOption);
-          if (ci.addons && ci.addons.length > 0) {
-            optParts.push(ci.addons.map((a) => `+${a.name}`).join(', '));
-          }
-          const displayProductName =
-            optParts.length > 0
-              ? `${ci.menuItem.name} [${optParts.join(' · ')}]`
-              : ci.menuItem.name;
+    try {
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_code: orderCode,
+          items: items.map((ci: CartItem) => {
+            const optParts: string[] = [];
+            if (ci.milkOption) optParts.push(ci.milkOption);
+            if (ci.addons && ci.addons.length > 0) {
+              optParts.push(ci.addons.map((a) => `+${a.name}`).join(', '));
+            }
+            const displayProductName =
+              optParts.length > 0
+                ? `${ci.menuItem.name} [${optParts.join(' · ')}]`
+                : ci.menuItem.name;
 
-          return {
-            item_id: ci.menuItem.id,
-            name: ci.menuItem.name,
-            product_name: displayProductName,
-            size_label: ci.sizeLabel,
-            unit_price: ci.price,
-            quantity: ci.quantity,
-            milk_option: ci.milkOption,
-            addons: (ci.addons || []).map((a) => a.id),
-          };
+            return {
+              item_id: ci.menuItem.id,
+              name: ci.menuItem.name,
+              product_name: displayProductName,
+              size_label: ci.sizeLabel,
+              unit_price: ci.price,
+              quantity: ci.quantity,
+              milk_option: ci.milkOption,
+              addons: (ci.addons || []).map((a) => a.id),
+            };
+          }),
+          points_used: pointsToUse,
+          note: combinedOrderNote,
+          customer_name: cleanName,
+          customer_phone: cleanPhone,
+          customer_address: cleanAddress,
+          fulfillment_type: fulfillmentType,
+          payment_method: fulfillmentType === 'DELIVERY' ? 'COD' : 'CASH',
         }),
-        points_used: pointsToUse,
-        note: combinedOrderNote,
-        customer_name: cleanName,
-        customer_phone: cleanPhone,
-        customer_address: cleanAddress,
-        fulfillment_type: fulfillmentType,
-        payment_method: fulfillmentType === 'DELIVERY' ? 'COD' : 'CASH',
-      }),
-    }).catch((err) => console.warn('Order DB sync:', err));
+      });
+      await refreshProfile();
+    } catch (err) {
+      console.warn('Order DB sync:', err);
+    }
 
     setOrderSuccess({
       code: orderCode,
@@ -455,12 +498,12 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                           </div>
                         )}
 
-                        {/* Add-on Toggles inside Cart (+ Kem Béo / + 1g Matcha Fuji — Đồng giá 5.000đ) */}
+                        {/* Add-on Toggles inside Cart (+ Kem Béo / + 1g Matcha Fuji chỉ cho dòng Matcha — Đồng giá 5.000đ) */}
                         {!isBottled && (
                           <div className={styles.cartOptRow}>
                             <span className={styles.cartOptLabel}>Thêm (+5k):</span>
                             <div className={styles.cartOptChips}>
-                              {MENU_ADDONS.map((addon) => {
+                              {getAddonsForItem(ci.menuItem).map((addon) => {
                                 const active = (ci.addons || []).some((a) => a.id === addon.id);
                                 return (
                                   <button
@@ -625,7 +668,7 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <div className={styles.pointsHeader}>
                   <span className={styles.pointsLabel}>
                     <StarSolidIcon size={13} className={styles.goldIcon} />
-                    <span>Dùng điểm thưởng Ủ LAB</span>
+                    <span>Tích &amp; Trừ điểm SĐT Ủ LAB ({activeTierName} · {activeTierRate}%)</span>
                   </span>
                   <span className={styles.pointsBalance}>
                     Số dư: <strong>{formatVND(userPointBalance)}</strong>
@@ -643,17 +686,35 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       setPointsToUse(Math.min(Math.max(0, val), maxUsablePoints));
                     }}
                     className={styles.input}
-                    placeholder="Nhập số điểm muốn trừ..."
+                    placeholder={
+                      profile
+                        ? 'Nhập số điểm muốn trừ...'
+                        : 'Đăng nhập hoặc đọc SĐT tại quầy để trừ điểm...'
+                    }
+                    disabled={!profile || maxUsablePoints <= 0}
                     aria-label="Số điểm thưởng muốn dùng"
                   />
                   <button
                     type="button"
                     className={styles.useAllBtn}
                     onClick={() => setPointsToUse(maxUsablePoints)}
-                    disabled={maxUsablePoints <= 0}
+                    disabled={!profile || maxUsablePoints <= 0}
                   >
                     Dùng tối đa
                   </button>
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: '0.775rem',
+                    lineHeight: 1.4,
+                    color: pointsToUse > 0 ? '#B45309' : '#006241',
+                    fontWeight: 600,
+                  }}
+                >
+                  {pointsToUse > 0
+                    ? `⚠️ Lưu ý: Đơn hàng có áp dụng trừ điểm ví (-${formatVND(pointsToUse)}) sẽ không tích điểm mới.`
+                    : `✨ Đọc SĐT tại quầy hoặc xác nhận đơn để tích tự động +${formatVND(estimatedOrderCashback)} (${activeTierRate}% hạng ${activeTierName}).`}
                 </div>
               </div>
             </div>

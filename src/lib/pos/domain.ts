@@ -1,4 +1,4 @@
-import { allMenuItems, type MenuItem as StaticMenuItem } from '../../data/menu';
+import { allMenuItems, isMatchaItem, type MenuItem as StaticMenuItem } from '../../data/menu';
 
 export const DEFAULT_BUSINESS_ID = '00000000-0000-0000-0000-000000000001';
 export const DEFAULT_LOCATION_ID = '00000000-0000-0000-0000-000000000002';
@@ -181,9 +181,18 @@ export function normalizePosItems(
         ? 'Ướp lạnh (Chai)'
         : it.options?.ice || '100% đá';
 
+      const isMatcha = isMatchaItem({
+        categorySlug: matchedItem?.categorySlug,
+        category: matchedItem?.category,
+        name: matchedItem?.name || it.productName,
+      });
+      const filteredAddonIds = (it.options?.addons || []).filter((id) =>
+        id === '1g-matcha-fuji' ? isMatcha : true
+      );
+
       const { addons, addonTotal } = isBottled
         ? { addons: [], addonTotal: 0 }
-        : resolveAddons(it.options?.addons);
+        : resolveAddons(filteredAddonIds);
 
       const unitPrice = basePrice + addonTotal;
       const subtotal = unitPrice * qty;

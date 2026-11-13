@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { verifyAdmin, escapeFilterInput } from '@/lib/auth-utils';
+import { verifyAdmin, verifyPosStaff, escapeFilterInput } from '@/lib/auth-utils';
 import { NextRequest, NextResponse } from 'next/server';
 
 // Default vouchers catalog
@@ -57,8 +57,9 @@ const defaultVouchers = [
 // GET /api/admin/loyalty — Get tiers, transactions, and vouchers
 export async function GET(request: NextRequest) {
   try {
-    const admin = await verifyAdmin();
-    if (!admin) {
+    const staff = await verifyPosStaff();
+    const admin = staff || (await verifyAdmin());
+    if (!admin || (staff && staff.staffRole === 'INVENTORY_STAFF')) {
       return NextResponse.json({ error: 'Không có quyền truy cập' }, { status: 403 });
     }
 

@@ -765,7 +765,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                       />
 
                       <div className={styles.quickPillRow}>
-                        {[30000, 35000, 40000, 45000, 70000, 80000, 90000].map((val) => (
+                        {[30000, 35000, 40000, 45000, 70000, 75000, 100000].map((val) => (
                           <button
                             key={val}
                             type="button"

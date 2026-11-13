@@ -31,7 +31,7 @@ describe('M01 POS Domain Logic', () => {
         {
           itemId: 'pure-black-cold-brew',
           productName: 'Pure Black Cold Brew',
-          sizeLabel: 'Chai', // 80,000đ
+          sizeLabel: 'Chai', // 70,000đ
           quantity: 1,
         },
       ],
@@ -42,10 +42,10 @@ describe('M01 POS Domain Logic', () => {
 
     assert.equal(result.validation.valid, true);
     assert.equal(result.totals.totalQuantity, 3);
-    // (40,000 + 5,000) * 2 + 80,000 = 90,000 + 80,000 = 170,000
-    assert.equal(result.totals.subtotal, 170000);
-    assert.equal(result.totals.totalDue, 170000);
-    assert.equal(result.totals.changeDue, 30000);
+    // (40,000 + 5,000) * 2 + 70,000 = 90,000 + 70,000 = 160,000
+    assert.equal(result.totals.subtotal, 160000);
+    assert.equal(result.totals.totalDue, 160000);
+    assert.equal(result.totals.changeDue, 40000);
   });
 
   it('enforces role-based discount limits for CASHIER vs MANAGER/ADMIN', () => {
@@ -213,7 +213,7 @@ describe('M01 POS Domain Logic', () => {
     assert.match(receiptHtml, /28\.000đ/);
   });
 
-  it('correctly prices Cold Brew Chanh Vang Chai at 90.000đ without colliding with Cup size M 30.000đ', () => {
+  it('correctly prices Cold Brew Chanh Vang Chai at 75.000đ without colliding with Cup size M 30.000đ', () => {
     // 1. Bottled version with sizeLabel Chai and id cold-brew-chanh-vang-chai
     const bottleResult = calculatePosOrderTotals({
       items: [
@@ -229,9 +229,9 @@ describe('M01 POS Domain Logic', () => {
       staffRole: 'CASHIER',
     });
     assert.equal(bottleResult.validation.valid, true);
-    assert.equal(bottleResult.totals.items[0].unitPrice, 90000);
+    assert.equal(bottleResult.totals.items[0].unitPrice, 75000);
     assert.equal(bottleResult.totals.items[0].sizeLabel, 'Chai');
-    assert.equal(bottleResult.totals.subtotal, 90000);
+    assert.equal(bottleResult.totals.subtotal, 75000);
 
     // 2. Resilient resolution: even if itemId was loosely cold-brew-chanh-vang but size is Chai
     const resilientBottleResult = calculatePosOrderTotals({
@@ -241,7 +241,7 @@ describe('M01 POS Domain Logic', () => {
           productName: 'Cold Brew Chanh Vàng',
           sizeLabel: 'Chai',
           quantity: 2,
-          unitPriceOverride: 90000,
+          unitPriceOverride: 75000,
         },
       ],
       paymentMethod: 'CASH',
@@ -249,9 +249,9 @@ describe('M01 POS Domain Logic', () => {
       staffRole: 'CASHIER',
     });
     assert.equal(resilientBottleResult.validation.valid, true);
-    assert.equal(resilientBottleResult.totals.items[0].unitPrice, 90000);
+    assert.equal(resilientBottleResult.totals.items[0].unitPrice, 75000);
     assert.equal(resilientBottleResult.totals.items[0].sizeLabel, 'Chai');
-    assert.equal(resilientBottleResult.totals.subtotal, 180000);
+    assert.equal(resilientBottleResult.totals.subtotal, 150000);
 
     // 3. Cup version size M (30,000đ) and size L (35,000đ)
     const cupResult = calculatePosOrderTotals({
@@ -351,8 +351,8 @@ describe('M01 POS Domain Logic', () => {
     assert.equal(res.totals.items[5].unitPrice, 35000);
     assert.equal(res.totals.items[6].unitPrice, 40000);
     assert.equal(res.totals.items[7].productName, 'Pure Black Cold Brew');
-    assert.equal(res.totals.items[7].unitPrice, 80000);
-    assert.equal(res.totals.subtotal, 360000);
+    assert.equal(res.totals.items[7].unitPrice, 70000);
+    assert.equal(res.totals.subtotal, 350000);
   });
 
   it('calculates Counter Phone Loyalty cashback accurately by member tier % (3%, 5%, 7%, 10%) when no points are deducted', () => {

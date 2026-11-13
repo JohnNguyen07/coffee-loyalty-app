@@ -17,6 +17,26 @@ export const MENU_ADDONS: MenuAddon[] = [
   { id: '1g-matcha-fuji', name: '1g Matcha Fuji', price: 5000 },
 ];
 
+export function isMatchaItem(item: {
+  categorySlug?: string;
+  category?: string;
+  name?: string;
+}): boolean {
+  const slug = (item.categorySlug || '').toLowerCase();
+  const cat = (item.category || '').toLowerCase();
+  const name = (item.name || '').toLowerCase();
+  return slug === 'matcha' || cat.includes('matcha') || name.includes('matcha');
+}
+
+export function getAddonsForItem(item: {
+  categorySlug?: string;
+  category?: string;
+  name?: string;
+}): MenuAddon[] {
+  const matcha = isMatchaItem(item);
+  return MENU_ADDONS.filter((addon) => (addon.id === '1g-matcha-fuji' ? matcha : true));
+}
+
 export const MILK_OPTIONS = ['Sữa thanh trùng', 'Sữa Oat'] as const;
 export type MilkOption = (typeof MILK_OPTIONS)[number];
 
@@ -236,7 +256,7 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'cold-brew-chai',
         tag: 'Bottled Craft',
         sizes: [
-          { label: 'Chai', price: 90000 },
+          { label: 'Chai', price: 75000 },
         ],
       },
       {
@@ -247,7 +267,7 @@ export const menuData: MenuCategory[] = [
         categorySlug: 'cold-brew-chai',
         tag: 'Zero Sugar',
         sizes: [
-          { label: 'Chai', price: 80000 },
+          { label: 'Chai', price: 70000 },
         ],
       },
     ],

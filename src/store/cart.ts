@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MenuItem, MENU_ADDONS, type MenuAddon, type MilkOption } from '@/data/menu';
+import { MenuItem, getAddonsForItem, type MenuAddon, type MilkOption } from '@/data/menu';
 
 export interface CartItemOptions {
   milkOption?: MilkOption;
@@ -24,11 +24,15 @@ function buildCartKey(itemId: string, sizeIndex: number, milkOption?: string, ad
   return `${itemId}__${sizeIndex}__${milkOption || 'default'}__${sortedAddons}`;
 }
 
-function resolveMenuAddons(addonIds?: string[]): { addons: MenuAddon[]; addonPrice: number } {
+function resolveMenuAddons(
+  item: MenuItem,
+  addonIds?: string[]
+): { addons: MenuAddon[]; addonPrice: number } {
   if (!addonIds || addonIds.length === 0) return { addons: [], addonPrice: 0 };
+  const allowedAddons = getAddonsForItem(item);
   const unique = Array.from(new Set(addonIds));
   const addons = unique
-    .map((id) => MENU_ADDONS.find((a) => a.id === id))
+    .map((id) => allowedAddons.find((a) => a.id === id))
     .filter((a): a is MenuAddon => Boolean(a));
   const addonPrice = addons.reduce((s, a) => s + a.price, 0);
   return { addons, addonPrice };
@@ -62,7 +66,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         : undefined;
     const { addons, addonPrice } = isBottled
       ? { addons: [], addonPrice: 0 }
-      : resolveMenuAddons(options?.addons);
+      : resolveMenuAddons(item, options?.addons);
     const addonIds = addons.map((a) => a.id);
     const cartKey = buildCartKey(item.id, sizeIndex, milkOption, addonIds);
     const unitPrice = size.price + addonPrice;
@@ -147,7 +151,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         const nextIds = currentIds.includes(addonId)
           ? currentIds.filter((id) => id !== addonId)
           : [...currentIds, addonId];
-        const { addons, addonPrice } = resolveMenuAddons(nextIds);
+        const { addons, addonPrice } = resolveMenuAddons(ci.menuItem, nextIds);
         const nextKey = buildCartKey(ci.menuItem.id, ci.sizeIndex, ci.milkOption, nextIds);
         return {
           ...ci,

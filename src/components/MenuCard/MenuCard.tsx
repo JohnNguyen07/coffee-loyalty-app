@@ -8,6 +8,7 @@ import {
   MILK_OPTIONS,
   type MilkOption,
   formatVND,
+  getAddonsForItem,
 } from '@/data/menu';
 import { useCartStore } from '@/store/cart';
 import {
@@ -33,11 +34,12 @@ export default function MenuCard({ item, index }: MenuCardProps) {
     item.categorySlug === 'cold-brew-chai' ||
     item.sizes[selectedSize]?.label === 'Chai';
 
+  const availableAddons = isBottled ? [] : getAddonsForItem(item);
   const basePrice = item.sizes[selectedSize]?.price || item.sizes[0].price;
   const addonTotal = isBottled
     ? 0
     : selectedAddons.reduce((sum, id) => {
-        const found = MENU_ADDONS.find((a) => a.id === id);
+        const found = availableAddons.find((a) => a.id === id);
         return sum + (found ? found.price : 0);
       }, 0);
   const currentPrice = basePrice + addonTotal;
@@ -166,12 +168,12 @@ export default function MenuCard({ item, index }: MenuCardProps) {
           </div>
         )}
 
-        {/* Add-ons (+ Kem Béo / + 1g Matcha Fuji — Đồng giá 5.000đ) */}
-        {!isBottled && (
+        {/* Add-ons (+ Kem Béo cho mọi món ly / + 1g Matcha Fuji chỉ cho dòng Matcha — Đồng giá 5.000đ) */}
+        {!isBottled && availableAddons.length > 0 && (
           <div className={styles.customGroup}>
             <span className={styles.customLabel}>Lựa chọn thêm (+5.000đ):</span>
             <div className={styles.customPills}>
-              {MENU_ADDONS.map((addon) => {
+              {availableAddons.map((addon) => {
                 const active = selectedAddons.includes(addon.id);
                 return (
                   <button

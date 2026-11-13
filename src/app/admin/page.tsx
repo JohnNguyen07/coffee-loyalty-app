@@ -14,7 +14,7 @@ import LoyaltyPanel, { LoyaltySubTab } from '@/components/Admin/LoyaltyPanel';
 import RevenuePanel from '@/components/Admin/RevenuePanel';
 import InventoryPanel from '@/components/Admin/InventoryPanel';
 import LocationsRbacPanel from '@/components/Admin/LocationsRbacPanel';
-import { type MvpRole } from '@/lib/rbac/domain';
+import { type MvpRole, canAccessMenuTab } from '@/lib/rbac/domain';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
@@ -46,7 +46,14 @@ export default function AdminPage() {
       .then((res) => res.json())
       .then((data) => {
         if (active && data.success && data.profile?.role) {
-          setUserRole(data.profile.role as MvpRole);
+          const role = data.profile.role as MvpRole;
+          setUserRole(role);
+          setActiveTab((prevTab) => {
+            if (!canAccessMenuTab(role, prevTab)) {
+              return role === 'INVENTORY_STAFF' ? 'inventory' : 'pos';
+            }
+            return prevTab;
+          });
         }
       })
       .catch((err) => {

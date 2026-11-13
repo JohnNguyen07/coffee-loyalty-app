@@ -1,10 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { verifyPosStaff } from '@/lib/auth-utils';
 import { NextRequest, NextResponse } from 'next/server';
 import { allMenuItems, MENU_ADDONS } from '@/data/menu';
 import { cookies } from 'next/headers';
 
-async function resolveProfile(user: { id: string; email?: string | null } | null, customerPhone?: string) {
+async function resolveProfile(
+  user: { id: string; email?: string | null } | null,
+  customerPhone?: string,
+  customerName?: string
+) {
   const adminClient = createAdminClient();
   let profile: { id: string; role: string; point_balance: number } | null = null;
 
@@ -59,6 +64,36 @@ async function resolveProfile(user: { id: string; email?: string | null } | null
         .eq('phone', cleanPhone)
         .maybeSingle();
       profile = byPhone;
+
+      // Auto-register member profile for valid phone numbers so phone loyalty works seamlessly
+      if (!profile && /^0\d{8,10}$/.test(cleanPhone)) {
+        const { data: memberTier } = await adminClient
+          .from('tiers')
+          .select('id')
+          .eq('code', 'MEMBER')
+          .maybeSingle();
+
+        if (memberTier) {
+          const autoName = customerName?.trim() || `Thành viên ${cleanPhone.slice(-4)}`;
+          const { data: created } = await adminClient
+            .from('users')
+            .insert({
+              full_name: autoName,
+              phone: cleanPhone,
+              email: `member.${cleanPhone}@ulab.vn`,
+              role: 'USER',
+              current_tier_id: memberTier.id,
+              point_balance: 0,
+              total_spending: 0,
+              locked_points: 0,
+            })
+            .select('id, role, point_balance')
+            .maybeSingle();
+          if (created) {
+            profile = created;
+          }
+        }
+      }
     }
   }
 
@@ -71,13 +106,13 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const body = await request.json();
-  const { items, points_used, note, customer_phone } = body;
+  const { items, points_used, note, customer_phone, customer_name, order_code } = body;
 
   if (!items || items.length === 0) {
     return NextResponse.json({ error: 'Giỏ hàng trống' }, { status: 400 });
   }
 
-  const { profile, adminClient } = await resolveProfile(user, customer_phone);
+  const { profile, adminClient } = await resolveProfile(user, customer_phone, customer_name);
 
   // Normalize items and calculate subtotal using SERVER-SIDE prices (including add-ons)
   const normalizedItems = items.map(
@@ -136,32 +171,42 @@ export async function POST(request: NextRequest) {
 
   const subtotal = normalizedItems.reduce((sum: number, it: { subtotal: number }) => sum + it.subtotal, 0);
   const availablePoints = profile?.point_balance || 0;
-  const pointsToUse = profile ? Math.min(points_used || 0, availablePoints, subtotal) : 0;
+  const pointsToUse = profile ? Math.min(Math.max(0, Math.floor(Number(points_used) || 0)), availablePoints, subtotal) : 0;
   const totalDue = subtotal - pointsToUse;
 
-  // 1. If profile exists, try creating order with items using RPC for atomicity
-  if (profile) {
-    const { data: rpcResult, error: rpcError } = await adminClient.rpc('create_order', {
-      p_user_id: profile.id,
-      p_items: normalizedItems,
-      p_points_used: pointsToUse,
-      p_subtotal: subtotal,
-      p_total_due: totalDue,
-      p_note: note || null,
-    });
-
-    if (!rpcError && rpcResult) {
-      return NextResponse.json({ success: true, order: rpcResult });
-    }
+  // Resolve fallback user_id if profile is null and database requires user_id NOT NULL
+  let targetUserId = profile?.id || null;
+  if (!targetUserId) {
+    const { data: fallbackAdmin } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('role', 'ADMIN')
+      .limit(1)
+      .maybeSingle();
+    targetUserId = fallbackAdmin?.id || null;
   }
 
-  // 2. Fallback direct insert
-  const orderCode = `CF-${Math.floor(1000 + Math.random() * 9000)}`;
+  const cleanRequestedCode =
+    typeof order_code === 'string' && /^CF-\d{4,6}$/.test(order_code.trim())
+      ? order_code.trim()
+      : `CF-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  // Ensure uniqueness of orderCode
+  const { data: existingOrderCode } = await adminClient
+    .from('orders')
+    .select('id')
+    .eq('order_code', cleanRequestedCode)
+    .maybeSingle();
+
+  const orderCode = existingOrderCode
+    ? `CF-${Math.floor(1000 + Math.random() * 9000)}`
+    : cleanRequestedCode;
+
   const { data: insertedOrder, error: orderErr } = await adminClient
     .from('orders')
     .insert({
       order_code: orderCode,
-      user_id: profile?.id || null,
+      user_id: targetUserId,
       status: 'PENDING',
       subtotal,
       points_used: pointsToUse,
@@ -191,7 +236,7 @@ export async function POST(request: NextRequest) {
     const newBalance = Math.max(0, profile.point_balance - pointsToUse);
     await adminClient
       .from('users')
-      .update({ point_balance: newBalance })
+      .update({ point_balance: newBalance, updated_at: new Date().toISOString() })
       .eq('id', profile.id);
 
     await adminClient.from('point_transactions').insert({
@@ -200,20 +245,25 @@ export async function POST(request: NextRequest) {
       amount: -pointsToUse,
       balance_after: newBalance,
       reference_id: insertedOrder.order_code,
-      description: `Dùng điểm cho đơn ${insertedOrder.order_code}`,
+      description: `Dùng điểm cho đơn ${insertedOrder.order_code} (Đơn trừ tiền không tích điểm mới)`,
     });
   }
 
   return NextResponse.json({ success: true, order: insertedOrder });
 }
 
-// GET /api/orders — Get orders (admin: all, user: own)
+// GET /api/orders — Get orders (staff/admin: all, customer: own)
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const { profile, adminClient } = await resolveProfile(user);
+  const [{ profile, adminClient }, staff] = await Promise.all([
+    resolveProfile(user),
+    verifyPosStaff(),
+  ]);
 
-  if (!profile) {
+  const isStaffOrAdmin = Boolean(staff) || profile?.role === 'ADMIN';
+
+  if (!profile && !isStaffOrAdmin) {
     return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
   }
 
@@ -230,8 +280,8 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // Admin sees all, user sees only own orders
-    if (profile.role !== 'ADMIN') {
+    // Staff/Admin sees all orders, regular customer sees only own orders
+    if (!isStaffOrAdmin && profile) {
       q = q.eq('user_id', profile.id);
     }
 
