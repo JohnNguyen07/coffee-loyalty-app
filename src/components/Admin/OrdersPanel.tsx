@@ -4,9 +4,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import styles from './OrdersPanel.module.css';
 import { formatVND } from '@/data/menu';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { extractPosOrderMetadata } from '@/lib/pos/domain';
+import {
+  FULFILLMENT_STATUS_LABELS,
+  calculateOrderWaitStatus,
+  extractPosOrderMetadata,
+  normalizeFulfillmentStatus,
+  type FulfillmentStatus,
+} from '@/lib/pos/domain';
 import { buildBaristaTicketHtml, buildCustomerReceiptHtml } from '@/lib/pos/print-templates';
-import type { PosOrderRecord } from '@/lib/pos/repository';
+import type { OrderAuditLogItem, PosOrderRecord } from '@/lib/pos/repository';
 
 interface OrderItem {
   item_name: string;
@@ -29,6 +35,7 @@ export interface DemoOrder {
   shipping_fee: number;
   total_due: number;
   status: 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+  fulfillment_status: FulfillmentStatus;
   channel: 'POS' | 'WEB';
   order_type: 'TAKEAWAY' | 'DINE_IN' | 'DELIVERY';
   payment_method?: string;
@@ -57,6 +64,7 @@ const defaultSingleOrder: DemoOrder[] = [
     shipping_fee: 0,
     total_due: 24000,
     status: 'CONFIRMED',
+    fulfillment_status: 'COMPLETED',
     channel: 'WEB',
     order_type: 'TAKEAWAY',
     payment_method: 'CASH',
@@ -79,15 +87,25 @@ const QUICK_CANCEL_REASONS = [
   'Khách đổi ý / Không liên lạc được',
 ];
 
+const FULFILLMENT_FILTER_TABS: { key: 'ALL' | FulfillmentStatus; label: string }[] = [
+  { key: 'ALL', label: 'Tất cả tiến độ' },
+  { key: 'PENDING', label: 'Chờ tiếp nhận' },
+  { key: 'PREPARING', label: 'Đang pha chế' },
+  { key: 'READY', label: 'Sẵn sàng giao' },
+  { key: 'COMPLETED', label: 'Hoàn tất' },
+];
+
 export default function OrdersPanel() {
   const [orders, setOrders] = useState<DemoOrder[]>(defaultSingleOrder);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<'ALL' | FulfillmentStatus>('ALL');
   const [channelFilter, setChannelFilter] = useState<'ALL' | 'WEB' | 'POS'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dateFilter, setDateFilter] = useState<string>(''); // YYYY-MM-DD
   const [loading, setLoading] = useState<boolean>(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [actionBanner, setActionBanner] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [nowDate, setNowDate] = useState<Date | null>(null);
 
   // Inline Shipping Fee Editing State
   const [editingShippingId, setEditingShippingId] = useState<string | null>(null);
@@ -96,6 +114,11 @@ export default function OrdersPanel() {
   // Cancel Order Modal State
   const [cancellingOrder, setCancellingOrder] = useState<DemoOrder | null>(null);
   const [cancelReasonInput, setCancelReasonInput] = useState<string>('');
+
+  // Audit Log Modal State
+  const [auditModalOrder, setAuditModalOrder] = useState<DemoOrder | null>(null);
+  const [auditLogs, setAuditLogs] = useState<OrderAuditLogItem[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState<boolean>(false);
 
   const fetchOrders = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
@@ -168,15 +191,29 @@ export default function OrdersPanel() {
               }
             }
 
+            const orderStatus = (o.status as DemoOrder['status']) || 'PENDING';
+            const channel: 'POS' | 'WEB' = isPos ? 'POS' : 'WEB';
+            const resolvedFulfillment = normalizeFulfillmentStatus(
+              typeof o.fulfillment_status === 'string' ? o.fulfillment_status : meta.fulfillmentStatus,
+              orderStatus,
+              channel
+            );
+            const resolvedShipping =
+              Number(o.shipping_fee) || shippingFee || meta.shippingFee || 0;
+
             return {
               id: String(o.id),
               order_code: String(o.order_code || `CF-${String(o.id).slice(0, 4).toUpperCase()}`),
               customer_name: parsedName,
               customer_phone: parsedPhone,
               cashier_name: isPos ? meta.cashierName || 'Thu ngân Ủ LAB' : null,
-              channel: isPos ? 'POS' : 'WEB',
+              channel,
               order_type: orderType,
-              customer_address: address,
+              customer_address:
+                (typeof o.customer_address === 'string' && o.customer_address) ||
+                address ||
+                meta.customerAddress ||
+                null,
               items: itemsArr.map((it: Record<string, unknown>) => {
                 const rawItemName = String(it.product_name || it.item_name || it.name || 'Món nước');
                 const optMatch = rawItemName.match(/\[(.*?)\]$/);
@@ -193,9 +230,10 @@ export default function OrdersPanel() {
               discount_amount: meta.discountAmount || 0,
               discount_percent: meta.discountPercent || 0,
               points_used: Number(o.points_used) || 0,
-              shipping_fee: shippingFee,
+              shipping_fee: resolvedShipping,
               total_due: Number(o.total_due) || 0,
-              status: (o.status as DemoOrder['status']) || 'PENDING',
+              status: orderStatus,
+              fulfillment_status: resolvedFulfillment,
               payment_method: typeof o.payment_method === 'string' ? o.payment_method : meta.paymentMethod,
               payment_status: typeof o.payment_status === 'string' ? o.payment_status : meta.paymentStatus,
               note: rawNote,
@@ -214,6 +252,8 @@ export default function OrdersPanel() {
             };
           });
           setOrders(mapped);
+        } else if (Array.isArray(data.orders) && data.orders.length === 0) {
+          setOrders([]);
         }
       }
     } catch (err) {
@@ -224,23 +264,64 @@ export default function OrdersPanel() {
   }, []);
 
   useEffect(() => {
-    fetchOrders();
+    const initTimer = setTimeout(() => {
+      setNowDate(new Date());
+      void fetchOrders();
+    }, 0);
     const timer = setInterval(() => {
-      fetchOrders();
+      void fetchOrders();
     }, 25000);
-    const handleLocationChanged = () => fetchOrders();
+    const slaTimer = setInterval(() => {
+      setNowDate(new Date());
+    }, 30000);
+    const handleLocationChanged = () => {
+      void fetchOrders();
+    };
     window.addEventListener('ulab:location-changed', handleLocationChanged);
     return () => {
+      clearTimeout(initTimer);
       clearInterval(timer);
+      clearInterval(slaTimer);
       window.removeEventListener('ulab:location-changed', handleLocationChanged);
     };
   }, [fetchOrders]);
 
-  // Filter orders by status, channel, search query, and date
+  const kpiStats = useMemo(() => {
+    const activeOpenCount = orders.filter(
+      (o) =>
+        o.status !== 'CANCELLED' &&
+        (o.fulfillment_status === 'PENDING' ||
+          o.fulfillment_status === 'PREPARING' ||
+          o.fulfillment_status === 'READY')
+    ).length;
+    const completedCount = orders.filter(
+      (o) => o.status !== 'CANCELLED' && o.fulfillment_status === 'COMPLETED'
+    ).length;
+    const cancelledCount = orders.filter((o) => o.status === 'CANCELLED').length;
+    const collectedRevenue = orders
+      .filter(
+        (o) =>
+          o.status !== 'CANCELLED' &&
+          (o.payment_status === 'PAID' || (o.note || '').includes('Đã thanh toán'))
+      )
+      .reduce((sum, o) => sum + o.total_due, 0);
+
+    return {
+      total: orders.length,
+      activeOpenCount,
+      completedCount,
+      cancelledCount,
+      collectedRevenue,
+    };
+  }, [orders]);
+
+  // Filter orders by status, fulfillment, channel, search query, and date
   const filteredOrders = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return orders.filter((o) => {
       const matchStatus = statusFilter === 'ALL' ? true : o.status === statusFilter;
+      const matchFulfillment =
+        fulfillmentFilter === 'ALL' ? true : o.fulfillment_status === fulfillmentFilter;
       const matchChannel = channelFilter === 'ALL' ? true : o.channel === channelFilter;
 
       let matchDate = true;
@@ -260,9 +341,9 @@ export default function OrdersPanel() {
         matchSearch = inCode || inName || inPhone || inItems;
       }
 
-      return matchStatus && matchChannel && matchDate && matchSearch;
+      return matchStatus && matchFulfillment && matchChannel && matchDate && matchSearch;
     });
-  }, [orders, statusFilter, channelFilter, searchQuery, dateFilter]);
+  }, [orders, statusFilter, fulfillmentFilter, channelFilter, searchQuery, dateFilter]);
 
   const handleAction = async (
     orderId: string,
@@ -302,6 +383,7 @@ export default function OrdersPanel() {
             return {
               ...o,
               status: 'CANCELLED',
+              fulfillment_status: 'CANCELLED',
               payment_status: 'REFUNDED',
               cancel_reason: cancelReason || 'Khách báo hủy đơn',
             };
@@ -310,11 +392,16 @@ export default function OrdersPanel() {
             return {
               ...o,
               status: 'CONFIRMED',
+              fulfillment_status: o.fulfillment_status === 'PENDING' ? 'PREPARING' : o.fulfillment_status,
               payment_method: paymentMethod || 'CASH',
               payment_status: 'PAID',
             };
           }
-          return { ...o, status: 'CONFIRMED' };
+          return {
+            ...o,
+            status: 'CONFIRMED',
+            fulfillment_status: o.fulfillment_status === 'PENDING' ? 'PREPARING' : o.fulfillment_status,
+          };
         })
       );
       setActionBanner({
@@ -330,6 +417,129 @@ export default function OrdersPanel() {
     } finally {
       setProcessingId(null);
     }
+  };
+
+  const handleUpdateFulfillment = async (
+    order: DemoOrder,
+    nextFulfillment: Exclude<FulfillmentStatus, 'PENDING' | 'CANCELLED'>
+  ) => {
+    setProcessingId(order.id);
+    setActionBanner(null);
+    try {
+      if (isSupabaseConfigured()) {
+        const res = await fetch(`/api/orders/${order.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update_fulfillment',
+            fulfillment_status: nextFulfillment,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setActionBanner({
+            text: data.error || 'Không thể cập nhật tiến độ phục vụ.',
+            isError: true,
+          });
+          setProcessingId(null);
+          return;
+        }
+      }
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id ? { ...o, fulfillment_status: nextFulfillment } : o
+        )
+      );
+      setActionBanner({
+        text: `Đơn #${order.order_code} đã chuyển sang "${FULFILLMENT_STATUS_LABELS[nextFulfillment]}".`,
+      });
+    } catch {
+      setActionBanner({ text: 'Lỗi kết nối khi cập nhật tiến độ đơn hàng.', isError: true });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleOpenAuditModal = async (order: DemoOrder) => {
+    setAuditModalOrder(order);
+    setAuditLogs([]);
+    setLoadingAuditLogs(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(Array.isArray(data.auditLogs) ? data.auditLogs : []);
+      }
+    } catch {
+      setAuditLogs([]);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  const handleExportCsv = () => {
+    if (filteredOrders.length === 0) {
+      setActionBanner({ text: 'Không có đơn hàng nào để xuất CSV.', isError: true });
+      return;
+    }
+
+    const escapeCsv = (val: unknown) => {
+      const s = String(val ?? '').replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const headers = [
+      'Ma don',
+      'Thoi gian',
+      'Kenh',
+      'Hinh thuc',
+      'Khach hang',
+      'SDT',
+      'Trang thai',
+      'Tien do',
+      'Thanh toan',
+      'Tam tinh',
+      'Giam gia',
+      'Diem vi',
+      'Phi ship',
+      'Tong thu',
+      'Danh sach mon',
+    ];
+
+    const rows = filteredOrders.map((o) => [
+      o.order_code,
+      o.created_at,
+      o.channel,
+      o.order_type,
+      o.customer_name,
+      o.customer_phone,
+      o.status,
+      FULFILLMENT_STATUS_LABELS[o.fulfillment_status],
+      isOrderPaid(o) ? 'PAID' : 'UNPAID',
+      o.subtotal,
+      o.discount_amount || 0,
+      o.points_used || 0,
+      o.shipping_fee || 0,
+      o.total_due,
+      o.items.map((it) => `${it.quantity}x ${it.item_name} (${it.size_label})`).join('; '),
+    ]);
+
+    const csvContent =
+      '\uFEFF' +
+      [headers.map(escapeCsv).join(','), ...rows.map((r) => r.map(escapeCsv).join(','))].join(
+        '\r\n'
+      );
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ulab-don-hang-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleConfirmCancelModal = async (e: React.FormEvent) => {
@@ -351,6 +561,7 @@ export default function OrdersPanel() {
     id: order.id,
     orderCode: order.order_code,
     status: order.status,
+    fulfillmentStatus: order.fulfillment_status,
     channel: order.channel,
     orderType: order.order_type,
     paymentMethod: 'CASH',
@@ -359,6 +570,8 @@ export default function OrdersPanel() {
     discountAmount: order.discount_amount || 0,
     discountPercent: order.discount_percent || 0,
     pointsUsed: order.points_used,
+    shippingFee: order.shipping_fee || 0,
+    customerAddress: order.customer_address || undefined,
     totalDue: order.total_due,
     amountReceived: order.total_due,
     changeDue: 0,
@@ -449,17 +662,59 @@ export default function OrdersPanel() {
         <div>
           <h1 className={styles.title}>Quản Lý Đơn Hàng</h1>
           <p className={styles.subtitle}>
-            Tiếp nhận đơn đặt trước từ website, quản lý đơn quầy POS, in phiếu pha chế / biên nhận và đối soát tức thì.
+            Tiếp nhận đơn đặt trước từ website, quản lý đơn quầy POS, theo dõi SLA pha chế, in phiếu và đối soát tức thì.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchOrders}
-          disabled={loading}
-          className={styles.refreshBtn}
-        >
-          {loading ? 'Đang tải...' : '↻ Làm mới đơn'}
-        </button>
+        <div className={styles.headerActionsRow}>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className={styles.exportCsvBtn}
+            title="Xuất danh sách đơn đang lọc ra file CSV (Excel)"
+          >
+            📥 Xuất CSV ({filteredOrders.length})
+          </button>
+          <button
+            type="button"
+            onClick={fetchOrders}
+            disabled={loading}
+            className={styles.refreshBtn}
+          >
+            {loading ? 'Đang tải...' : '↻ Làm mới đơn'}
+          </button>
+        </div>
+      </div>
+
+      {/* 5-Card KPI Overview Strip */}
+      <div className={styles.kpiStrip}>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Tổng đơn hiện có</span>
+          <strong className={styles.kpiVal}>{kpiStats.total}</strong>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Đang chờ / Pha chế</span>
+          <strong className={`${styles.kpiVal} ${styles.kpiAccentAmber}`}>
+            {kpiStats.activeOpenCount}
+          </strong>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Đã hoàn tất giao</span>
+          <strong className={`${styles.kpiVal} ${styles.kpiAccentGreen}`}>
+            {kpiStats.completedCount}
+          </strong>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Đơn đã hủy</span>
+          <strong className={`${styles.kpiVal} ${styles.kpiAccentRed}`}>
+            {kpiStats.cancelledCount}
+          </strong>
+        </div>
+        <div className={styles.kpiCard}>
+          <span className={styles.kpiLabel}>Doanh thu thực thu</span>
+          <strong className={`${styles.kpiVal} ${styles.kpiAccentGreen}`}>
+            {formatVND(kpiStats.collectedRevenue)}
+          </strong>
+        </div>
       </div>
 
       {actionBanner && (
@@ -571,6 +826,28 @@ export default function OrdersPanel() {
         ))}
       </div>
 
+      {/* Fulfillment Progress Filters */}
+      <div className={styles.fulfillmentFiltersRow} aria-label="Lọc theo tiến độ pha chế">
+        {FULFILLMENT_FILTER_TABS.map((tab) => {
+          const count =
+            tab.key === 'ALL'
+              ? orders.length
+              : orders.filter((o) => o.fulfillment_status === tab.key).length;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              className={`${styles.fulfillmentPillBtn} ${
+                fulfillmentFilter === tab.key ? styles.fulfillmentPillActive : ''
+              }`}
+              onClick={() => setFulfillmentFilter(tab.key)}
+            >
+              {tab.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       {/* Order List */}
       <div className={styles.orderList}>
         {filteredOrders.map((order) => {
@@ -580,6 +857,10 @@ export default function OrdersPanel() {
           const paid = isOrderPaid(order);
           const isEditingShip = editingShippingId === order.id;
           const cleanPhone = order.customer_phone ? order.customer_phone.replace(/\D/g, '') : '';
+          const waitStatus =
+            nowDate && order.raw_created_at && order.status !== 'CANCELLED' && order.fulfillment_status !== 'COMPLETED'
+              ? calculateOrderWaitStatus(order.raw_created_at, order.fulfillment_status, nowDate)
+              : null;
 
           const smsText = `Ủ LAB xin chào bạn ${order.customer_name}! Đơn hàng #${order.order_code}: Tiền nước ${formatVND(order.subtotal)}${order.points_used > 0 ? ` - Điểm ví ${formatVND(order.points_used)}` : ''} + Phí ship ${formatVND(order.shipping_fee || 0)} = Tổng thanh toán: ${formatVND(order.total_due)}. Quán chuẩn bị và giao ngay cho bạn nhé!`;
 
@@ -638,6 +919,35 @@ export default function OrdersPanel() {
                 </div>
 
                 <div className={styles.orderStatusIndicator}>
+                  {order.status !== 'CANCELLED' && (
+                    <span
+                      className={`${styles.badge} ${
+                        order.fulfillment_status === 'COMPLETED'
+                          ? styles.fulfillmentBadgeCompleted
+                          : order.fulfillment_status === 'READY'
+                          ? styles.fulfillmentBadgeReady
+                          : order.fulfillment_status === 'PREPARING'
+                          ? styles.fulfillmentBadgePreparing
+                          : styles.fulfillmentBadgePending
+                      }`}
+                    >
+                      {FULFILLMENT_STATUS_LABELS[order.fulfillment_status]}
+                    </span>
+                  )}
+                  {waitStatus && (
+                    <span
+                      className={`${styles.badge} ${
+                        waitStatus.slaLevel === 'OVERDUE'
+                          ? styles.slaBadgeOverdue
+                          : waitStatus.slaLevel === 'WARNING'
+                          ? styles.slaBadgeWarning
+                          : styles.slaBadgeNormal
+                      }`}
+                      title="Thời gian chờ từ lúc tiếp nhận đơn"
+                    >
+                      ⏱ {waitStatus.label}
+                    </span>
+                  )}
                   {order.status === 'PENDING' && (
                     <span className={`${styles.badge} ${styles.pending}`}>Chờ xác nhận</span>
                   )}
@@ -855,7 +1165,39 @@ export default function OrdersPanel() {
                   </button>
                 )}
 
-                {/* 4. Push to POS option — ONLY for pending/unpaid WEB orders to prevent duplicate POS revenue */}
+                {/* 4. Fulfillment progression buttons */}
+                {order.status !== 'CANCELLED' && order.fulfillment_status === 'PENDING' && (
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.fulfillmentActionBtn}`}
+                    disabled={processingId === order.id}
+                    onClick={() => handleUpdateFulfillment(order, 'PREPARING')}
+                  >
+                    👨‍🍳 Bắt đầu pha
+                  </button>
+                )}
+                {order.status !== 'CANCELLED' && order.fulfillment_status === 'PREPARING' && (
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.fulfillmentActionBtn}`}
+                    disabled={processingId === order.id}
+                    onClick={() => handleUpdateFulfillment(order, 'READY')}
+                  >
+                    🔔 Báo sẵn sàng
+                  </button>
+                )}
+                {order.status !== 'CANCELLED' && order.fulfillment_status === 'READY' && (
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.fulfillmentActionBtn}`}
+                    disabled={processingId === order.id}
+                    onClick={() => handleUpdateFulfillment(order, 'COMPLETED')}
+                  >
+                    ✓ Hoàn tất giao
+                  </button>
+                )}
+
+                {/* 5. Push to POS option — ONLY for pending/unpaid WEB orders to prevent duplicate POS revenue */}
                 {order.channel === 'WEB' && order.status === 'PENDING' && !paid && (
                   <button
                     type="button"
@@ -867,7 +1209,17 @@ export default function OrdersPanel() {
                   </button>
                 )}
 
-                {/* 5. Cancel order button (opens mandatory reason modal) */}
+                {/* 6. Order Audit Trail modal trigger */}
+                <button
+                  type="button"
+                  className={`${styles.actionBtn} ${styles.auditBtn}`}
+                  onClick={() => handleOpenAuditModal(order)}
+                  title="Xem lịch sử thao tác và kiểm toán đơn hàng"
+                >
+                  📜 Nhật ký đơn
+                </button>
+
+                {/* 7. Cancel order button (opens mandatory reason modal) */}
                 {order.status !== 'CANCELLED' && (
                   <button
                     type="button"
@@ -970,6 +1322,67 @@ export default function OrdersPanel() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Order Audit Log Modal */}
+      {auditModalOrder && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalCard}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>
+                📜 Nhật Ký Kiểm Toán #{auditModalOrder.order_code}
+              </h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setAuditModalOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className={styles.modalBody} style={{ alignItems: 'stretch' }}>
+              {loadingAuditLogs ? (
+                <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                  Đang tải lịch sử thao tác...
+                </p>
+              ) : auditLogs.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                  Chưa có bản ghi kiểm toán chi tiết cho đơn hàng này.
+                </p>
+              ) : (
+                <div className={styles.auditLogList}>
+                  {auditLogs.map((log) => (
+                    <div key={log.id} className={styles.auditLogItem}>
+                      <div className={styles.auditLogTop}>
+                        <span className={styles.auditLogAction}>{log.action}</span>
+                        <span className={styles.auditLogTime}>
+                          {new Date(log.createdAt).toLocaleString('vi-VN')}
+                        </span>
+                      </div>
+                      <div style={{ color: '#334155', fontSize: '0.78rem' }}>
+                        Thực hiện bởi: <strong>{log.actorName}</strong> ({log.actorRole})
+                      </div>
+                      {log.reason && (
+                        <div style={{ color: '#0f172a', marginTop: 3 }}>
+                          Ghi chú / Lý do: {log.reason}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                className={styles.clearFilterBtn}
+                style={{ marginTop: 14, width: '100%' }}
+                onClick={() => setAuditModalOrder(null)}
+              >
+                Đóng cửa sổ
+              </button>
+            </div>
           </div>
         </div>
       )}

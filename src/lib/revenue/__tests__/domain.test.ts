@@ -7,8 +7,17 @@ import {
   calculateShiftReconciliation,
   calculateBestSellers,
   calculateHourlySales,
+  calculateDailySales,
+  calculateCategoryRevenue,
+  calculateChannelBreakdown,
+  calculateNetOperatingCashflow,
+  calculateStoreFundOverview,
   getDateRangeBoundaries,
   normalizePaymentMethod,
+  validateCashTransactionInput,
+  validateVoidTransactionInput,
+  validateShiftOpenInput,
+  validateShiftCloseInput,
   type RawOrderForRevenue,
   type CashTransaction,
 } from '../domain';
@@ -248,5 +257,210 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
 
     const custom = getDateRangeBoundaries('CUSTOM', '2026-10-01', '2026-10-15', refDate);
     assert.equal(custom.label, '2026-10-01 đến 2026-10-15');
+  });
+
+  it('aggregates daily sales, category revenue, and channel breakdown accurately', () => {
+    const orders: RawOrderForRevenue[] = [
+      {
+        id: 'd1',
+        order_code: 'POS-261028-0001',
+        status: 'CONFIRMED',
+        channel: 'POS',
+        subtotal: 70000,
+        discount_amount: 0,
+        points_used: 0,
+        total_due: 70000,
+        created_at: '2026-10-28T02:00:00Z', // 09:00 VN on 28/10
+        items: [{ product_name: 'Cold Brew Cam Sả', size: 'M', quantity: 2, subtotal: 70000 }],
+      },
+      {
+        id: 'd2',
+        order_code: 'CF-2001',
+        status: 'CONFIRMED',
+        channel: 'WEB',
+        subtotal: 75000,
+        discount_amount: 5000,
+        points_used: 0,
+        total_due: 70000,
+        created_at: '2026-10-29T03:30:00Z', // 10:30 VN on 29/10
+        items: [{ product_name: 'Cold Brew Chanh Vàng', size: 'Chai', quantity: 1, subtotal: 75000 }],
+      },
+      {
+        id: 'd3',
+        order_code: 'POS-261029-0002',
+        status: 'CONFIRMED',
+        channel: 'POS',
+        subtotal: 60000,
+        discount_amount: 0,
+        points_used: 0,
+        total_due: 60000,
+        created_at: '2026-10-29T04:00:00Z', // 11:00 VN on 29/10
+        items: [{ product_name: 'Matcha Latte', size: 'M', quantity: 1, subtotal: 60000 }],
+      },
+      {
+        id: 'd4',
+        order_code: 'POS-261029-0003',
+        status: 'CANCELLED',
+        channel: 'POS',
+        subtotal: 45000,
+        total_due: 45000,
+        points_used: 0,
+        created_at: '2026-10-29T05:00:00Z',
+      },
+    ];
+
+    const best = calculateBestSellers(orders);
+    assert.equal(best[0].productName, 'Cold Brew Chanh Vàng');
+
+    const hourly = calculateHourlySales(orders);
+    const h09 = hourly.find((h) => h.hourLabel === '09:00');
+    assert.equal(h09?.revenue, 70000);
+
+    const daily = calculateDailySales(orders);
+    assert.equal(daily.length, 2);
+    assert.equal(daily[0].date, '2026-10-28');
+    assert.equal(daily[0].netRevenue, 70000);
+    assert.equal(daily[1].date, '2026-10-29');
+    assert.equal(daily[1].orderCount, 2);
+    assert.equal(daily[1].netRevenue, 130000);
+    assert.equal(daily[1].cancelledCount, 1);
+    assert.equal(daily[1].refundedAmount, 45000);
+
+    const cats = calculateCategoryRevenue(orders);
+    assert.equal(cats.length, 3);
+    assert.equal(cats[0].categoryName, 'Cold Brew Chai');
+    assert.equal(cats[0].totalRevenue, 75000);
+
+    const channels = calculateChannelBreakdown(orders);
+    const pos = channels.find((c) => c.channel === 'POS')!;
+    const web = channels.find((c) => c.channel === 'WEB')!;
+    assert.equal(pos.orderCount, 2);
+    assert.equal(pos.netRevenue, 130000);
+    assert.equal(pos.sharePercent, 65);
+    assert.equal(web.orderCount, 1);
+    assert.equal(web.netRevenue, 70000);
+    assert.equal(web.sharePercent, 35);
+  });
+
+  it('excludes VOIDED vouchers from cashbook balances while keeping audit trail and computes unified store fund', () => {
+    const txs: CashTransaction[] = [
+      {
+        id: '1',
+        code: 'PC-01',
+        type: 'PAYMENT',
+        category: 'RAW_MATERIAL',
+        amount: 50000,
+        recipientPayer: 'Chú Tư đá',
+        createdByName: 'Quản lý',
+        createdAt: '2026-10-29T08:00:00Z',
+        status: 'POSTED',
+      },
+      {
+        id: '2',
+        code: 'PC-02-VOID',
+        type: 'PAYMENT',
+        category: 'RAW_MATERIAL',
+        amount: 5000000,
+        recipientPayer: 'Nhập nhầm',
+        createdByName: 'Thu ngân',
+        createdAt: '2026-10-29T09:00:00Z',
+        status: 'VOIDED',
+        voidReason: 'Nhập thừa số 0',
+      },
+      {
+        id: '3',
+        code: 'PT-01',
+        type: 'RECEIPT',
+        category: 'OPENING_FLOAT',
+        amount: 200000,
+        recipientPayer: 'Chủ quán',
+        createdByName: 'Quản lý',
+        createdAt: '2026-10-29T10:00:00Z',
+        status: 'POSTED',
+      },
+    ];
+
+    const book = calculateCashbookSummary(500000, txs, 1200000, 40000);
+    assert.equal(book.activeCount, 2);
+    assert.equal(book.voidedCount, 1);
+    assert.equal(book.totalIn, 200000);
+    assert.equal(book.totalOut, 50000);
+    assert.equal(book.closingBalance, 650000); // 500k - 50k + 200k (ignored 5M voided)
+    assert.equal(book.transactions[1].status, 'VOIDED'); // newest-first -> PC-02-VOID at index 1
+
+    const fund = calculateStoreFundOverview({
+      openingFloat: 500000,
+      paidSalesInflow: 1200000,
+      manualReceiptInflow: 200000,
+      refundOutflow: 40000,
+      manualPaymentOutflow: 50000,
+    });
+    assert.equal(fund.theoreticalClosingBalance, 1810000);
+    assert.equal(book.storeFund.theoreticalClosingBalance, 1810000);
+
+    const netCashflow = calculateNetOperatingCashflow(
+      {
+        orderRevenue: {
+          grossSales: 1300000,
+          discounts: 60000,
+          pointsDiscount: 40000,
+          netRevenue: 1200000,
+          averageOrderValue: 60000,
+        },
+      },
+      book
+    );
+    assert.equal(netCashflow.totalDiscounts, 100000);
+    assert.equal(netCashflow.netOperatingCashflow, 1150000); // 1.2M - 50k
+  });
+
+  it('validates cashbook vouchers, void reasons, and mandatory variance notes on shift close', () => {
+    const validTx = validateCashTransactionInput({
+      type: 'PAYMENT',
+      category: 'BANK_DEPOSIT',
+      amount: 1000000,
+      recipientPayer: ' Chủ quán ',
+      notes: ' Nộp doanh thu ',
+    });
+    assert.equal(validTx.category, 'BANK_DEPOSIT');
+    assert.equal(validTx.amount, 1000000);
+    assert.equal(validTx.recipientPayer, 'Chủ quán');
+
+    assert.throws(() => validateCashTransactionInput({ type: 'PAYMENT', amount: 0, recipientPayer: 'AB' }));
+    assert.throws(() => validateVoidTransactionInput({ transactionId: '1', reason: 'ab' }));
+    assert.throws(() => validateShiftOpenInput({ shiftName: 'A', openingCash: 500000 }));
+    assert.throws(() => validateShiftOpenInput({ shiftName: 'Ca Sáng', openingCash: -100 }));
+
+    // Blocking cashRetained > actualCash
+    assert.throws(
+      () =>
+        validateShiftCloseInput({
+          expectedCash: 1000000,
+          actualCash: 1000000,
+          cashRetained: 1200000,
+          notes: 'Khớp',
+        }),
+      /vượt quá/
+    );
+
+    // Enforcing mandatory reason when variance !== 0
+    assert.throws(
+      () =>
+        validateShiftCloseInput({
+          expectedCash: 1000000,
+          actualCash: 950000,
+          cashRetained: 500000,
+          notes: '',
+        }),
+      /bắt buộc phải nhập lý do giải trình/
+    );
+
+    const balancedClose = validateShiftCloseInput({
+      expectedCash: 1000000,
+      actualCash: 1000000,
+      cashRetained: 500000,
+    });
+    assert.equal(balancedClose.actualCash, 1000000);
+    assert.equal(balancedClose.cashRetained, 500000);
   });
 });

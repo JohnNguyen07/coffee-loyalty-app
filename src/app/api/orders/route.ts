@@ -2,7 +2,19 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyPosStaff } from '@/lib/auth-utils';
 import { NextRequest, NextResponse } from 'next/server';
-import { allMenuItems, MENU_ADDONS } from '@/data/menu';
+import { MENU_ADDONS } from '@/data/menu';
+import {
+  DEFAULT_BUSINESS_ID,
+  DEFAULT_LOCATION_ID,
+  extractPosOrderMetadata,
+  normalizeFulfillmentStatus,
+  serializePosFallbackNote,
+} from '@/lib/pos/domain';
+import {
+  getPersistedOrderFulfillmentMap,
+  getPosMenuCatalog,
+  matchesOrderLocation,
+} from '@/lib/pos/repository';
 import { cookies } from 'next/headers';
 
 async function resolveProfile(
@@ -106,13 +118,17 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const body = await request.json();
-  const { items, points_used, note, customer_phone, customer_name, order_code } = body;
+  const { items, points_used, note, customer_phone, customer_name, customer_address, location_id, order_code } = body;
 
   if (!items || items.length === 0) {
     return NextResponse.json({ error: 'Giỏ hàng trống' }, { status: 400 });
   }
 
-  const { profile, adminClient } = await resolveProfile(user, customer_phone, customer_name);
+  const [{ profile, adminClient }, { categories }] = await Promise.all([
+    resolveProfile(user, customer_phone, customer_name),
+    getPosMenuCatalog(),
+  ]);
+  const allCatalogItems = categories.flatMap((c) => c.items);
 
   // Normalize items and calculate subtotal using SERVER-SIDE prices (including add-ons)
   const normalizedItems = items.map(
@@ -130,16 +146,16 @@ export async function POST(request: NextRequest) {
       const sizeLabel = item.size_label || item.size || 'M';
       const rawName = (item.name || item.product_name || '').split(' [')[0].trim();
       const menuItem =
-        allMenuItems.find(
+        allCatalogItems.find(
           (m) => m.id === item.item_id && m.sizes.some((s) => s.label === sizeLabel)
         ) ||
-        allMenuItems.find((m) => m.id === item.item_id) ||
-        allMenuItems.find(
+        allCatalogItems.find((m) => m.id === item.item_id) ||
+        allCatalogItems.find(
           (m) =>
             m.name.toLowerCase() === rawName.toLowerCase() &&
             m.sizes.some((s) => s.label === sizeLabel)
         ) ||
-        allMenuItems.find((m) => m.name.toLowerCase() === rawName.toLowerCase());
+        allCatalogItems.find((m) => m.name.toLowerCase() === rawName.toLowerCase());
 
       const sizeInfo = menuItem?.sizes.find((s) => s.label === sizeLabel);
       const isBottled = sizeLabel === 'Chai' || menuItem?.categorySlug === 'cold-brew-chai';
@@ -202,28 +218,106 @@ export async function POST(request: NextRequest) {
     ? `CF-${Math.floor(1000 + Math.random() * 9000)}`
     : cleanRequestedCode;
 
-  const { data: insertedOrder, error: orderErr } = await adminClient
+  const cleanPhone = String(customer_phone || '').replace(/[\s\-()]/g, '') || undefined;
+  const cleanName = typeof customer_name === 'string' && customer_name.trim() ? customer_name.trim() : undefined;
+  const rawHumanNote = typeof note === 'string' ? note.trim() : '';
+  const dcMatch = rawHumanNote.match(/Đ\/c:\s*([^|]+)/);
+  const resolvedAddress =
+    (typeof customer_address === 'string' && customer_address.trim()) ||
+    dcMatch?.[1]?.trim() ||
+    undefined;
+  const resolvedOrderType = rawHumanNote.includes('Giao tới nhà') ? 'DELIVERY' : 'TAKEAWAY';
+  const targetLocationId =
+    typeof location_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(location_id.trim())
+      ? location_id.trim()
+      : DEFAULT_LOCATION_ID;
+
+  const encodedNote = serializePosFallbackNote({
+    channel: 'WEB',
+    orderType: resolvedOrderType,
+    paymentMethod: 'CASH',
+    paymentStatus: 'UNPAID',
+    fulfillmentStatus: 'PENDING',
+    shippingFee: 0,
+    customerAddress: resolvedAddress,
+    discountAmount: 0,
+    discountPercent: 0,
+    amountReceived: 0,
+    changeDue: 0,
+    customerName: cleanName,
+    customerPhone: cleanPhone,
+    userNote: rawHumanNote,
+  });
+
+  let insertedOrder: Record<string, unknown> | null = null;
+  const m01WebPayload = {
+    order_code: orderCode,
+    user_id: targetUserId,
+    business_id: DEFAULT_BUSINESS_ID,
+    location_id: targetLocationId,
+    channel: 'WEB',
+    order_type: resolvedOrderType,
+    customer_name: cleanName || 'Khách Web',
+    customer_phone: cleanPhone || null,
+    status: 'PENDING',
+    subtotal,
+    points_used: pointsToUse,
+    total_due: totalDue,
+    payment_method: 'CASH',
+    payment_status: 'UNPAID',
+    note: encodedNote,
+  };
+
+  const { data: v2Inserted, error: v2Err } = await adminClient
     .from('orders')
     .insert({
-      order_code: orderCode,
-      user_id: targetUserId,
-      status: 'PENDING',
-      subtotal,
-      points_used: pointsToUse,
-      total_due: totalDue,
-      note: note || null,
+      ...m01WebPayload,
+      customer_address: resolvedAddress || null,
+      fulfillment_status: 'PENDING',
     })
     .select()
     .single();
 
-  if (orderErr || !insertedOrder) {
-    console.error('Order creation error:', orderErr);
-    return NextResponse.json({ error: 'Không thể tạo đơn hàng' }, { status: 500 });
+  if (!v2Err && v2Inserted) {
+    insertedOrder = v2Inserted as Record<string, unknown>;
+  } else {
+    const { data: m01Inserted, error: m01Err } = await adminClient
+      .from('orders')
+      .insert(m01WebPayload)
+      .select()
+      .single();
+
+    if (!m01Err && m01Inserted) {
+      insertedOrder = m01Inserted as Record<string, unknown>;
+    } else {
+      const { data: baseInserted, error: baseErr } = await adminClient
+        .from('orders')
+        .insert({
+          order_code: orderCode,
+          user_id: targetUserId,
+          status: 'PENDING',
+          subtotal,
+          points_used: pointsToUse,
+          total_due: totalDue,
+          note: encodedNote,
+        })
+        .select()
+        .single();
+
+      if (baseErr || !baseInserted) {
+        console.error('Order creation error:', { v2Err, m01Err, baseErr });
+        return NextResponse.json({ error: 'Không thể tạo đơn hàng' }, { status: 500 });
+      }
+      insertedOrder = baseInserted as Record<string, unknown>;
+    }
   }
 
-  await adminClient.from('order_items').insert(
+  const orderIdStr = String(insertedOrder.id);
+  const { error: extItemsErr } = await adminClient.from('order_items').insert(
     normalizedItems.map((it: { product_name: string; size: string; quantity: number; unit_price: number; subtotal: number }) => ({
-      order_id: insertedOrder.id,
+      order_id: orderIdStr,
+      business_id: DEFAULT_BUSINESS_ID,
+      location_id: targetLocationId,
       product_name: it.product_name,
       size: it.size,
       quantity: it.quantity,
@@ -231,6 +325,19 @@ export async function POST(request: NextRequest) {
       subtotal: it.subtotal,
     }))
   );
+
+  if (extItemsErr) {
+    await adminClient.from('order_items').insert(
+      normalizedItems.map((it: { product_name: string; size: string; quantity: number; unit_price: number; subtotal: number }) => ({
+        order_id: orderIdStr,
+        product_name: it.product_name,
+        size: it.size,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        subtotal: it.subtotal,
+      }))
+    );
+  }
 
   if (profile && pointsToUse > 0) {
     const newBalance = Math.max(0, profile.point_balance - pointsToUse);
@@ -244,15 +351,15 @@ export async function POST(request: NextRequest) {
       type: 'ORDER_DEDUCT',
       amount: -pointsToUse,
       balance_after: newBalance,
-      reference_id: insertedOrder.order_code,
-      description: `Dùng điểm cho đơn ${insertedOrder.order_code} (Đơn trừ tiền không tích điểm mới)`,
+      reference_id: String(insertedOrder.order_code || orderCode),
+      description: `Dùng điểm cho đơn ${String(insertedOrder.order_code || orderCode)} (Đơn trừ tiền không tích điểm mới)`,
     });
   }
 
   return NextResponse.json({ success: true, order: insertedOrder });
 }
 
-// GET /api/orders — Get orders (staff/admin: all, customer: own)
+// GET /api/orders — Get orders (staff/admin: scoped to active location, customer: own)
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -269,16 +376,19 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
-  const page = parseInt(searchParams.get('page') || '1');
-  const limit = parseInt(searchParams.get('limit') || '20');
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20), 200);
   const offset = (page - 1) * limit;
+
+  const fetchLimit = isStaffOrAdmin && staff ? Math.min(limit * 4, 300) : limit;
+  const fetchStart = isStaffOrAdmin && staff ? 0 : offset;
 
   const buildOrdersQuery = (selectStr: string) => {
     let q = adminClient
       .from('orders')
       .select(selectStr, { count: 'exact' })
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(fetchStart, fetchStart + fetchLimit - 1);
 
     // Staff/Admin sees all orders, regular customer sees only own orders
     if (!isStaffOrAdmin && profile) {
@@ -291,7 +401,7 @@ export async function GET(request: NextRequest) {
     return q;
   };
 
-  let { data: orders, error, count } = await buildOrdersQuery(
+  let { data: orders, error } = await buildOrdersQuery(
     '*, items:order_items(*), user:users!user_id(id, full_name, email, phone, current_tier_id)'
   );
 
@@ -299,7 +409,6 @@ export async function GET(request: NextRequest) {
     const fallback = await buildOrdersQuery('*, items:order_items(*)');
     orders = fallback.data;
     error = fallback.error;
-    count = fallback.count;
   }
 
   if (error) {
@@ -307,9 +416,48 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Lỗi truy vấn' }, { status: 500 });
   }
 
+  const fulfillmentMap = getPersistedOrderFulfillmentMap();
+  const rawList = (orders || []) as unknown as Record<string, unknown>[];
+  const locationFiltered =
+    isStaffOrAdmin && staff
+      ? rawList.filter((o) => matchesOrderLocation(o.location_id, staff.locationId))
+      : rawList;
+
+  const enrichedOrders = locationFiltered.map((row) => {
+    const orderId = String(row.id || '');
+    const meta = extractPosOrderMetadata(row);
+    const persisted = fulfillmentMap[orderId];
+    const orderStatus = String(row.status || 'PENDING');
+    const resolvedFulfillment =
+      orderStatus === 'CANCELLED'
+        ? 'CANCELLED'
+        : persisted?.fulfillmentStatus ||
+          (typeof row.fulfillment_status === 'string' && row.fulfillment_status) ||
+          meta.fulfillmentStatus ||
+          normalizeFulfillmentStatus(null, orderStatus, meta.channel);
+
+    return {
+      ...row,
+      channel: row.channel || meta.channel,
+      order_type: row.order_type || meta.orderType,
+      payment_method: row.payment_method || meta.paymentMethod,
+      payment_status: row.payment_status || meta.paymentStatus,
+      fulfillment_status: resolvedFulfillment,
+      shipping_fee: persisted?.shippingFee ?? (Number(row.shipping_fee) || meta.shippingFee || 0),
+      customer_address: row.customer_address || meta.customerAddress || null,
+      customer_name: row.customer_name || meta.customerName || null,
+      customer_phone: row.customer_phone || meta.customerPhone || null,
+    };
+  });
+
+  const pagedOrders =
+    isStaffOrAdmin && staff
+      ? enrichedOrders.slice(offset, offset + limit)
+      : enrichedOrders;
+
   return NextResponse.json({
-    orders: orders || [],
-    total: count || 0,
+    orders: pagedOrders,
+    total: enrichedOrders.length,
     page,
     limit,
   });

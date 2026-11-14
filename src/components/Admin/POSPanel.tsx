@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import styles from './POSPanel.module.css';
 import {
   menuData as fallbackMenuData,
-  getQuickPrices,
   formatVND,
   type MenuCategory,
   type MenuItem,
@@ -17,7 +17,10 @@ import {
   CASHIER_MAX_DISCOUNT_PERCENT,
   calculatePosOrderTotals,
   formatItemOptionsSummary,
+  validateHoldCartInput,
+  validateShippingFeeInput,
   type DiscountType,
+  type HeldPosCart,
   type OrderType,
   type PaymentMethod,
   type StaffRole,
@@ -25,6 +28,7 @@ import {
 import {
   buildBaristaTicketHtml,
   buildCustomerReceiptHtml,
+  type PrintLocationMeta,
 } from '@/lib/pos/print-templates';
 import type { PosOrderRecord } from '@/lib/pos/repository';
 import CustomersPanel from './CustomersPanel';
@@ -43,31 +47,6 @@ interface PosCartLine {
   itemNote: string;
 }
 
-interface GeneratedQR {
-  code: string;
-  price: number;
-  label?: string;
-  qrDataUrl: string;
-  scanUrl: string;
-  createdAt: string;
-}
-
-interface DBQRToken {
-  id?: string;
-  code: string;
-  drink_value: number;
-  status: 'ACTIVE' | 'USED' | 'EXPIRED';
-  scanned_by?: string | null;
-  scanned_at?: string | null;
-  expires_at?: string;
-  created_at?: string;
-  scanner?: {
-    full_name?: string;
-    phone?: string;
-    email?: string;
-  } | null;
-}
-
 interface LinkedCustomer {
   id: string;
   full_name: string;
@@ -77,11 +56,25 @@ interface LinkedCustomer {
   cashback_rate?: number;
 }
 
+interface PosShiftBadgeState {
+  isOpen: boolean;
+  shiftId?: string;
+  shiftCode?: string;
+  shiftName?: string;
+  openedAt?: string;
+  openedByName?: string;
+}
+
 const ORDER_QUICK_NOTES = ['Ít ngọt', 'Đá riêng', 'Không ống hút', 'Làm gấp'];
+const HELD_CARTS_STORAGE_KEY = 'ulab_pos_held_carts_v1';
 
 export default function POSPanel() {
-  // Mode switch: 'pos' (M01 Counter POS) vs 'qr' (Legacy single QR sticker generator)
+  // Mode switch: 'pos' (M01 Counter POS) vs 'qr' (Counter Phone Loyalty)
   const [activeMode, setActiveMode] = useState<'pos' | 'qr'>('pos');
+
+  // ── Keyboard Shortcut Refs ──
+  const menuSearchInputRef = useRef<HTMLInputElement>(null);
+  const customerPhoneInputRef = useRef<HTMLInputElement>(null);
 
   // ── POS Menu & Staff State ──
   const [categories, setCategories] = useState<MenuCategory[]>(fallbackMenuData);
@@ -90,12 +83,17 @@ export default function POSPanel() {
   const [staffInfo, setStaffInfo] = useState<{
     fullName: string;
     staffRole: StaffRole;
+    locationId?: string;
     locationName: string;
+    address?: string;
+    phone?: string;
+    receiptFooter?: string;
   }>({
     fullName: 'Quản trị viên Ủ LAB',
     staffRole: 'ADMIN',
     locationName: 'Ủ LAB — Quầy Chính',
   });
+  const [activeShift, setActiveShift] = useState<PosShiftBadgeState>({ isOpen: false });
 
   const [selectedCategorySlug, setSelectedCategorySlug] = useState<string>('all');
   const [menuSearch, setMenuSearch] = useState<string>('');
@@ -133,6 +131,15 @@ export default function POSPanel() {
   const [completedOrderQrDataUrl, setCompletedOrderQrDataUrl] = useState<string>('');
   const [previewTab, setPreviewTab] = useState<'receipt' | 'barista'>('receipt');
 
+  // ── Hold / Park Orders & Linked Web Order & Delivery State ──
+  const [heldCarts, setHeldCarts] = useState<HeldPosCart[]>([]);
+  const [linkedOrderMeta, setLinkedOrderMeta] = useState<{
+    id: string;
+    orderCode: string;
+  } | null>(null);
+  const [shippingFeeInput, setShippingFeeInput] = useState<string>('');
+  const [customerAddressInput, setCustomerAddressInput] = useState<string>('');
+
   // ── Recent Orders & Cancellation State ──
   const [recentOrders, setRecentOrders] = useState<PosOrderRecord[]>([]);
   const [loadingOrders, setLoadingOrders] = useState<boolean>(true);
@@ -146,27 +153,39 @@ export default function POSPanel() {
   const [showRecentOrdersTable, setShowRecentOrdersTable] = useState<boolean>(false);
   const [isRegisteringCustomer, setIsRegisteringCustomer] = useState<boolean>(false);
 
-  // ── Legacy QR Sticker Generator State (kept 100% compatible) ──
-  const quickPrices = getQuickPrices();
-  const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
-  const [customPrice, setCustomPrice] = useState('');
-  const [qrCatSlug, setQrCatSlug] = useState<string>('all');
-  const [currentQR, setCurrentQR] = useState<GeneratedQR | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const printRef = useRef<HTMLDivElement>(null);
-  const [dbTokens, setDbTokens] = useState<DBQRToken[]>([]);
-  const [dbStats, setDbStats] = useState({ active: 0, used: 0, total: 0 });
-  const [loadingTokens, setLoadingTokens] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'USED'>('ALL');
-  const [searchCode, setSearchCode] = useState('');
-
   const buildScanUrl = (qrCode: string) => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
     return `${origin}/scan?code=${encodeURIComponent(qrCode)}`;
   };
 
-  // 1. Load POS Menu & Staff Context
+  // Hydrate Held Carts safely after mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(HELD_CARTS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setHeldCarts(parsed);
+          }
+        }
+      } catch {
+        // ignore localStorage read failures
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const persistHeldCarts = useCallback((next: HeldPosCart[]) => {
+    setHeldCarts(next);
+    try {
+      window.localStorage.setItem(HELD_CARTS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore localStorage quota errors
+    }
+  }, []);
+
+  // 1. Load POS Menu, Location Meta & Active Shift Context
   const fetchPosMenu = useCallback(async () => {
     setLoadingMenu(true);
     setMenuError(null);
@@ -181,8 +200,17 @@ export default function POSPanel() {
           setStaffInfo({
             fullName: data.staff.fullName || 'Thu ngân Ủ LAB',
             staffRole: data.staff.staffRole || 'ADMIN',
+            locationId: data.staff.locationId,
             locationName: data.staff.locationName || 'Ủ LAB — Quầy Chính',
+            address: data.staff.address,
+            phone: data.staff.phone,
+            receiptFooter: data.staff.receiptFooter,
           });
+        }
+        if (data.activeShift) {
+          setActiveShift(data.activeShift);
+        } else {
+          setActiveShift({ isOpen: false });
         }
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -194,48 +222,6 @@ export default function POSPanel() {
       setLoadingMenu(false);
     }
   }, []);
-
-  // Listen for menu availability & price updates from Products tab and order imports from Orders tab
-  useEffect(() => {
-    const handleMenuChanged = () => {
-      fetchPosMenu();
-    };
-    const handleLoadOrder = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const order = customEvent.detail?.order;
-      if (!order) return;
-      setActiveMode('pos');
-      if (order.customer_phone && order.customer_phone !== '—') {
-        setCustomerPhoneInput(order.customer_phone);
-        setCustomerNameInput(order.customer_name);
-      }
-      if (order.note) {
-        setOrderNote(`[Đơn #${order.order_code}] ${order.note}`);
-      }
-      if (Array.isArray(order.items) && order.items.length > 0) {
-        const lines: PosCartLine[] = order.items.map((it: { item_name: string; size_label: string; unit_price: number; quantity: number }, idx: number) => ({
-          lineId: `line-import-${Date.now()}-${idx}`,
-          itemId: `import-${idx}`,
-          productName: it.item_name,
-          sizeLabel: it.size_label || 'M',
-          basePrice: it.unit_price,
-          quantity: it.quantity,
-          sweetness: '100% đường',
-          ice: '100% đá',
-          addons: [],
-          itemNote: '',
-        }));
-        setCartLines(lines);
-      }
-    };
-
-    window.addEventListener('ulab:menu-changed', handleMenuChanged);
-    window.addEventListener('ulab:load-pos-order', handleLoadOrder);
-    return () => {
-      window.removeEventListener('ulab:menu-changed', handleMenuChanged);
-      window.removeEventListener('ulab:load-pos-order', handleLoadOrder);
-    };
-  }, [fetchPosMenu]);
 
   // 2. Load Recent POS Orders
   const fetchRecentOrders = useCallback(async () => {
@@ -261,6 +247,78 @@ export default function POSPanel() {
     }
   }, [ordersFilterStatus, ordersSearch, ordersDate]);
 
+  // Listen for menu updates, active location changes, and Web order imports from Orders tab
+  useEffect(() => {
+    const handleMenuOrLocationChanged = () => {
+      fetchPosMenu();
+      fetchRecentOrders();
+    };
+    const handleLoadOrder = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const order = customEvent.detail?.order;
+      if (!order) return;
+      setActiveMode('pos');
+      setLinkedOrderMeta(
+        order.id && order.order_code
+          ? { id: String(order.id), orderCode: String(order.order_code) }
+          : null
+      );
+      if (order.customer_phone && order.customer_phone !== '—') {
+        setCustomerPhoneInput(order.customer_phone);
+        setCustomerNameInput(order.customer_name || '');
+      }
+      if (order.order_type === 'DELIVERY' || String(order.note || '').includes('Giao tới nhà')) {
+        setOrderType('DELIVERY');
+        if (order.customer_address) {
+          setCustomerAddressInput(String(order.customer_address));
+        }
+        if (order.shipping_fee) {
+          setShippingFeeInput(String(order.shipping_fee));
+        }
+      } else {
+        setOrderType('TAKEAWAY');
+      }
+      if (order.note) {
+        setOrderNote(`[Đơn #${order.order_code}] ${order.note}`);
+      }
+      if (Array.isArray(order.items) && order.items.length > 0) {
+        const flat = categories.flatMap((c) => c.items);
+        const lines: PosCartLine[] = order.items.map(
+          (
+            it: { item_name: string; size_label: string; unit_price: number; quantity: number },
+            idx: number
+          ) => {
+            const matched = flat.find(
+              (m) => m.name.toLowerCase() === String(it.item_name || '').split(' [')[0].trim().toLowerCase()
+            );
+            return {
+              lineId: `line-import-${Date.now()}-${idx}`,
+              itemId: matched?.id || `import-${idx}`,
+              productName: it.item_name,
+              sizeLabel: it.size_label || 'M',
+              basePrice: it.unit_price,
+              quantity: it.quantity,
+              sweetness: '100% đường',
+              ice: '100% đá',
+              addons: [],
+              itemNote: '',
+            };
+          }
+        );
+        setCartLines(lines);
+      }
+    };
+
+    window.addEventListener('ulab:menu-changed', handleMenuOrLocationChanged);
+    window.addEventListener('ulab:location-changed', handleMenuOrLocationChanged);
+    window.addEventListener('ulab:load-pos-order', handleLoadOrder);
+    return () => {
+      window.removeEventListener('ulab:menu-changed', handleMenuOrLocationChanged);
+      window.removeEventListener('ulab:location-changed', handleMenuOrLocationChanged);
+      window.removeEventListener('ulab:load-pos-order', handleLoadOrder);
+    };
+  }, [fetchPosMenu, fetchRecentOrders, categories]);
+
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -276,8 +334,15 @@ export default function POSPanel() {
             setStaffInfo({
               fullName: data.staff.fullName || 'Thu ngân Ủ LAB',
               staffRole: data.staff.staffRole || 'ADMIN',
+              locationId: data.staff.locationId,
               locationName: data.staff.locationName || 'Ủ LAB — Quầy Chính',
+              address: data.staff.address,
+              phone: data.staff.phone,
+              receiptFooter: data.staff.receiptFooter,
             });
+          }
+          if (data.activeShift) {
+            setActiveShift(data.activeShift);
           }
         }
       } catch {
@@ -525,7 +590,7 @@ export default function POSPanel() {
     );
   };
 
-  const handleClearCart = () => {
+  const handleClearCart = useCallback(() => {
     setCartLines([]);
     setEditingLineId(null);
     setDiscountType('NONE');
@@ -533,9 +598,120 @@ export default function POSPanel() {
     setDiscountReason('');
     setPointsToUse(0);
     setCashReceivedInput('');
+    setShippingFeeInput('');
+    setCustomerAddressInput('');
+    setLinkedOrderMeta(null);
     setOrderNote('');
     setCheckoutError(null);
     setIdempotencyKey(`pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  }, []);
+
+  const handleHoldCurrentCart = useCallback(() => {
+    setCheckoutError(null);
+    const check = validateHoldCartInput(cartLines.length, heldCarts.length, 10);
+    if (!check.valid) {
+      setCheckoutError(check.error || 'Không thể lưu đơn tạm.');
+      return;
+    }
+
+    const totalQty = cartLines.reduce((sum, l) => sum + l.quantity, 0);
+    const labelName =
+      customerNameInput.trim() ||
+      (customerPhoneInput.trim() ? `KH ${customerPhoneInput.trim()}` : '') ||
+      (linkedOrderMeta ? `#${linkedOrderMeta.orderCode}` : '') ||
+      `Đơn tạm #${heldCarts.length + 1}`;
+
+    const parked: HeldPosCart = {
+      holdId: `hold-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      label: labelName,
+      createdAt: new Date().toISOString(),
+      orderType,
+      customerPhone: customerPhoneInput,
+      customerName: customerNameInput,
+      orderNote,
+      discountType,
+      discountValue,
+      discountReason,
+      linkedOrderId: linkedOrderMeta?.id || null,
+      linkedOrderCode: linkedOrderMeta?.orderCode || null,
+      items: cartLines.map((l) => ({
+        itemId: l.itemId,
+        productName: l.productName,
+        sizeLabel: l.sizeLabel,
+        basePrice: l.basePrice,
+        quantity: l.quantity,
+        sweetness: l.sweetness,
+        ice: l.ice,
+        addons: [...l.addons],
+        itemNote: l.itemNote,
+      })),
+      totalQuantity: totalQty,
+      subtotal: totals.subtotal,
+    };
+
+    persistHeldCarts([parked, ...heldCarts]);
+    handleClearCart();
+    setCustomerPhoneInput('');
+    setCustomerNameInput('');
+    setLinkedCustomer(null);
+    setCustomerLookupMsg(null);
+  }, [
+    cartLines,
+    heldCarts,
+    customerNameInput,
+    customerPhoneInput,
+    linkedOrderMeta,
+    orderType,
+    orderNote,
+    discountType,
+    discountValue,
+    discountReason,
+    totals.subtotal,
+    persistHeldCarts,
+    handleClearCart,
+  ]);
+
+  const handleRestoreHeldCart = (holdId: string) => {
+    const target = heldCarts.find((h) => h.holdId === holdId);
+    if (!target) return;
+    if (
+      cartLines.length > 0 &&
+      !window.confirm('Giỏ hàng hiện tại đang có món. Thay thế bằng đơn tạm đã chọn?')
+    ) {
+      return;
+    }
+
+    setCartLines(
+      target.items.map((it, idx) => ({
+        lineId: `line-restored-${Date.now()}-${idx}`,
+        itemId: it.itemId,
+        productName: it.productName,
+        sizeLabel: it.sizeLabel,
+        basePrice: it.basePrice,
+        quantity: it.quantity,
+        sweetness: it.sweetness,
+        ice: it.ice,
+        addons: [...it.addons],
+        itemNote: it.itemNote,
+      }))
+    );
+    setOrderType(target.orderType || 'TAKEAWAY');
+    setCustomerPhoneInput(target.customerPhone || '');
+    setCustomerNameInput(target.customerName || '');
+    setOrderNote(target.orderNote || '');
+    setDiscountType(target.discountType || 'NONE');
+    setDiscountValue(target.discountValue || '');
+    setDiscountReason(target.discountReason || '');
+    setLinkedOrderMeta(
+      target.linkedOrderId && target.linkedOrderCode
+        ? { id: target.linkedOrderId, orderCode: target.linkedOrderCode }
+        : null
+    );
+    persistHeldCarts(heldCarts.filter((h) => h.holdId !== holdId));
+  };
+
+  const handleDeleteHeldCart = (holdId: string) => {
+    persistHeldCarts(heldCarts.filter((h) => h.holdId !== holdId));
   };
 
   const toggleOrderQuickNote = (chip: string) => {
@@ -598,17 +774,42 @@ export default function POSPanel() {
     const clean = customerPhoneInput.replace(/\D/g, '');
     if (clean.length === 10 && /^0\d{9}$/.test(clean)) {
       if (linkedCustomer?.phone !== clean) {
-        handleLookupCustomer(clean);
+        const timer = setTimeout(() => {
+          handleLookupCustomer(clean);
+        }, 0);
+        return () => clearTimeout(timer);
       }
     } else if (clean.length === 0) {
-      setLinkedCustomer(null);
-      setCustomerLookupMsg(null);
-      setPointsToUse(0);
+      const timer = setTimeout(() => {
+        setLinkedCustomer(null);
+        setCustomerLookupMsg(null);
+        setPointsToUse(0);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [customerPhoneInput, linkedCustomer?.phone, handleLookupCustomer]);
 
+  const parsedShippingFee =
+    orderType === 'DELIVERY' ? Math.max(0, Number(shippingFeeInput.replace(/\D/g, '')) || 0) : 0;
+  const grandTotalDue = totals.totalDue + parsedShippingFee;
+  const rawCashInputAmount =
+    paymentMethod === 'CASH' && cashReceivedInput.trim()
+      ? Number(cashReceivedInput.replace(/\D/g, ''))
+      : grandTotalDue;
+  const effectiveChangeDue = Math.max(0, rawCashInputAmount - grandTotalDue);
+
+  const printLocationMeta: PrintLocationMeta = useMemo(
+    () => ({
+      locationName: staffInfo.locationName,
+      address: staffInfo.address,
+      phone: staffInfo.phone,
+      receiptFooter: staffInfo.receiptFooter,
+    }),
+    [staffInfo.locationName, staffInfo.address, staffInfo.phone, staffInfo.receiptFooter]
+  );
+
   // Submit & Confirm POS Payment
-  const handleConfirmPayment = async () => {
+  const handleConfirmPayment = useCallback(async () => {
     setCheckoutError(null);
 
     if (cartLines.length === 0) {
@@ -619,6 +820,12 @@ export default function POSPanel() {
     // Validate discount reason if discount > 0
     if (discountType !== 'NONE' && parsedDiscountVal > 0 && discountReason.trim().length < 2) {
       setCheckoutError('Vui lòng nhập lý do giảm giá (bắt buộc để lưu nhật ký phân quyền).');
+      return;
+    }
+
+    const shipCheck = validateShippingFeeInput(parsedShippingFee);
+    if (!shipCheck.valid) {
+      setCheckoutError(shipCheck.error || 'Phí giao hàng không hợp lệ.');
       return;
     }
 
@@ -646,13 +853,26 @@ export default function POSPanel() {
       amountReceived:
         paymentMethod === 'CASH' && cashReceivedInput.trim()
           ? Number(cashReceivedInput.replace(/\D/g, ''))
-          : totals.totalDue,
+          : totals.totalDue + parsedShippingFee,
       staffRole: staffInfo.staffRole,
       catalog: flatCatalog,
     });
 
     if (!exactCheck.validation.valid) {
       setCheckoutError(exactCheck.validation.error || 'Dữ liệu thanh toán chưa hợp lệ.');
+      return;
+    }
+
+    const expectedTotalWithShip = exactCheck.totals.totalDue + parsedShippingFee;
+    const paidAmount =
+      paymentMethod === 'CASH' && cashReceivedInput.trim()
+        ? Number(cashReceivedInput.replace(/\D/g, ''))
+        : expectedTotalWithShip;
+
+    if (paymentMethod === 'CASH' && paidAmount < expectedTotalWithShip) {
+      setCheckoutError(
+        `Số tiền khách đưa (${formatVND(paidAmount)}) nhỏ hơn tổng cần thu (${formatVND(expectedTotalWithShip)}).`
+      );
       return;
     }
 
@@ -677,17 +897,19 @@ export default function POSPanel() {
           })),
           orderType,
           paymentMethod,
-          amountReceived:
-            paymentMethod === 'CASH' && cashReceivedInput.trim()
-              ? Number(cashReceivedInput.replace(/\D/g, ''))
-              : exactCheck.totals.totalDue,
+          amountReceived: paidAmount,
+          shippingFee: parsedShippingFee,
+          customerAddress:
+            orderType === 'DELIVERY' ? customerAddressInput.trim() || undefined : undefined,
+          linkedOrderId: linkedOrderMeta?.id,
+          linkedOrderCode: linkedOrderMeta?.orderCode,
           discount:
             discountType !== 'NONE' && parsedDiscountVal > 0
               ? {
-                type: discountType,
-                value: parsedDiscountVal,
-                reason: discountReason.trim(),
-              }
+                  type: discountType,
+                  value: parsedDiscountVal,
+                  reason: discountReason.trim(),
+                }
               : undefined,
           customerPhone: customerPhoneInput.trim() || undefined,
           customerName: customerNameInput.trim() || linkedCustomer?.full_name || undefined,
@@ -736,11 +958,85 @@ export default function POSPanel() {
     } finally {
       setIsSubmittingOrder(false);
     }
-  };
+  }, [
+    cartLines,
+    discountType,
+    parsedDiscountVal,
+    discountReason,
+    parsedShippingFee,
+    pointsToUse,
+    linkedCustomer,
+    paymentMethod,
+    cashReceivedInput,
+    totals.totalDue,
+    staffInfo.staffRole,
+    flatCatalog,
+    orderType,
+    customerAddressInput,
+    linkedOrderMeta,
+    customerPhoneInput,
+    customerNameInput,
+    orderNote,
+    idempotencyKey,
+    handleClearCart,
+    fetchRecentOrders,
+  ]);
+
+  // Keyboard shortcuts for cashier speed (F2 Search, F4 Phone, F8 Pay, F9 Hold, Esc Close modal)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        setActiveMode('pos');
+        menuSearchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === 'F4') {
+        e.preventDefault();
+        setActiveMode('pos');
+        customerPhoneInputRef.current?.focus();
+        return;
+      }
+      if (e.key === 'F8') {
+        if (activeMode === 'pos' && !completedOrder && !cancellingOrder && !isSubmittingOrder && cartLines.length > 0) {
+          e.preventDefault();
+          handleConfirmPayment();
+        }
+        return;
+      }
+      if (e.key === 'F9') {
+        if (activeMode === 'pos' && !completedOrder && !cancellingOrder && cartLines.length > 0) {
+          e.preventDefault();
+          handleHoldCurrentCart();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (completedOrder) {
+          setCompletedOrder(null);
+        } else if (cancellingOrder) {
+          setCancellingOrder(null);
+        } else if (editingLineId) {
+          setEditingLineId(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    activeMode,
+    completedOrder,
+    cancellingOrder,
+    isSubmittingOrder,
+    cartLines.length,
+    editingLineId,
+    handleConfirmPayment,
+    handleHoldCurrentCart,
+  ]);
 
   // Print Barista Ticket (Phiếu pha chế)
   const handlePrintBaristaTicket = (order: PosOrderRecord) => {
-    const html = buildBaristaTicketHtml(order, staffInfo.locationName);
+    const html = buildBaristaTicketHtml(order, printLocationMeta);
     const win = window.open('', '_blank', 'width=480,height=650');
     if (!win) return;
     win.document.write(html);
@@ -761,7 +1057,7 @@ export default function POSPanel() {
         qrUrl = '';
       }
     }
-    const html = buildCustomerReceiptHtml(order, qrUrl, staffInfo.locationName);
+    const html = buildCustomerReceiptHtml(order, qrUrl, printLocationMeta);
     const win = window.open('', '_blank', 'width=480,height=700');
     if (!win) return;
     win.document.write(html);
@@ -821,152 +1117,6 @@ export default function POSPanel() {
     }
   };
 
-  // ── Legacy QR Generator Handlers ──
-  const fetchDBTokens = useCallback(async () => {
-    setLoadingTokens(true);
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter !== 'ALL') params.set('status', statusFilter);
-      if (searchCode.trim()) params.set('search', searchCode.trim());
-      params.set('_t', Date.now().toString());
-
-      const res = await fetch(`/api/admin/qr?${params.toString()}`, {
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDbTokens(data.tokens || []);
-        if (data.stats) setDbStats(data.stats);
-      }
-    } catch (err) {
-      console.error('Fetch QR tokens error:', err);
-    } finally {
-      setLoadingTokens(false);
-    }
-  }, [statusFilter, searchCode]);
-
-  useEffect(() => {
-    if (activeMode !== 'qr') return;
-    let isMounted = true;
-    (async () => {
-      try {
-        const params = new URLSearchParams();
-        if (statusFilter !== 'ALL') params.set('status', statusFilter);
-        if (searchCode.trim()) params.set('search', searchCode.trim());
-        params.set('_t', Date.now().toString());
-
-        const res = await fetch(`/api/admin/qr?${params.toString()}`, { cache: 'no-store' });
-        if (!isMounted) return;
-        if (res.ok) {
-          const data = await res.json();
-          setDbTokens(data.tokens || []);
-          if (data.stats) setDbStats(data.stats);
-        }
-      } catch {
-        // ignore
-      } finally {
-        if (isMounted) setLoadingTokens(false);
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, [activeMode, statusFilter, searchCode]);
-
-  const generateQR = async (price: number, label?: string) => {
-    if (!price || price <= 0) return;
-    setIsGenerating(true);
-    try {
-      let code = `QR-${price}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-      try {
-        const res = await fetch('/api/qr/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ drink_value: price, custom_code: code }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.code) code = data.code;
-        }
-      } catch {
-        // ignore
-      }
-      const scanUrl = buildScanUrl(code);
-      const qrDataUrl = await QRCode.toDataURL(scanUrl, {
-        width: 340,
-        margin: 2,
-        color: { dark: '#1E3932', light: '#FFFFFF' },
-      });
-      setCurrentQR({
-        code,
-        price,
-        label,
-        qrDataUrl,
-        scanUrl,
-        createdAt: new Date().toLocaleTimeString('vi-VN'),
-      });
-      fetchDBTokens();
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handlePrintSingleQR = async (
-    qrCode: string,
-    price: number,
-    existingDataUrl?: string,
-    drinkLabel?: string
-  ) => {
-    const scanUrl = buildScanUrl(qrCode);
-    const dataUrl =
-      existingDataUrl ||
-      (await QRCode.toDataURL(scanUrl, {
-        width: 360,
-        margin: 2,
-        color: { dark: '#1E3932', light: '#FFFFFF' },
-      }));
-
-    const printWindow = window.open('', '_blank', 'width=450,height=600');
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>In Tem QR 75x100mm - Ủ LAB</title>
-        <style>
-          @page { size: 75mm 100mm; margin: 0; }
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          html, body { width: 75mm; height: 100mm; overflow: hidden; }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            padding: 4mm; text-align: center; color: #1E3932; background: #FFFFFF;
-          }
-          .brand { font-size: 13pt; font-weight: 800; letter-spacing: 0.08em; margin-bottom: 2mm; }
-          .label { font-size: 10pt; font-weight: 700; color: #006241; margin-bottom: 1.5mm; max-width: 67mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .qr { width: 48mm; height: 48mm; margin: 2mm 0; display: block; }
-          .price { font-size: 15pt; font-weight: 800; margin-top: 1mm; }
-          .hint { font-size: 8.5pt; font-weight: 600; color: #333; margin-top: 1.5mm; }
-          .code { font-size: 7.5pt; font-family: monospace; color: #555; margin-top: 1.5mm; }
-        </style>
-      </head>
-      <body>
-        <div class="brand">Ủ LAB · TÍCH ĐIỂM</div>
-        ${drinkLabel ? `<div class="label">${drinkLabel}</div>` : ''}
-        <img class="qr" src="${dataUrl}" alt="QR" />
-        <div class="price">${formatVND(price)}</div>
-        <div class="hint">Mở Camera ĐT quét nhận hoàn điểm 3-10%</div>
-        <div class="code">${qrCode}</div>
-        <script>
-          window.onload = () => { window.focus(); window.print(); window.close(); };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
   return (
     <div className={styles.panel}>
       {/* Top Header & Mode Switcher */}
@@ -1021,6 +1171,66 @@ export default function POSPanel() {
 
       {activeMode === 'pos' ? (
         <>
+          {/* Shift Status & Cashier Keyboard Shortcut Strip */}
+          <div
+            className={`${styles.shiftStatusBanner} ${
+              activeShift.isOpen ? styles.shiftBannerOpen : styles.shiftBannerClosed
+            }`}
+          >
+            <div className={styles.shiftStatusLeft}>
+              <span
+                className={`${styles.shiftDot} ${
+                  activeShift.isOpen ? styles.shiftDotOpen : styles.shiftDotClosed
+                }`}
+              />
+              {activeShift.isOpen ? (
+                <span>
+                  Ca đang mở: <strong>{activeShift.shiftName || activeShift.shiftCode || 'Đang hoạt động'}</strong>
+                  {activeShift.openedByName ? ` · Mở bởi ${activeShift.openedByName}` : ''}
+                </span>
+              ) : (
+                <span>
+                  ⚠️ Chi nhánh hiện chưa mở ca thu ngân — Khuyến nghị mở ca tại tab Thu &amp; Chi để đối soát cuối ngày.
+                </span>
+              )}
+            </div>
+
+            <div className={styles.shortcutHintRow}>
+              <span><kbd className={styles.kbdTag}>F2</kbd>Tìm món</span>
+              <span><kbd className={styles.kbdTag}>F4</kbd>SĐT khách</span>
+              <span><kbd className={styles.kbdTag}>F8</kbd>Thanh toán</span>
+              <span><kbd className={styles.kbdTag}>F9</kbd>Lưu đơn tạm</span>
+            </div>
+          </div>
+
+          {/* Held / Parked Carts Tray */}
+          {heldCarts.length > 0 && (
+            <div className={styles.heldOrdersBar}>
+              <span className={styles.heldOrdersLabel}>⏸ Đơn đang giữ ({heldCarts.length}):</span>
+              {heldCarts.map((held) => (
+                <div key={held.holdId} className={styles.heldOrderPill}>
+                  <button
+                    type="button"
+                    className={styles.heldRestoreBtn}
+                    onClick={() => handleRestoreHeldCart(held.holdId)}
+                    title={`Khôi phục đơn ${held.label}`}
+                  >
+                    {held.label} · {held.totalQuantity} ly ({formatVND(held.subtotal)})
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.heldDeleteBtn}
+                    onClick={() => handleDeleteHeldCart(held.holdId)}
+                    title="Xóa đơn tạm này"
+                    aria-label={`Xóa đơn tạm ${held.label}`}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* ══════════════════════════════════════════════════════════════
               PRIMARY POS COUNTER WORKSPACE (2 COLUMNS)
              ══════════════════════════════════════════════════════════════ */}
@@ -1052,8 +1262,9 @@ export default function POSPanel() {
 
                   <div className={styles.menuSearchWrap}>
                     <input
+                      ref={menuSearchInputRef}
                       type="search"
-                      placeholder="🔍 Tìm nhanh tên món..."
+                      placeholder="🔍 Tìm nhanh tên món (F2)..."
                       value={menuSearch}
                       onChange={(e) => setMenuSearch(e.target.value)}
                       className={styles.menuSearchInput}
@@ -1094,12 +1305,13 @@ export default function POSPanel() {
                                 <div className={styles.posDrinkTop}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     {item.imageUrl && (
-                                      <img
+                                      <Image
                                         src={item.imageUrl}
                                         alt={item.name}
+                                        width={36}
+                                        height={36}
+                                        unoptimized
                                         style={{
-                                          width: 36,
-                                          height: 36,
                                           borderRadius: 8,
                                           objectFit: 'cover',
                                           flexShrink: 0,
@@ -1159,7 +1371,7 @@ export default function POSPanel() {
             {/* RIGHT COLUMN: STICKY CART, OPTIONS, DISCOUNT & CHECKOUT */}
             <div className={styles.rightCol}>
               <div className={styles.checkoutCard}>
-                {/* Order Type Selector & Clear Cart */}
+                {/* Order Type Selector, Hold Cart & Clear Cart */}
                 <div className={styles.cartHeaderBar}>
                   <div className={styles.orderTypeToggle} role="group" aria-label="Hình thức đơn hàng">
                     <button
@@ -1176,18 +1388,67 @@ export default function POSPanel() {
                     >
                       ☕ Tại quán
                     </button>
+                    <button
+                      type="button"
+                      className={`${styles.orderTypeBtn} ${orderType === 'DELIVERY' ? styles.orderTypeActive : ''}`}
+                      onClick={() => setOrderType('DELIVERY')}
+                    >
+                      🚚 Giao hàng
+                    </button>
                   </div>
 
                   {cartLines.length > 0 && (
-                    <button
-                      type="button"
-                      className={styles.clearCartTextBtn}
-                      onClick={handleClearCart}
-                    >
-                      Xóa giỏ ({totals.totalQuantity})
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        className={styles.holdCartActionBtn}
+                        onClick={handleHoldCurrentCart}
+                        title="Lưu tạm giỏ hàng này để phục vụ khách tiếp theo (F9)"
+                      >
+                        ⏸ Lưu tạm
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.clearCartTextBtn}
+                        onClick={handleClearCart}
+                      >
+                        Xóa ({totals.totalQuantity})
+                      </button>
+                    </div>
                   )}
                 </div>
+
+                {linkedOrderMeta && (
+                  <div className={styles.linkedWebBanner}>
+                    <span>🔗 Đang thu hộ &amp; đối soát đơn Web #{linkedOrderMeta.orderCode}</span>
+                    <button
+                      type="button"
+                      className={styles.linkedWebUnlinkBtn}
+                      onClick={() => setLinkedOrderMeta(null)}
+                    >
+                      Gỡ liên kết
+                    </button>
+                  </div>
+                )}
+
+                {orderType === 'DELIVERY' && (
+                  <div className={styles.deliveryInputsRow}>
+                    <input
+                      type="text"
+                      placeholder="Địa chỉ giao hàng..."
+                      value={customerAddressInput}
+                      onChange={(e) => setCustomerAddressInput(e.target.value)}
+                      className={styles.compactInput}
+                    />
+                    <input
+                      type="number"
+                      placeholder="Phí ship (đ)"
+                      value={shippingFeeInput}
+                      onChange={(e) => setShippingFeeInput(e.target.value)}
+                      className={styles.compactInput}
+                    />
+                  </div>
+                )}
 
                 {/* Cart Items List */}
                 {cartLines.length === 0 ? (
@@ -1447,8 +1708,9 @@ export default function POSPanel() {
                   </label>
                   <div className={styles.customerLookupRow}>
                     <input
+                      ref={customerPhoneInputRef}
                       type="tel"
-                      placeholder="Nhập SĐT khách đọc tại quầy..."
+                      placeholder="Nhập SĐT khách đọc tại quầy (F4)..."
                       value={customerPhoneInput}
                       onChange={(e) => setCustomerPhoneInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -1709,13 +1971,13 @@ export default function POSPanel() {
                     </button>
                   </div>
 
-                  {totals.totalDue > 0 && (
+                  {grandTotalDue > 0 && (
                     <div className={styles.cashTenderBox}>
                       <div className={styles.cashTenderInputRow}>
                         <span>Khách đưa:</span>
                         <input
                           type="number"
-                          placeholder={String(totals.totalDue)}
+                          placeholder={String(grandTotalDue)}
                           value={cashReceivedInput}
                           onChange={(e) => setCashReceivedInput(e.target.value)}
                           className={styles.compactInput}
@@ -1725,12 +1987,12 @@ export default function POSPanel() {
                         <button
                           type="button"
                           className={styles.miniChip}
-                          onClick={() => setCashReceivedInput(String(totals.totalDue))}
+                          onClick={() => setCashReceivedInput(String(grandTotalDue))}
                         >
-                          Đúng {formatVND(totals.totalDue)}
+                          Đúng {formatVND(grandTotalDue)}
                         </button>
                         {[50000, 100000, 200000, 500000]
-                          .filter((v) => v >= totals.totalDue)
+                          .filter((v) => v >= grandTotalDue)
                           .map((v) => (
                             <button
                               key={v}
@@ -1764,14 +2026,20 @@ export default function POSPanel() {
                       <span>−{formatVND(totals.pointsUsed)}</span>
                     </div>
                   )}
+                  {parsedShippingFee > 0 && (
+                    <div className={styles.sumRow}>
+                      <span>Phí giao hàng</span>
+                      <span>+{formatVND(parsedShippingFee)}</span>
+                    </div>
+                  )}
                   <div className={styles.sumTotalRow}>
                     <span>KHÁCH CẦN THANH TOÁN</span>
-                    <span>{formatVND(totals.totalDue)}</span>
+                    <span>{formatVND(grandTotalDue)}</span>
                   </div>
-                  {paymentMethod === 'CASH' && totals.totalDue > 0 && (
+                  {paymentMethod === 'CASH' && grandTotalDue > 0 && (
                     <div className={styles.sumChangeRow}>
                       <span>Tiền thừa trả khách</span>
-                      <strong>{formatVND(totals.changeDue)}</strong>
+                      <strong>{formatVND(effectiveChangeDue)}</strong>
                     </div>
                   )}
                 </div>
@@ -1792,7 +2060,7 @@ export default function POSPanel() {
                   {isSubmittingOrder ? (
                     <span>Đang xử lý đơn hàng...</span>
                   ) : (
-                    <span>✓ XÁC NHẬN THANH TOÁN · {formatVND(totals.totalDue)}</span>
+                    <span>✓ XÁC NHẬN THANH TOÁN (F8) · {formatVND(grandTotalDue)}</span>
                   )}
                 </button>
               </div>
@@ -2059,6 +2327,13 @@ export default function POSPanel() {
                 <div className={styles.receiptPreviewSheet}>
                   <div className={styles.sheetHeader}>
                     <strong>Ủ LAB — {staffInfo.locationName}</strong>
+                    {(staffInfo.address || staffInfo.phone) && (
+                      <small>
+                        {[staffInfo.address, staffInfo.phone ? `Hotline: ${staffInfo.phone}` : '']
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
+                    )}
                     <span>BIÊN NHẬN THANH TOÁN</span>
                     <small>
                       Mã đơn: #{completedOrder.orderCode} ·{' '}
@@ -2067,6 +2342,9 @@ export default function POSPanel() {
                     <small>
                       KH: {completedOrder.customerName} · Thu ngân: {completedOrder.cashierName}
                     </small>
+                    {completedOrder.customerAddress && (
+                      <small>Địa chỉ: {completedOrder.customerAddress}</small>
+                    )}
                   </div>
                   <div className={styles.sheetItems}>
                     {completedOrder.items.map((it, i) => (
@@ -2103,10 +2381,21 @@ export default function POSPanel() {
                         <span>−{formatVND(completedOrder.pointsUsed)}</span>
                       </div>
                     )}
+                    {completedOrder.shippingFee > 0 && (
+                      <div className={styles.sheetSumRow}>
+                        <span>Phí giao hàng:</span>
+                        <span>+{formatVND(completedOrder.shippingFee)}</span>
+                      </div>
+                    )}
                     <div className={styles.sheetGrandTotal}>
                       <span>TỔNG THANH TOÁN:</span>
                       <span>{formatVND(completedOrder.totalDue)}</span>
                     </div>
+                    {staffInfo.receiptFooter && (
+                      <div style={{ marginTop: 6, textAlign: 'center', fontSize: '0.72rem', color: '#475569' }}>
+                        {staffInfo.receiptFooter}
+                      </div>
+                    )}
                     <div className={styles.sheetSumRow}>
                       <span>Khách đưa (Tiền):</span>
                       <span>{formatVND(completedOrder.amountReceived)}</span>

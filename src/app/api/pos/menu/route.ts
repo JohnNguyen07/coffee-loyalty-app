@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyPosStaff } from '@/lib/auth-utils';
-import { getPosMenuCatalog } from '@/lib/pos/repository';
+import { getPosLocationAndShiftContext, getPosMenuCatalog } from '@/lib/pos/repository';
 
 export async function GET() {
   try {
@@ -12,15 +12,24 @@ export async function GET() {
       );
     }
 
-    const catalog = await getPosMenuCatalog();
+    const [catalog, ctx] = await Promise.all([
+      getPosMenuCatalog(),
+      getPosLocationAndShiftContext(staff),
+    ]);
+
     return NextResponse.json({
       ...catalog,
       staff: {
         id: staff.id,
         fullName: staff.fullName,
         staffRole: staff.staffRole,
-        locationName: staff.locationName,
+        locationId: ctx.location.locationId,
+        locationName: ctx.location.locationName,
+        address: ctx.location.address,
+        phone: ctx.location.phone,
+        receiptFooter: ctx.location.receiptFooter,
       },
+      activeShift: ctx.activeShift,
     });
   } catch (err) {
     console.error('GET /api/pos/menu error:', err);

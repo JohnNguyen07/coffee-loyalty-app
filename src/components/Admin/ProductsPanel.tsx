@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import styles from './ProductsPanel.module.css';
 import { menuData, allMenuItems, formatVND, MenuItem } from '@/data/menu';
 import { CategorySvgIcon, StarSolidIcon } from '@/components/Icons/LabIcons';
@@ -11,7 +12,11 @@ export default function ProductsPanel() {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editIsSignature, setEditIsSignature] = useState(false);
   const [editSizes, setEditSizes] = useState<{ label: string; price: number }[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -55,7 +60,17 @@ export default function ProductsPanel() {
   }, []);
 
   useEffect(() => {
-    loadProducts();
+    const timer = setTimeout(() => {
+      void loadProducts();
+    }, 0);
+    const handleLocationChanged = () => {
+      void loadProducts();
+    };
+    window.addEventListener('ulab:location-changed', handleLocationChanged);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('ulab:location-changed', handleLocationChanged);
+    };
   }, [loadProducts]);
 
   // Toggle availability (Báo hết / Mở bán lại)
@@ -112,46 +127,93 @@ export default function ProductsPanel() {
 
   const openEditModal = (item: MenuItem) => {
     setEditingItem(item);
+    setEditName(item.name);
+    setEditDesc(item.description || item.shelfLife || '');
+    setEditIsSignature(Boolean(item.isSignature));
     setEditSizes(item.sizes.map((s) => ({ ...s })));
   };
 
-  const handleSavePrices = async (e: React.FormEvent) => {
+  const handleSaveEditProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
 
+    const cleanName = editName.trim();
+    if (cleanName.length < 2) {
+      setToastMessage('Tên món phải có ít nhất 2 ký tự.');
+      return;
+    }
+
     const newSizes = editSizes.map((s) => ({
-      label: s.label,
+      label: s.label.trim() || 'M',
       price: Math.max(1000, Number(s.price) || 0),
     }));
 
-    setItems((prev) =>
-      prev.map((it) => (it.id === editingItem.id ? { ...it, sizes: newSizes } : it))
-    );
-    const savedName = editingItem.name;
-    const savedId = editingItem.id;
-    setEditingItem(null);
-
+    setSavingEdit(true);
     try {
       const res = await fetch('/api/admin/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'UPDATE_PRICES',
-          productId: savedId,
+          action: 'UPDATE_PRODUCT',
+          productId: editingItem.id,
+          name: cleanName,
+          categorySlug: editingItem.categorySlug,
+          isSignature: editIsSignature,
+          description: editDesc.trim() || undefined,
+          shelfLife: editingItem.categorySlug === 'cold-brew-chai' ? editDesc.trim() || undefined : undefined,
           sizes: newSizes,
+          isAvailable: !unavailableIds.includes(editingItem.id),
         }),
       });
-
-      if (res.ok) {
-        setToastMessage(`Đã cập nhật bảng giá mới cho món "${savedName}".`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEditingItem(null);
+        await loadProducts();
+        setToastMessage(`✓ Đã cập nhật thông tin & bảng giá cho món "${cleanName}".`);
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
-            new CustomEvent('ulab:menu-changed', { detail: { productId: savedId } })
+            new CustomEvent('ulab:menu-changed', { detail: { productId: editingItem.id } })
           );
         }
+      } else {
+        setToastMessage(data.error || 'Không thể cập nhật thông tin món.');
       }
     } catch (err) {
-      console.error('Error saving prices:', err);
+      console.error('Error updating product:', err);
+      setToastMessage('Lỗi kết nối khi lưu thông tin món.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteCustomProduct = async (item: MenuItem) => {
+    if (!window.confirm(`Xác nhận ẩn/xóa món "${item.name}" khỏi thực đơn?`)) {
+      return;
+    }
+    setUpdatingId(item.id);
+    try {
+      const res = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DELETE_PRODUCT',
+          productId: item.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await loadProducts();
+        setToastMessage(`Đã ẩn/xóa món "${item.name}" khỏi thực đơn.`);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ulab:menu-changed'));
+        }
+      } else {
+        setToastMessage(data.error || 'Không thể xóa món này.');
+      }
+    } catch {
+      setToastMessage('Lỗi kết nối khi xóa món.');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -302,12 +364,13 @@ export default function ProductsPanel() {
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       {item.imageUrl && (
-                        <img
+                        <Image
                           src={item.imageUrl}
                           alt={item.name}
+                          width={38}
+                          height={38}
+                          unoptimized
                           style={{
-                            width: 38,
-                            height: 38,
                             borderRadius: 8,
                             objectFit: 'cover',
                             flexShrink: 0,
@@ -367,7 +430,7 @@ export default function ProductsPanel() {
                         className={`${styles.actionBtn} ${styles.actionBtnEdit}`}
                         onClick={() => openEditModal(item)}
                       >
-                        Sửa giá
+                        ✏️ Sửa món
                       </button>
                       <button
                         type="button"
@@ -380,6 +443,17 @@ export default function ProductsPanel() {
                       >
                         {isBusy ? 'Đang xử lý...' : isOut ? '✓ Mở bán lại' : 'Báo hết'}
                       </button>
+                      {!allMenuItems.some((m) => m.id === item.id) && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          className={`${styles.actionBtn} ${styles.actionBtnDelete}`}
+                          onClick={() => handleDeleteCustomProduct(item)}
+                          title="Xóa / ẩn món tạo mới khỏi thực đơn"
+                        >
+                          Xóa
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -397,7 +471,7 @@ export default function ProductsPanel() {
         </div>
       )}
 
-      {/* Edit Price Modal */}
+      {/* Edit Full Product Modal */}
       {editingItem && (
         <div
           style={{
@@ -417,21 +491,79 @@ export default function ProductsPanel() {
               borderRadius: 16,
               padding: 24,
               width: '100%',
-              maxWidth: 400,
+              maxWidth: 440,
               boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
             }}
           >
             <h3 style={{ margin: '0 0 6px', fontSize: '1.125rem', color: '#1E3932' }}>
-              Điều chỉnh giá: {editingItem.name}
+              ✏️ Chỉnh Sửa Món: {editingItem.name}
             </h3>
             <p style={{ margin: '0 0 16px', fontSize: '0.8125rem', color: '#666' }}>
-              Cập nhật đơn giá (VNĐ) cho từng kích cỡ của món nước này.
+              Cập nhật tên món, mô tả, nhãn Signature và bảng giá theo Size. Thay đổi đồng bộ ngay sang POS.
             </p>
-            <form onSubmit={handleSavePrices} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <form onSubmit={handleSaveEditProduct} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                  Tên thức uống *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className={styles.searchInput}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.825rem', color: '#1E3932', marginBottom: 4 }}>
+                  Mô tả ngắn / Hạn sử dụng (Tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  placeholder="VD: Ủ lạnh 18h · Hạt Arabica Cầu Đất"
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className={styles.searchInput}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', fontWeight: 600, color: '#1E3932', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editIsSignature}
+                  onChange={(e) => setEditIsSignature(e.target.checked)}
+                />
+                Gắn nhãn ★ Signature (Best-seller chủ đạo)
+              </label>
+
+              <div className={styles.editSizeHeader}>
+                <label style={{ fontWeight: 700, fontSize: '0.825rem', color: '#1E3932' }}>
+                  Bảng giá theo Size (VNĐ)
+                </label>
+                {editingItem.categorySlug !== 'cold-brew-chai' &&
+                  !editSizes.some((s) => s.label === 'L') && (
+                    <button
+                      type="button"
+                      className={styles.addSizeMiniBtn}
+                      onClick={() =>
+                        setEditSizes((prev) => [
+                          ...prev,
+                          { label: 'L', price: (prev[0]?.price || 35000) + 5000 },
+                        ])
+                      }
+                    >
+                      + Thêm Size L
+                    </button>
+                  )}
+              </div>
+
               {editSizes.map((sz, idx) => (
-                <div key={sz.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <label style={{ fontWeight: 700, fontSize: '0.875rem', color: '#1E3932', minWidth: 70 }}>
-                    Size {sz.label}
+                <div key={sz.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <label style={{ fontWeight: 700, fontSize: '0.875rem', color: '#1E3932', minWidth: 64 }}>
+                    {sz.label === 'Chai' ? 'Chai' : `Size ${sz.label}`}
                   </label>
                   <input
                     type="number"
@@ -440,14 +572,25 @@ export default function ProductsPanel() {
                     min={1000}
                     onChange={(e) => {
                       const next = [...editSizes];
-                      next[idx].price = Number(e.target.value);
+                      next[idx] = { ...next[idx], price: Number(e.target.value) };
                       setEditSizes(next);
                     }}
                     className={styles.searchInput}
                     style={{ flex: 1 }}
                   />
+                  {editSizes.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditSizes((prev) => prev.filter((_, i) => i !== idx))}
+                      className={`${styles.actionBtn} ${styles.actionBtnDelete}`}
+                      title={`Bỏ Size ${sz.label}`}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               ))}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
                 <button
                   type="button"
@@ -456,8 +599,8 @@ export default function ProductsPanel() {
                 >
                   Hủy
                 </button>
-                <button type="submit" className={styles.primaryBtn}>
-                  Lưu giá mới
+                <button type="submit" disabled={savingEdit} className={styles.primaryBtn}>
+                  {savingEdit ? 'Đang lưu...' : '✓ Lưu thay đổi'}
                 </button>
               </div>
             </form>

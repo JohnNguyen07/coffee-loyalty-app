@@ -90,6 +90,52 @@ export interface HourlySalesBucket {
   revenue: number;
 }
 
+export interface DailySalesBucket {
+  date: string;
+  label: string;
+  orderCount: number;
+  grossSales: number;
+  discounts: number;
+  netRevenue: number;
+  cancelledCount: number;
+  refundedAmount: number;
+}
+
+export interface CategoryRevenueItem {
+  categoryName: string;
+  quantitySold: number;
+  totalRevenue: number;
+  sharePercent: number;
+}
+
+export interface ChannelRevenueItem {
+  channel: 'POS' | 'WEB';
+  label: string;
+  orderCount: number;
+  netRevenue: number;
+  averageOrderValue: number;
+  sharePercent: number;
+}
+
+export interface NetOperatingCashflowBreakdown {
+  grossSales: number;
+  totalDiscounts: number;
+  netSalesRevenue: number;
+  storeReceiptInflows: number;
+  storeExpenseOutflows: number;
+  netOperatingCashflow: number;
+  expenseToRevenueRatio: number;
+}
+
+export interface StoreFundOverview {
+  openingFloat: number;
+  paidSalesInflow: number;
+  manualReceiptInflow: number;
+  refundOutflow: number;
+  manualPaymentOutflow: number;
+  theoreticalClosingBalance: number;
+}
+
 export interface RevenueSummaryResult {
   metrics: RevenueMetricCardData;
   orderRevenue: OrderRevenueBreakdown;
@@ -98,6 +144,9 @@ export interface RevenueSummaryResult {
   cashReconciliation: CashReconciliationBreakdown;
   bestSellers: BestSellerItem[];
   hourlySales: HourlySalesBucket[];
+  dailySales: DailySalesBucket[];
+  categoryRevenue: CategoryRevenueItem[];
+  channelBreakdown: ChannelRevenueItem[];
   totalOrdersPlaced: number;
   completedOrdersCount: number;
   pendingOrdersCount: number;
@@ -132,6 +181,7 @@ export function calculateDenominationsTotal(counts: Partial<Record<DenominationK
 
 // ── Cash Transactions & Cashbook (Sổ Quỹ Tiền Cửa Hàng) ──
 export type CashTransactionType = 'RECEIPT' | 'PAYMENT';
+export type CashTransactionStatus = 'POSTED' | 'VOIDED';
 
 export type CashTransactionCategory =
   | 'RAW_MATERIAL'     // Mua đá bi, sữa, chanh sả, nguyên liệu khẩn cấp
@@ -140,6 +190,7 @@ export type CashTransactionCategory =
   | 'SALARY_ADVANCE'   // Tạm ứng lương nhân viên
   | 'SHIPPING'         // Tiền trả shipper ngoài
   | 'OPENING_FLOAT'    // Rót tiền quỹ / tiền thối đầu ca
+  | 'BANK_DEPOSIT'     // Nộp tiền doanh thu về chủ quán / ngân hàng
   | 'OTHER';           // Chi phí khác
 
 export const CASH_CATEGORY_LABELS: Record<CashTransactionCategory, string> = {
@@ -149,6 +200,7 @@ export const CASH_CATEGORY_LABELS: Record<CashTransactionCategory, string> = {
   SALARY_ADVANCE: 'Tạm ứng lương nhân viên',
   SHIPPING: 'Chi phí giao hàng (Shipper ngoài)',
   OPENING_FLOAT: 'Rót tiền quỹ / Tiền thối đầu ca',
+  BANK_DEPOSIT: 'Nộp tiền doanh thu về chủ quán / Ngân hàng',
   OTHER: 'Khoản thu / chi khác',
 };
 
@@ -165,6 +217,13 @@ export interface CashTransaction {
   createdByName: string;
   createdAt: string;
   runningBalance?: number;
+  status?: CashTransactionStatus;
+  voidReason?: string | null;
+  voidedByName?: string | null;
+  voidedAt?: string | null;
+  idempotencyKey?: string | null;
+  locationId?: string;
+  businessId?: string;
 }
 
 export interface CashbookSummary {
@@ -174,15 +233,46 @@ export interface CashbookSummary {
   closingBalance: number;
   transactions: CashTransaction[];
   categoryBreakdown: Record<string, number>;
+  activeCount: number;
+  voidedCount: number;
+  storeFund: StoreFundOverview;
+}
+
+export function calculateStoreFundOverview(params: {
+  openingFloat: number;
+  paidSalesInflow: number;
+  refundOutflow: number;
+  manualReceiptInflow: number;
+  manualPaymentOutflow: number;
+}): StoreFundOverview {
+  const openingFloat = Math.max(0, Math.round(params.openingFloat || 0));
+  const paidSalesInflow = Math.max(0, Math.round(params.paidSalesInflow || 0));
+  const manualReceiptInflow = Math.max(0, Math.round(params.manualReceiptInflow || 0));
+  const refundOutflow = Math.max(0, Math.round(params.refundOutflow || 0));
+  const manualPaymentOutflow = Math.max(0, Math.round(params.manualPaymentOutflow || 0));
+
+  return {
+    openingFloat,
+    paidSalesInflow,
+    manualReceiptInflow,
+    refundOutflow,
+    manualPaymentOutflow,
+    theoreticalClosingBalance:
+      openingFloat + paidSalesInflow + manualReceiptInflow - refundOutflow - manualPaymentOutflow,
+  };
 }
 
 export function calculateCashbookSummary(
   openingBalance: number,
-  transactions: CashTransaction[]
+  transactions: CashTransaction[],
+  paidSalesInflow = 0,
+  refundOutflow = 0
 ): CashbookSummary {
   let totalIn = 0;
   let totalOut = 0;
   let currentBalance = Math.max(0, openingBalance);
+  let activeCount = 0;
+  let voidedCount = 0;
 
   // Sort chronologically ascending to calculate running balance
   const sorted = [...transactions].sort(
@@ -192,6 +282,17 @@ export function calculateCashbookSummary(
   const categoryBreakdown: Record<string, number> = {};
 
   const withRunning = sorted.map((tx) => {
+    const status: CashTransactionStatus = tx.status === 'VOIDED' ? 'VOIDED' : 'POSTED';
+    if (status === 'VOIDED') {
+      voidedCount++;
+      return {
+        ...tx,
+        status,
+        runningBalance: currentBalance,
+      };
+    }
+
+    activeCount++;
     if (tx.type === 'RECEIPT') {
       totalIn += tx.amount;
       currentBalance += tx.amount;
@@ -202,11 +303,20 @@ export function calculateCashbookSummary(
     }
     return {
       ...tx,
+      status,
       runningBalance: currentBalance,
     };
   });
 
   withRunning.reverse();
+
+  const storeFund = calculateStoreFundOverview({
+    openingFloat: Math.max(0, openingBalance),
+    paidSalesInflow,
+    refundOutflow,
+    manualReceiptInflow: totalIn,
+    manualPaymentOutflow: totalOut,
+  });
 
   return {
     openingBalance,
@@ -215,6 +325,9 @@ export function calculateCashbookSummary(
     closingBalance: currentBalance,
     transactions: withRunning,
     categoryBreakdown,
+    activeCount,
+    voidedCount,
+    storeFund,
   };
 }
 
@@ -239,8 +352,12 @@ export interface ShiftSession {
   varianceStatus?: VarianceStatus;
   cashRetained?: number;
   cashHandedOver?: number;
+  orderCount?: number;
   notes?: string | null;
   denominations?: Partial<Record<DenominationKey, number>>;
+  locationId?: string;
+  businessId?: string;
+  idempotencyKey?: string | null;
 }
 
 export function calculateShiftReconciliation(params: {
@@ -284,7 +401,36 @@ export function calculateShiftReconciliation(params: {
  * Normalizes payment method string (Unified into 'TIEN').
  */
 export function normalizePaymentMethod(method?: string): string {
+  if (typeof method === 'string') {
+    return 'TIEN';
+  }
   return 'TIEN';
+}
+
+/**
+ * Shared helper categorizing a menu item into its operational drink group.
+ */
+export function categorizeProductItem(cleanName: string, size?: string): string {
+  const lower = cleanName.toLowerCase();
+  if (String(size || '').toLowerCase() === 'chai' || lower.includes('pure black')) {
+    return 'Cold Brew Chai';
+  }
+  if (
+    lower.includes('cam sả') ||
+    lower.includes('chanh vàng') ||
+    lower.includes('nước dừa') ||
+    lower.includes('vải') ||
+    lower.includes('cold brew')
+  ) {
+    return 'Cold Brew';
+  }
+  if (lower.includes('matcha')) {
+    return 'Matcha';
+  }
+  if (lower.includes('cà phê') || lower.includes('espresso') || lower.includes('latte')) {
+    return 'Pha Máy';
+  }
+  return 'Khác';
 }
 
 /**
@@ -323,18 +469,7 @@ export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 12): 
       const cleanName = canonicalizeProductName(rawName);
       const qty = Number(it.quantity) || 1;
       const subtotal = Number(it.subtotal) || (Number(it.unit_price || 0) * qty) || 0;
-
-      let cat = 'Khác';
-      const lower = cleanName.toLowerCase();
-      if (String(it.size || '').toLowerCase() === 'chai' || lower.includes('pure black')) {
-        cat = 'Cold Brew Chai';
-      } else if (lower.includes('cam sả') || lower.includes('chanh vàng') || lower.includes('nước dừa') || lower.includes('vải') || lower.includes('cold brew')) {
-        cat = 'Cold Brew';
-      } else if (lower.includes('matcha')) {
-        cat = 'Matcha';
-      } else if (lower.includes('cà phê') || lower.includes('espresso') || lower.includes('latte')) {
-        cat = 'Pha Máy';
-      }
+      const cat = categorizeProductItem(cleanName, it.size);
 
       const existing = map.get(cleanName) || { quantity: 0, revenue: 0, category: cat };
       existing.quantity += qty;
@@ -352,6 +487,148 @@ export function calculateBestSellers(orders: RawOrderForRevenue[], limit = 12): 
 
   list.sort((a, b) => b.totalRevenue - a.totalRevenue);
   return list.slice(0, limit);
+}
+
+/**
+ * Calculates revenue breakdown by drink category.
+ */
+export function calculateCategoryRevenue(orders: RawOrderForRevenue[]): CategoryRevenueItem[] {
+  const map = new Map<string, { quantity: number; revenue: number }>();
+  let totalRev = 0;
+
+  for (const ord of orders) {
+    if (ord.status !== 'CONFIRMED') continue;
+    const items = ord.items || [];
+    for (const it of items) {
+      const cleanName = canonicalizeProductName(String(it.product_name || 'Món'));
+      const qty = Number(it.quantity) || 1;
+      const subtotal = Math.max(0, Number(it.subtotal) || (Number(it.unit_price || 0) * qty) || 0);
+      const cat = categorizeProductItem(cleanName, it.size);
+
+      const existing = map.get(cat) || { quantity: 0, revenue: 0 };
+      existing.quantity += qty;
+      existing.revenue += subtotal;
+      map.set(cat, existing);
+      totalRev += subtotal;
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([categoryName, data]) => ({
+      categoryName,
+      quantitySold: data.quantity,
+      totalRevenue: data.revenue,
+      sharePercent: totalRev > 0 ? Math.round((data.revenue / totalRev) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.totalRevenue - a.totalRevenue);
+}
+
+/**
+ * Calculates channel revenue breakdown (POS vs WEB).
+ */
+export function calculateChannelBreakdown(orders: RawOrderForRevenue[]): ChannelRevenueItem[] {
+  const acc: Record<'POS' | 'WEB', { count: number; revenue: number }> = {
+    POS: { count: 0, revenue: 0 },
+    WEB: { count: 0, revenue: 0 },
+  };
+
+  for (const ord of orders) {
+    if (ord.status !== 'CONFIRMED') continue;
+    const rawChannel = String(ord.channel || '').toUpperCase();
+    const code = String(ord.order_code || '').toUpperCase();
+    const resolvedChannel: 'POS' | 'WEB' =
+      rawChannel === 'WEB' || code.startsWith('CF-') || code.startsWith('ULAB-') ? 'WEB' : 'POS';
+    acc[resolvedChannel].count++;
+    acc[resolvedChannel].revenue += Math.max(0, Number(ord.total_due) || 0);
+  }
+
+  const totalRev = acc.POS.revenue + acc.WEB.revenue;
+  return (['POS', 'WEB'] as const).map((ch) => ({
+    channel: ch,
+    label: ch === 'POS' ? 'POS Tại Quầy' : 'Đặt Hàng Online / Web',
+    orderCount: acc[ch].count,
+    netRevenue: acc[ch].revenue,
+    averageOrderValue: acc[ch].count > 0 ? Math.round(acc[ch].revenue / acc[ch].count) : 0,
+    sharePercent: totalRev > 0 ? Math.round((acc[ch].revenue / totalRev) * 1000) / 10 : 0,
+  }));
+}
+
+/**
+ * Calculates daily sales trend in Vietnam timezone (UTC+7).
+ */
+export function calculateDailySales(orders: RawOrderForRevenue[]): DailySalesBucket[] {
+  const vnOffsetMs = 7 * 60 * 60 * 1000;
+  const map = new Map<string, DailySalesBucket>();
+
+  for (const ord of orders) {
+    const parsed = new Date(ord.created_at);
+    if (Number.isNaN(parsed.getTime())) continue;
+    const vnDate = new Date(parsed.getTime() + vnOffsetMs);
+    const y = vnDate.getUTCFullYear();
+    const m = String(vnDate.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(vnDate.getUTCDate()).padStart(2, '0');
+    const dateKey = `${y}-${m}-${d}`;
+    const label = `${d}/${m}`;
+
+    const bucket = map.get(dateKey) || {
+      date: dateKey,
+      label,
+      orderCount: 0,
+      grossSales: 0,
+      discounts: 0,
+      netRevenue: 0,
+      cancelledCount: 0,
+      refundedAmount: 0,
+    };
+
+    const subtotal = Math.max(0, Number(ord.subtotal) || 0);
+    const totalDue = Math.max(0, Number(ord.total_due) || 0);
+    const discountTotal =
+      Math.max(0, Number(ord.discount_amount) || 0) + Math.max(0, Number(ord.points_used) || 0);
+
+    if (ord.status === 'CONFIRMED') {
+      bucket.orderCount++;
+      bucket.grossSales += subtotal;
+      bucket.discounts += discountTotal;
+      bucket.netRevenue += totalDue;
+    } else if (ord.status === 'CANCELLED') {
+      bucket.cancelledCount++;
+      bucket.refundedAmount += totalDue;
+    }
+
+    map.set(dateKey, bucket);
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Reconciles Net Sales Revenue with Store Cashbook Inflows & Expenses.
+ */
+export function calculateNetOperatingCashflow(
+  summary: Pick<RevenueSummaryResult, 'orderRevenue'>,
+  cashbook: Pick<CashbookSummary, 'totalIn' | 'totalOut'>
+): NetOperatingCashflowBreakdown {
+  const grossSales = Math.max(0, summary.orderRevenue.grossSales || 0);
+  const totalDiscounts =
+    Math.max(0, summary.orderRevenue.discounts || 0) +
+    Math.max(0, summary.orderRevenue.pointsDiscount || 0);
+  const netSalesRevenue = Math.max(0, summary.orderRevenue.netRevenue || 0);
+  const storeReceiptInflows = Math.max(0, cashbook.totalIn || 0);
+  const storeExpenseOutflows = Math.max(0, cashbook.totalOut || 0);
+  const netOperatingCashflow = netSalesRevenue - storeExpenseOutflows;
+  const expenseToRevenueRatio =
+    netSalesRevenue > 0 ? Math.round((storeExpenseOutflows / netSalesRevenue) * 1000) / 10 : 0;
+
+  return {
+    grossSales,
+    totalDiscounts,
+    netSalesRevenue,
+    storeReceiptInflows,
+    storeExpenseOutflows,
+    netOperatingCashflow,
+    expenseToRevenueRatio,
+  };
 }
 
 /**
@@ -441,6 +718,9 @@ export function calculateRevenueSummary(
 
   const bestSellers = calculateBestSellers(orders);
   const hourlySales = calculateHourlySales(orders);
+  const dailySales = calculateDailySales(orders);
+  const categoryRevenue = calculateCategoryRevenue(orders);
+  const channelBreakdown = calculateChannelBreakdown(orders);
 
   return {
     metrics: {
@@ -482,6 +762,9 @@ export function calculateRevenueSummary(
     },
     bestSellers,
     hourlySales,
+    dailySales,
+    categoryRevenue,
+    channelBreakdown,
     totalOrdersPlaced: orders.length,
     completedOrdersCount,
     pendingOrdersCount,
@@ -564,4 +847,135 @@ export function getDateRangeBoundaries(
       };
     }
   }
+}
+
+// ── Domain Validators for Cashbook & Shifts ──
+
+const VALID_CASH_CATEGORIES = new Set<CashTransactionCategory>([
+  'RAW_MATERIAL',
+  'PACKAGING',
+  'UTILITIES',
+  'SALARY_ADVANCE',
+  'SHIPPING',
+  'OPENING_FLOAT',
+  'BANK_DEPOSIT',
+  'OTHER',
+]);
+
+export function validateCashTransactionInput(input: {
+  type?: string;
+  category?: string;
+  amount?: number;
+  paymentMethod?: string;
+  recipientPayer?: string;
+  notes?: string;
+}): {
+  type: CashTransactionType;
+  category: CashTransactionCategory;
+  amount: number;
+  paymentMethod: 'CASH' | 'BANK_TRANSFER';
+  recipientPayer: string;
+  notes?: string;
+} {
+  const type = String(input.type || '').toUpperCase();
+  if (type !== 'RECEIPT' && type !== 'PAYMENT') {
+    throw new Error('Loại phiếu sổ quỹ phải là Phiếu Thu (RECEIPT) hoặc Phiếu Chi (PAYMENT).');
+  }
+
+  const rawCategory = String(input.category || 'OTHER').toUpperCase() as CashTransactionCategory;
+  const category: CashTransactionCategory = VALID_CASH_CATEGORIES.has(rawCategory) ? rawCategory : 'OTHER';
+
+  const amount = Math.floor(Number(input.amount) || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Số tiền giao dịch phải là số nguyên dương lớn hơn 0đ.');
+  }
+
+  const recipientPayer = String(input.recipientPayer || '').trim();
+  if (recipientPayer.length < 2) {
+    throw new Error('Vui lòng nhập tên người nhận hoặc người nộp tiền (ít nhất 2 ký tự).');
+  }
+
+  const paymentMethod: 'CASH' | 'BANK_TRANSFER' =
+    String(input.paymentMethod || '').toUpperCase() === 'BANK_TRANSFER' ? 'BANK_TRANSFER' : 'CASH';
+
+  const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim() : undefined;
+
+  return {
+    type,
+    category,
+    amount,
+    paymentMethod,
+    recipientPayer,
+    notes,
+  };
+}
+
+export function validateVoidTransactionInput(input: {
+  transactionId?: string;
+  reason?: string;
+}): { transactionId: string; reason: string } {
+  const transactionId = String(input.transactionId || '').trim();
+  if (!transactionId) {
+    throw new Error('Thiếu mã định danh phiếu cần hủy.');
+  }
+  const reason = String(input.reason || '').trim();
+  if (reason.length < 3) {
+    throw new Error('Vui lòng nhập lý do hủy phiếu (ít nhất 3 ký tự).');
+  }
+  return { transactionId, reason };
+}
+
+export function validateShiftOpenInput(input: {
+  shiftName?: string;
+  openingCash?: number;
+  notes?: string;
+}): { shiftName: string; openingCash: number; notes?: string } {
+  const shiftName = String(input.shiftName || '').trim();
+  if (shiftName.length < 2) {
+    throw new Error('Tên ca bán hàng phải có ít nhất 2 ký tự.');
+  }
+  const rawCash = Number(input.openingCash ?? 0);
+  if (!Number.isFinite(rawCash) || rawCash < 0) {
+    throw new Error('Tiền thối đầu ca phải là số nguyên không âm (VND).');
+  }
+  const openingCash = Math.round(rawCash);
+  const notes = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim() : undefined;
+  return { shiftName, openingCash, notes };
+}
+
+export function validateShiftCloseInput(input: {
+  expectedCash: number;
+  actualCash: number;
+  cashRetained?: number;
+  notes?: string;
+}): { actualCash: number; cashRetained: number; notes?: string } {
+  const expectedCash = Math.max(0, Math.round(Number(input.expectedCash) || 0));
+  const rawActual = Number(input.actualCash);
+  if (!Number.isFinite(rawActual) || rawActual < 0) {
+    throw new Error('Tiền thực tế kiểm đếm phải là số nguyên không âm (VND).');
+  }
+  const actualCash = Math.round(rawActual);
+
+  const rawRetained = Number(input.cashRetained ?? 0);
+  if (!Number.isFinite(rawRetained) || rawRetained < 0) {
+    throw new Error('Tiền giữ lại két cho ca sau phải là số nguyên không âm (VND).');
+  }
+  const cashRetained = Math.round(rawRetained);
+
+  if (cashRetained > actualCash) {
+    throw new Error('Tiền giữ lại két cho ca sau không được vượt quá tiền mặt thực tế kiểm đếm.');
+  }
+
+  const trimmedNotes = typeof input.notes === 'string' ? input.notes.trim() : '';
+  if (actualCash !== expectedCash && trimmedNotes.length < 3) {
+    throw new Error(
+      'Khi két tiền bị lệch (Thừa/Thiếu), bắt buộc phải nhập lý do giải trình trước khi chốt ca.'
+    );
+  }
+
+  return {
+    actualCash,
+    cashRetained,
+    notes: trimmedNotes || undefined,
+  };
 }

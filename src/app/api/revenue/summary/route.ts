@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPosStaff } from '@/lib/auth-utils';
+import { canViewFinancialRevenue } from '@/lib/rbac/domain';
 import {
   getRevenueReport,
   createCashTransaction,
+  voidCashTransaction,
   openShiftSession,
   closeShiftSession,
   type RevenueReportQuery,
@@ -19,9 +21,9 @@ export async function GET(request: NextRequest) {
         { status: 403 }
       );
     }
-    if (staff.staffRole === 'INVENTORY_STAFF') {
+    if (!canViewFinancialRevenue(staff.staffRole)) {
       return NextResponse.json(
-        { error: 'Vai trò của bạn không được phép xem báo cáo doanh thu tài chính.' },
+        { error: 'Vai trò của bạn không có quyền truy cập dữ liệu doanh thu và sổ quỹ cửa hàng.' },
         { status: 403 }
       );
     }
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/revenue/summary — Thao tác: Lập phiếu Thu/Chi, Mở ca, Chốt ca & Két
+// POST /api/revenue/summary — Thao tác: Lập/Hủy phiếu Thu-Chi, Mở ca, Chốt ca & Két
 export async function POST(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
@@ -73,13 +75,19 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+    if (!canViewFinancialRevenue(staff.staffRole)) {
+      return NextResponse.json(
+        { error: 'Vai trò của bạn không có quyền thao tác doanh thu và sổ quỹ cửa hàng.' },
+        { status: 403 }
+      );
+    }
 
     const body = await request.json();
     const action = body.action || 'record_drawer';
 
     // 1. Tạo Phiếu Thu / Chi Sổ Quỹ
     if (action === 'create_transaction') {
-      const { type, category, amount, paymentMethod, recipientPayer, notes } = body;
+      const { type, category, amount, paymentMethod, recipientPayer, notes, shiftId, idempotencyKey } = body;
       const res = await createCashTransaction(
         {
           type,
@@ -88,6 +96,8 @@ export async function POST(request: NextRequest) {
           paymentMethod,
           recipientPayer: String(recipientPayer || ''),
           notes: typeof notes === 'string' ? notes : undefined,
+          shiftId: typeof shiftId === 'string' ? shiftId : undefined,
+          idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
         },
         staff
       );
@@ -97,14 +107,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, transaction: res.transaction });
     }
 
-    // 2. Mở Ca Bán Hàng (Open Shift)
+    // 2. Hủy Phiếu Thu / Chi (Chuyển trạng thái VOIDED kèm lý do)
+    if (action === 'void_transaction') {
+      const { transactionId, reason } = body;
+      const res = await voidCashTransaction(
+        {
+          transactionId: String(transactionId || ''),
+          reason: String(reason || ''),
+        },
+        staff
+      );
+      if (!res.success) {
+        return NextResponse.json({ error: res.error || 'Lỗi hủy phiếu sổ quỹ.' }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, transaction: res.transaction });
+    }
+
+    // 3. Mở Ca Bán Hàng (Open Shift)
     if (action === 'open_shift') {
-      const { shiftName, openingCash, notes } = body;
+      const { shiftName, openingCash, notes, idempotencyKey } = body;
       const res = await openShiftSession(
         {
           shiftName: String(shiftName || 'Ca Sáng'),
           openingCash: Number(openingCash) || 0,
           notes: typeof notes === 'string' ? notes : undefined,
+          idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
         },
         staff
       );
@@ -114,15 +141,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, shift: res.shift });
     }
 
-    // 3. Chốt Ca Bán Hàng & Bàn Giao (Close Shift)
+    // 4. Chốt Ca Bán Hàng & Bàn Giao (Close Shift)
     if (action === 'close_shift') {
-      const { actualCash, cashRetained, notes, denominations } = body;
+      const { shiftId, actualCash, cashRetained, notes, denominations, idempotencyKey, autoRecordHandover } = body;
       const res = await closeShiftSession(
         {
+          shiftId: typeof shiftId === 'string' ? shiftId : undefined,
           actualCash: Number(actualCash) || 0,
           cashRetained: Number(cashRetained) || 0,
           notes: typeof notes === 'string' ? notes : undefined,
           denominations,
+          idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
+          autoRecordHandover: Boolean(autoRecordHandover),
         },
         staff
       );
@@ -132,10 +162,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, shift: res.shift });
     }
 
-    // 4. Fallback legacy count
+    // 5. Fallback legacy count
     const openingCash = Number(body.openingCash) || 0;
     const actualCash = Number(body.actualCash) || 0;
-    const cashPayouts = Number(body.cashPayouts) || 0;
     const notes = typeof body.notes === 'string' ? body.notes : '';
 
     const closeRes = await closeShiftSession(
@@ -147,7 +176,10 @@ export async function POST(request: NextRequest) {
       staff
     );
 
-    return NextResponse.json({ success: closeRes.success });
+    if (!closeRes.success) {
+      return NextResponse.json({ error: closeRes.error || 'Lỗi đối soát két.' }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, shift: closeRes.shift });
   } catch (err: unknown) {
     console.error('POST /api/revenue/summary error:', err);
     return NextResponse.json(

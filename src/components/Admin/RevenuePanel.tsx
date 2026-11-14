@@ -7,17 +7,26 @@ import {
   CASH_CATEGORY_LABELS,
   DENOMINATION_VALUES,
   calculateDenominationsTotal,
+  type CashTransaction,
   type CashTransactionCategory,
   type CashTransactionType,
   type DateRangePreset,
   type DenominationKey,
-  type RevenueSummaryResult,
   type ShiftSession,
 } from '@/lib/revenue/domain';
 import type {
   DetailedRevenueOrder,
   RevenueReportResponse,
 } from '@/lib/revenue/repository';
+
+const TX_PAYMENT_METHOD = 'CASH' as const;
+
+function createClientIdempotencyKey(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 export default function RevenuePanel() {
   const [activeTab, setActiveTab] = useState<'SALES' | 'CASHBOOK' | 'SHIFTS'>('SALES');
@@ -32,25 +41,40 @@ export default function RevenuePanel() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [reportData, setReportData] = useState<RevenueReportResponse | null>(null);
 
-  // Table filters
+  // Orders table filters
   const [orderSearchText, setOrderSearchText] = useState<string>('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('ALL');
 
-  // Modal states
+  // Cashbook table filters
+  const [txTypeFilter, setTxTypeFilter] = useState<'ALL' | 'RECEIPT' | 'PAYMENT'>('ALL');
+  const [txCategoryFilter, setTxCategoryFilter] = useState<string>('ALL');
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'POSTED' | 'VOIDED'>('ALL');
+  const [txSearchText, setTxSearchText] = useState<string>('');
+
+  // Create Voucher Modal states
   const [showTransactionModal, setShowTransactionModal] = useState<boolean>(false);
   const [txType, setTxType] = useState<CashTransactionType>('PAYMENT');
   const [txCategory, setTxCategory] = useState<CashTransactionCategory>('RAW_MATERIAL');
   const [txAmount, setTxAmount] = useState<string>('');
-  const [txPaymentMethod, setTxPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH');
   const [txRecipientPayer, setTxRecipientPayer] = useState<string>('');
   const [txNotes, setTxNotes] = useState<string>('');
+  const [txIdemKey, setTxIdemKey] = useState<string>('');
   const [submittingTx, setSubmittingTx] = useState<boolean>(false);
+
+  // Void Voucher Modal
+  const [voidTargetTx, setVoidTargetTx] = useState<CashTransaction | null>(null);
+  const [voidReason, setVoidReason] = useState<string>('');
+  const [submittingVoid, setSubmittingVoid] = useState<boolean>(false);
+
+  // Print Cashbook Voucher Modal
+  const [voucherModalTx, setVoucherModalTx] = useState<CashTransaction | null>(null);
 
   // Open Shift Modal
   const [showOpenShiftModal, setShowOpenShiftModal] = useState<boolean>(false);
   const [shiftNameInput, setShiftNameInput] = useState<string>('Ca Sáng');
   const [openingCashInput, setOpeningCashInput] = useState<string>('500000');
   const [openShiftNotes, setOpenShiftNotes] = useState<string>('');
+  const [openShiftIdemKey, setOpenShiftIdemKey] = useState<string>('');
   const [submittingOpenShift, setSubmittingOpenShift] = useState<boolean>(false);
 
   // Close Shift Modal & Denomination Counter
@@ -58,7 +82,13 @@ export default function RevenuePanel() {
   const [denomCounts, setDenomCounts] = useState<Partial<Record<DenominationKey, number>>>({});
   const [retainedCashInput, setRetainedCashInput] = useState<string>('500000');
   const [closeShiftNotes, setCloseShiftNotes] = useState<string>('');
+  const [autoRecordHandover, setAutoRecordHandover] = useState<boolean>(true);
+  const [closeShiftIdemKey, setCloseShiftIdemKey] = useState<string>('');
   const [submittingCloseShift, setSubmittingCloseShift] = useState<boolean>(false);
+
+  // Mid-shift X-Report Check Modal
+  const [showMidCheckModal, setShowMidCheckModal] = useState<boolean>(false);
+  const [midDenomCounts, setMidDenomCounts] = useState<Partial<Record<DenominationKey, number>>>({});
 
   // Print Z-Report Modal
   const [zReportShift, setZReportShift] = useState<ShiftSession | null>(null);
@@ -81,7 +111,6 @@ export default function RevenuePanel() {
   const fetchRevenueReport = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
-    setSuccessMsg(null);
     try {
       const params = new URLSearchParams();
       params.set('preset', preset);
@@ -113,23 +142,67 @@ export default function RevenuePanel() {
   }, [preset, customFrom, customTo, channelFilter, requestCashbookApi]);
 
   useEffect(() => {
-    fetchRevenueReport();
+    const initTimer = window.setTimeout(() => {
+      void fetchRevenueReport();
+    }, 0);
+    const handleLocationChanged = () => {
+      void fetchRevenueReport();
+    };
+    window.addEventListener('ulab:location-changed', handleLocationChanged);
+    return () => {
+      window.clearTimeout(initTimer);
+      window.removeEventListener('ulab:location-changed', handleLocationChanged);
+    };
   }, [fetchRevenueReport]);
 
-  // Denomination counter sum
-  const countedActualCash = useMemo(() => {
-    return calculateDenominationsTotal(denomCounts);
-  }, [denomCounts]);
+  // Denomination counter sums
+  const countedActualCash = useMemo(() => calculateDenominationsTotal(denomCounts), [denomCounts]);
+  const midCountedCash = useMemo(() => calculateDenominationsTotal(midDenomCounts), [midDenomCounts]);
+
+  const openTransactionModal = (type: CashTransactionType, category: CashTransactionCategory) => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setTxType(type);
+    setTxCategory(category);
+    setTxAmount('');
+    setTxRecipientPayer('');
+    setTxNotes('');
+    setTxIdemKey(createClientIdempotencyKey('tx'));
+    setShowTransactionModal(true);
+  };
+
+  const handleOpenShiftModal = () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    const suggested = reportData?.suggestedOpeningCash ?? 500000;
+    setOpeningCashInput(String(suggested));
+    setOpenShiftNotes('');
+    setOpenShiftIdemKey(createClientIdempotencyKey('shift-open'));
+    setShowOpenShiftModal(true);
+  };
+
+  const handleOpenCloseShiftModal = () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    const suggested = reportData?.suggestedOpeningCash ?? 500000;
+    setRetainedCashInput(String(suggested));
+    setCloseShiftNotes('');
+    setDenomCounts({});
+    setAutoRecordHandover(true);
+    setCloseShiftIdemKey(createClientIdempotencyKey('shift-close'));
+    setShowCloseShiftModal(true);
+  };
 
   // Handle Create Cash Transaction
   const handleCreateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(txAmount.replace(/\D/g, '')) || 0;
     if (amount <= 0) {
-      alert('Vui lòng nhập số tiền hợp lệ lớn hơn 0đ');
+      setErrorMsg('Vui lòng nhập số tiền hợp lệ lớn hơn 0đ.');
       return;
     }
     setSubmittingTx(true);
+    setErrorMsg(null);
     try {
       const res = await requestCashbookApi('', {
         method: 'POST',
@@ -139,9 +212,11 @@ export default function RevenuePanel() {
           type: txType,
           category: txCategory,
           amount,
-          paymentMethod: txPaymentMethod,
+          paymentMethod: TX_PAYMENT_METHOD,
           recipientPayer: txRecipientPayer,
           notes: txNotes,
+          shiftId: reportData?.activeShift?.id || null,
+          idempotencyKey: txIdemKey || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -162,11 +237,50 @@ export default function RevenuePanel() {
     }
   };
 
+  // Handle Void Cash Transaction
+  const handleVoidTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!voidTargetTx) return;
+    const trimmedReason = voidReason.trim();
+    if (trimmedReason.length < 3) {
+      setErrorMsg('Vui lòng nhập lý do hủy phiếu (ít nhất 3 ký tự).');
+      return;
+    }
+
+    setSubmittingVoid(true);
+    setErrorMsg(null);
+    try {
+      const res = await requestCashbookApi('', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'void_transaction',
+          transactionId: voidTargetTx.id || voidTargetTx.code,
+          reason: trimmedReason,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        setSuccessMsg(`✓ Đã hủy phiếu #${voidTargetTx.code} và cập nhật lại số dư Sổ Quỹ.`);
+        setVoidTargetTx(null);
+        setVoidReason('');
+        await fetchRevenueReport();
+      } else {
+        setErrorMsg(data?.error || `Không thể hủy phiếu (HTTP ${res.status}).`);
+      }
+    } catch {
+      setErrorMsg('Lỗi kết nối máy chủ khi hủy phiếu.');
+    } finally {
+      setSubmittingVoid(false);
+    }
+  };
+
   // Handle Open Shift
   const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
     const openingCash = Number(openingCashInput.replace(/\D/g, '')) || 0;
     setSubmittingOpenShift(true);
+    setErrorMsg(null);
     try {
       const res = await requestCashbookApi('', {
         method: 'POST',
@@ -176,6 +290,7 @@ export default function RevenuePanel() {
           shiftName: shiftNameInput,
           openingCash,
           notes: openShiftNotes,
+          idempotencyKey: openShiftIdemKey || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -196,19 +311,37 @@ export default function RevenuePanel() {
   // Handle Close Shift
   const handleCloseShift = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentShift = reportData?.activeShift;
+    if (!currentShift) return;
+
     const actualCash = countedActualCash;
     const cashRetained = Number(retainedCashInput.replace(/\D/g, '')) || 0;
+
+    if (cashRetained > actualCash) {
+      setErrorMsg('Tiền giữ lại két cho ca sau không được vượt quá tiền mặt thực tế kiểm đếm.');
+      return;
+    }
+
+    if (actualCash !== currentShift.expectedCash && closeShiftNotes.trim().length < 3) {
+      setErrorMsg('Khi két tiền bị lệch (Thừa/Thiếu), bắt buộc phải nhập lý do giải trình (ít nhất 3 ký tự) trước khi chốt ca.');
+      return;
+    }
+
     setSubmittingCloseShift(true);
+    setErrorMsg(null);
     try {
       const res = await requestCashbookApi('', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'close_shift',
+          shiftId: currentShift.id,
           actualCash,
           cashRetained,
           notes: closeShiftNotes,
           denominations: denomCounts,
+          autoRecordHandover,
+          idempotencyKey: closeShiftIdemKey || undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -246,18 +379,61 @@ export default function RevenuePanel() {
     });
   }, [rawOrders, orderSearchText, orderStatusFilter]);
 
+  const rawCashTxs = reportData?.cashbook?.transactions;
+  const filteredCashTxs = useMemo(() => {
+    if (!rawCashTxs) return [];
+    const q = txSearchText.trim().toLowerCase();
+    return rawCashTxs.filter((tx) => {
+      const txStatus = tx.status === 'VOIDED' ? 'VOIDED' : 'POSTED';
+      const matchesType = txTypeFilter === 'ALL' || tx.type === txTypeFilter;
+      const matchesCat = txCategoryFilter === 'ALL' || tx.category === txCategoryFilter;
+      const matchesStatus = txStatusFilter === 'ALL' || txStatus === txStatusFilter;
+      const matchesSearch =
+        !q ||
+        tx.code.toLowerCase().includes(q) ||
+        tx.recipientPayer.toLowerCase().includes(q) ||
+        (tx.notes || '').toLowerCase().includes(q) ||
+        tx.createdByName.toLowerCase().includes(q);
+      return matchesType && matchesCat && matchesStatus && matchesSearch;
+    });
+  }, [rawCashTxs, txTypeFilter, txCategoryFilter, txStatusFilter, txSearchText]);
+
   const summary = reportData?.summary;
   const metrics = summary?.metrics;
-  const cashRec = summary?.cashReconciliation;
   const cashbook = reportData?.cashbook;
+  const storeFund = reportData?.storeFund || cashbook?.storeFund;
+  const netCashflow = reportData?.netCashflow;
   const activeShift = reportData?.activeShift;
   const shiftHistory = reportData?.shiftHistory || [];
 
-  // Max revenue for hourly chart scaling
   const maxHourlyRevenue = useMemo(() => {
     if (!summary?.hourlySales) return 100000;
     return Math.max(...summary.hourlySales.map((h) => h.revenue), 100000);
-  }, [summary?.hourlySales]);
+  }, [summary]);
+
+  const maxDailyRevenue = useMemo(() => {
+    if (!summary?.dailySales || summary.dailySales.length === 0) return 100000;
+    return Math.max(...summary.dailySales.map((d) => d.netRevenue), 100000);
+  }, [summary]);
+
+  const expenseBreakdownEntries = useMemo(() => {
+    const breakdown = cashbook?.categoryBreakdown;
+    if (!breakdown) return [];
+    const totalOut = cashbook?.totalOut || 0;
+    return Object.entries(breakdown)
+      .map(([cat, amount]) => ({
+        category: cat as CashTransactionCategory,
+        label: CASH_CATEGORY_LABELS[cat as CashTransactionCategory] || cat,
+        amount,
+        sharePercent: totalOut > 0 ? Math.round((amount / totalOut) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [cashbook]);
+
+  const closeShiftHandoverPreview = Math.max(
+    0,
+    countedActualCash - (Number(retainedCashInput.replace(/\D/g, '')) || 0)
+  );
 
   return (
     <div className={styles.panel}>
@@ -271,7 +447,7 @@ export default function RevenuePanel() {
             </span>
           </div>
           <p className={styles.subtitle}>
-            Báo cáo bán hàng, sổ quỹ thu chi thời gian thực, quản lý ca và kiểm đếm két tiền mặt chuẩn F&amp;B.
+            Báo cáo bán hàng, đối soát dòng tiền thuần, sổ quỹ thu chi &amp; quản lý ca chuẩn F&amp;B.
           </p>
         </div>
 
@@ -314,7 +490,10 @@ export default function RevenuePanel() {
           <button
             type="button"
             className={styles.refreshBtn}
-            onClick={fetchRevenueReport}
+            onClick={() => {
+              setSuccessMsg(null);
+              void fetchRevenueReport();
+            }}
             disabled={loading}
           >
             {loading ? 'Đang tính...' : '↻ Làm mới'}
@@ -342,7 +521,7 @@ export default function RevenuePanel() {
           <button
             type="button"
             className={styles.applyDateBtn}
-            onClick={fetchRevenueReport}
+            onClick={() => void fetchRevenueReport()}
           >
             Xem số liệu
           </button>
@@ -355,7 +534,12 @@ export default function RevenuePanel() {
           <span>Trạng thái ca:</span>
           {activeShift ? (
             <span className={styles.shiftOpenBadge}>
-              🟢 {activeShift.shiftName} (#{activeShift.code}) · Mở lúc {new Date(activeShift.openedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · {activeShift.openedByName}
+              🟢 {activeShift.shiftName} (#{activeShift.code}) · Mở lúc{' '}
+              {new Date(activeShift.openedAt).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}{' '}
+              · {activeShift.openedByName} · Lý thuyết két: {formatVND(activeShift.expectedCash)}
             </span>
           ) : (
             <span className={styles.shiftClosedBadge}>
@@ -366,18 +550,30 @@ export default function RevenuePanel() {
 
         <div className={styles.shiftActionBtns}>
           {activeShift ? (
-            <button
-              type="button"
-              className={styles.closeShiftBtn}
-              onClick={() => setShowCloseShiftModal(true)}
-            >
-              🏁 Chốt Ca &amp; Bàn Giao Két
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.midCheckBtn}
+                onClick={() => {
+                  setMidDenomCounts({});
+                  setShowMidCheckModal(true);
+                }}
+              >
+                🧮 Kiểm Két / X-Report
+              </button>
+              <button
+                type="button"
+                className={styles.closeShiftBtn}
+                onClick={handleOpenCloseShiftModal}
+              >
+                🏁 Chốt Ca &amp; Bàn Giao Két
+              </button>
+            </>
           ) : (
             <button
               type="button"
               className={styles.openShiftBtn}
-              onClick={() => setShowOpenShiftModal(true)}
+              onClick={handleOpenShiftModal}
             >
               ▶ Mở Ca Bán Hàng Mới
             </button>
@@ -403,7 +599,7 @@ export default function RevenuePanel() {
           className={`${styles.navTabBtn} ${activeTab === 'CASHBOOK' ? styles.navTabBtnActive : ''}`}
           onClick={() => setActiveTab('CASHBOOK')}
         >
-          📒 Sổ Quỹ Thu - Chi (Quỹ Tiền Cửa Hàng)
+          📒 Sổ Quỹ Thu - Chi ({cashbook?.activeCount || 0} phiếu)
         </button>
         <button
           type="button"
@@ -460,7 +656,10 @@ export default function RevenuePanel() {
                   <span className={styles.metricUnit}>Đơn</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>AOV: {formatVND(summary?.orderRevenue.averageOrderValue || 0)}/đơn</span>
+                  <span>
+                    AOV: {formatVND(summary?.orderRevenue.averageOrderValue || 0)}/đơn · Hủy:{' '}
+                    {summary?.cancelledOrdersCount || 0}
+                  </span>
                 </div>
               </div>
             </div>
@@ -495,27 +694,81 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Số dư quỹ tiền cửa hàng</span>
+                <span className={styles.metricLabel}>Số dư Quỹ Tiền Cửa Hàng</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum}>
-                    {cashbook ? cashbook.closingBalance.toLocaleString('vi-VN') : '0'}
+                    {storeFund ? storeFund.theoreticalClosingBalance.toLocaleString('vi-VN') : '0'}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Lý thuyết quỹ: {formatVND(cashRec?.expectedCash || 0)}</span>
+                  <span>
+                    +Thu sổ quỹ: {formatVND(cashbook?.totalIn || 0)} · −Chi sổ quỹ:{' '}
+                    {formatVND(cashbook?.totalOut || 0)}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Visual Analytics Row: Hourly Chart + Best Sellers */}
+          {/* Net Operating Cashflow Reconciliation Strip */}
+          {netCashflow && (
+            <div className={styles.netCashflowStrip}>
+              <div className={styles.netCashflowHeader}>
+                <h3 className={styles.cardTitle}>
+                  💧 Đối Soát Dòng Tiền Thuần Tại Điểm Bán ({reportData?.boundaries.label || 'Trong kỳ'})
+                </h3>
+                <span className={styles.cardBadge}>
+                  Tỷ lệ chi phí quầy / doanh thu: {netCashflow.expenseToRevenueRatio}%
+                </span>
+              </div>
+              <div className={styles.netCashflowGrid}>
+                <div className={styles.netCashflowItem}>
+                  <span className={styles.netCashflowLabel}>1. Doanh thu gộp</span>
+                  <strong className={styles.netCashflowValue}>
+                    {formatVND(netCashflow.grossSales)}
+                  </strong>
+                </div>
+                <div className={styles.netCashflowItem}>
+                  <span className={styles.netCashflowLabel}>2. − Giảm giá &amp; Điểm ví</span>
+                  <strong className={styles.netCashflowValue} style={{ color: '#b45309' }}>
+                    −{formatVND(netCashflow.totalDiscounts)}
+                  </strong>
+                </div>
+                <div className={styles.netCashflowItem}>
+                  <span className={styles.netCashflowLabel}>3. = Doanh thu thuần (Net)</span>
+                  <strong className={styles.netCashflowValue} style={{ color: '#0f172a' }}>
+                    {formatVND(netCashflow.netSalesRevenue)}
+                  </strong>
+                </div>
+                <div className={styles.netCashflowItem}>
+                  <span className={styles.netCashflowLabel}>4. − Chi phí vận hành (PC)</span>
+                  <strong className={styles.netCashflowValue} style={{ color: '#dc2626' }}>
+                    −{formatVND(netCashflow.storeExpenseOutflows)}
+                  </strong>
+                </div>
+                <div className={`${styles.netCashflowItem} ${styles.netCashflowItemHighlight}`}>
+                  <span className={styles.netCashflowLabel}>5. = Thặng dư dòng tiền</span>
+                  <strong
+                    className={styles.netCashflowValue}
+                    style={{
+                      color: netCashflow.netOperatingCashflow >= 0 ? '#006241' : '#dc2626',
+                    }}
+                  >
+                    {formatVND(netCashflow.netOperatingCashflow)}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Visual Analytics Row 1: Hourly Chart + Best Sellers */}
           <div className={styles.analyticsRow}>
             {/* Hourly Sales Bar Chart */}
             <div className={styles.chartCard}>
               <div className={styles.cardHeader}>
                 <h3 className={styles.cardTitle}>📈 Doanh Thu Theo Giờ (06:00 - 22:00)</h3>
-                <span className={styles.cardBadge}>Hôm nay</span>
+                <span className={styles.cardBadge}>{reportData?.boundaries.label || 'Trong kỳ'}</span>
               </div>
               <div className={styles.hourlyChartWrap}>
                 {summary?.hourlySales.map((h) => {
@@ -571,6 +824,113 @@ export default function RevenuePanel() {
             </div>
           </div>
 
+          {/* Visual Analytics Row 2: Daily Sales Trend + Category & Channel Breakdown */}
+          <div className={styles.analyticsRow}>
+            {/* Daily Revenue Trend */}
+            <div className={styles.chartCard}>
+              <div className={styles.cardHeader}>
+                <h3 className={styles.cardTitle}>📅 Xu Hướng Doanh Thu Theo Ngày</h3>
+                <span className={styles.cardBadge}>{summary?.dailySales.length || 0} ngày có đơn</span>
+              </div>
+              {summary?.dailySales && summary.dailySales.length > 0 ? (
+                <div className={styles.breakdownList}>
+                  {summary.dailySales.slice(-10).map((day) => {
+                    const pct = maxDailyRevenue > 0 ? Math.round((day.netRevenue / maxDailyRevenue) * 100) : 0;
+                    return (
+                      <div key={day.date} className={styles.breakdownItem}>
+                        <div className={styles.breakdownMeta}>
+                          <span>
+                            <strong>{day.label}</strong> ({day.orderCount} đơn
+                            {day.cancelledCount > 0 ? ` · ${day.cancelledCount} hủy` : ''})
+                          </span>
+                          <strong style={{ color: '#006241' }}>{formatVND(day.netRevenue)}</strong>
+                        </div>
+                        <div className={styles.progressTrack}>
+                          <div
+                            className={styles.progressFill}
+                            style={{ width: `${Math.max(4, pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ color: '#94a3b8', fontSize: '0.8125rem', textAlign: 'center', margin: '20px 0' }}>
+                  Chưa có dữ liệu đơn hàng theo ngày trong kỳ đã chọn.
+                </p>
+              )}
+            </div>
+
+            {/* Category Revenue + Channel Breakdown */}
+            <div className={styles.bestSellerCard}>
+              <div className={styles.cardHeader}>
+                <h3 className={styles.cardTitle}>🧭 Cơ Cấu Danh Mục &amp; Kênh Bán</h3>
+                <span className={styles.cardBadge}>Tỷ trọng doanh thu</span>
+              </div>
+
+              {/* Channel Breakdown */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  Tỷ trọng Kênh bán (POS vs Web)
+                </div>
+                <div className={styles.breakdownList}>
+                  {summary?.channelBreakdown?.map((ch) => (
+                    <div key={ch.channel} className={styles.breakdownItem}>
+                      <div className={styles.breakdownMeta}>
+                        <span>
+                          <strong>{ch.channel === 'POS' ? '🛒' : '🌐'} {ch.label}</strong> ({ch.orderCount} đơn · AOV {formatVND(ch.averageOrderValue)})
+                        </span>
+                        <strong>
+                          {formatVND(ch.netRevenue)} ({ch.sharePercent}%)
+                        </strong>
+                      </div>
+                      <div className={styles.progressTrack}>
+                        <div
+                          className={`${styles.progressFill} ${ch.channel === 'WEB' ? styles.progressFillBlue : ''}`}
+                          style={{ width: `${Math.max(ch.netRevenue > 0 ? 4 : 0, ch.sharePercent)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category Breakdown */}
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  Cơ cấu Danh mục Đồ uống
+                </div>
+                {summary?.categoryRevenue && summary.categoryRevenue.length > 0 ? (
+                  <div className={styles.breakdownList}>
+                    {summary.categoryRevenue.map((cat) => (
+                      <div key={cat.categoryName} className={styles.breakdownItem}>
+                        <div className={styles.breakdownMeta}>
+                          <span>
+                            <strong>{cat.categoryName}</strong> ({cat.quantitySold} ly/chai)
+                          </span>
+                          <strong>
+                            {formatVND(cat.totalRevenue)} ({cat.sharePercent}%)
+                          </strong>
+                        </div>
+                        <div className={styles.progressTrack}>
+                          <div
+                            className={`${styles.progressFill} ${styles.progressFillGold}`}
+                            style={{ width: `${Math.max(4, cat.sharePercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: 0 }}>
+                    Chưa có số liệu danh mục.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Detailed Orders Table */}
           <div className={styles.tableSection}>
             <div className={styles.tableHeaderBar}>
@@ -579,7 +939,7 @@ export default function RevenuePanel() {
                   Chi Tiết Đơn Hàng Bán Ra ({filteredOrders.length} đơn)
                 </h3>
                 <p className={styles.tableSectionSub}>
-                  Toàn bộ đơn hàng ghi nhận doanh thu trong kỳ đối soát.
+                  Toàn bộ đơn hàng ghi nhận doanh thu trong kỳ đối soát của chi nhánh hiện tại.
                 </p>
               </div>
 
@@ -691,9 +1051,7 @@ export default function RevenuePanel() {
                         <td>
                           <strong style={{ color: '#006241' }}>{formatVND(ord.totalDue)}</strong>
                         </td>
-                        <td>
-                          💵 Tiền
-                        </td>
+                        <td>💵 Tiền</td>
                         <td>
                           {ord.status === 'CONFIRMED' ? (
                             <span className={styles.receiptBadge}>✓ Đã thanh toán</span>
@@ -718,7 +1076,7 @@ export default function RevenuePanel() {
          ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'CASHBOOK' && (
         <>
-          {/* 4 Cashbook Overview Cards */}
+          {/* 4 Cashbook Unified Fund Cards */}
           <div className={styles.metricsGrid}>
             <div className={styles.metricCard}>
               <div className={styles.metricIconWrapBlue}>
@@ -728,15 +1086,15 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Số dư quỹ đầu kỳ</span>
+                <span className={styles.metricLabel}>1. Tiền đầu kỳ / Đầu ca</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum}>
-                    {cashbook ? cashbook.openingBalance.toLocaleString('vi-VN') : '0'}
+                    {(storeFund?.openingFloat ?? 0).toLocaleString('vi-VN')}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Tiền thối &amp; tiền quỹ chuyển sang</span>
+                  <span>Tiền thối &amp; tiền quỹ mở ca hiện tại</span>
                 </div>
               </div>
             </div>
@@ -748,15 +1106,17 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Tổng Thu trong kỳ (+)</span>
+                <span className={styles.metricLabel}>2. + Tổng thu Bán hàng &amp; PT</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum} style={{ color: '#15803d' }}>
-                    +{cashbook ? cashbook.totalIn.toLocaleString('vi-VN') : '0'}
+                    +{((storeFund?.paidSalesInflow || 0) + (storeFund?.manualReceiptInflow || 0)).toLocaleString('vi-VN')}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Rót tiền thối, thu nợ, thu khác</span>
+                  <span>
+                    Bán hàng: {formatVND(storeFund?.paidSalesInflow || 0)} · Phiếu thu: {formatVND(storeFund?.manualReceiptInflow || 0)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -768,15 +1128,17 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Tổng Chi trong kỳ (−)</span>
+                <span className={styles.metricLabel}>3. − Tổng chi Vận hành &amp; Hoàn hủy</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum} style={{ color: '#dc2626' }}>
-                    −{cashbook ? cashbook.totalOut.toLocaleString('vi-VN') : '0'}
+                    −{((storeFund?.manualPaymentOutflow || 0) + (storeFund?.refundOutflow || 0)).toLocaleString('vi-VN')}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Mua đá, sữa, bao bì, điện nước, ship</span>
+                  <span>
+                    Phiếu chi: {formatVND(storeFund?.manualPaymentOutflow || 0)} · Hoàn hủy: {formatVND(storeFund?.refundOutflow || 0)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -790,19 +1152,52 @@ export default function RevenuePanel() {
                 </svg>
               </div>
               <div className={styles.metricBody}>
-                <span className={styles.metricLabel}>Số dư quỹ hiện tại</span>
+                <span className={styles.metricLabel}>4. = Số dư Quỹ Tiền Cửa Hàng</span>
                 <div className={styles.metricValueRow}>
                   <span className={styles.metricNum}>
-                    {cashbook ? cashbook.closingBalance.toLocaleString('vi-VN') : '0'}
+                    {(storeFund?.theoreticalClosingBalance ?? 0).toLocaleString('vi-VN')}
                   </span>
                   <span className={styles.metricUnit}>VND</span>
                 </div>
                 <div className={styles.metricSubInfo}>
-                  <span>Số dư thực tế trong sổ quỹ</span>
+                  <span>
+                    Riêng sổ PT/PC: {formatVND(cashbook?.closingBalance || 0)} · {cashbook?.activeCount || 0} hiệu lực
+                    {(cashbook?.voidedCount || 0) > 0 ? ` · ${cashbook?.voidedCount} đã hủy` : ''}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Expense Breakdown by Category */}
+          {expenseBreakdownEntries.length > 0 && (
+            <div className={styles.chartCard} style={{ marginBottom: '20px' }}>
+              <div className={styles.cardHeader}>
+                <h3 className={styles.cardTitle}>💸 Cơ Cấu Khoản Chi Theo Danh Mục ({formatVND(cashbook?.totalOut || 0)})</h3>
+                <span className={styles.cardBadge}>Chỉ tính phiếu hiệu lực</span>
+              </div>
+              <div className={styles.breakdownList}>
+                {expenseBreakdownEntries.map((item) => (
+                  <div key={item.category} className={styles.breakdownItem}>
+                    <div className={styles.breakdownMeta}>
+                      <span>
+                        <strong>{item.label}</strong>
+                      </span>
+                      <strong style={{ color: '#dc2626' }}>
+                        {formatVND(item.amount)} ({item.sharePercent}%)
+                      </strong>
+                    </div>
+                    <div className={styles.progressTrack}>
+                      <div
+                        className={`${styles.progressFill} ${styles.progressFillRed}`}
+                        style={{ width: `${Math.max(4, item.sharePercent)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Cashbook Action Bar */}
           <div className={styles.cashbookActionRow}>
@@ -811,7 +1206,7 @@ export default function RevenuePanel() {
                 Nhật Ký Dòng Tiền (Sổ Cái Thu - Chi)
               </h3>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                Ghi nhận minh bạch mọi biến động thu - chi trong 1 tài khoản Tiền duy nhất tại cửa hàng.
+                Ghi nhận minh bạch mọi biến động thu - chi; phiếu lập sai được hủy trạng thái (VOIDED) thay vì xóa cứng.
               </span>
             </div>
 
@@ -819,30 +1214,98 @@ export default function RevenuePanel() {
               <button
                 type="button"
                 className={styles.createReceiptBtn}
-                onClick={() => {
-                  setTxType('RECEIPT');
-                  setTxCategory('OPENING_FLOAT');
-                  setShowTransactionModal(true);
-                }}
+                onClick={() => openTransactionModal('RECEIPT', 'OPENING_FLOAT')}
               >
                 + Lập Phiếu Thu
               </button>
               <button
                 type="button"
                 className={styles.createPaymentBtn}
-                onClick={() => {
-                  setTxType('PAYMENT');
-                  setTxCategory('RAW_MATERIAL');
-                  setShowTransactionModal(true);
-                }}
+                onClick={() => openTransactionModal('PAYMENT', 'RAW_MATERIAL')}
               >
                 − Lập Phiếu Chi
               </button>
             </div>
           </div>
 
-          {/* Cash Transactions Table */}
+          {/* Cash Transactions Table with Filters */}
           <div className={styles.tableSection}>
+            <div className={styles.filterToolbar}>
+              <select
+                value={txTypeFilter}
+                onChange={(e) => setTxTypeFilter(e.target.value as 'ALL' | 'RECEIPT' | 'PAYMENT')}
+                className={styles.channelSelect}
+              >
+                <option value="ALL">Tất cả loại phiếu</option>
+                <option value="RECEIPT">+ Phiếu Thu</option>
+                <option value="PAYMENT">− Phiếu Chi</option>
+              </select>
+
+              <select
+                value={txCategoryFilter}
+                onChange={(e) => setTxCategoryFilter(e.target.value)}
+                className={styles.channelSelect}
+              >
+                <option value="ALL">Tất cả danh mục</option>
+                {(Object.keys(CASH_CATEGORY_LABELS) as CashTransactionCategory[]).map((cat) => (
+                  <option key={cat} value={cat}>
+                    {CASH_CATEGORY_LABELS[cat]}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={txStatusFilter}
+                onChange={(e) => setTxStatusFilter(e.target.value as 'ALL' | 'POSTED' | 'VOIDED')}
+                className={styles.channelSelect}
+              >
+                <option value="ALL">Mọi trạng thái</option>
+                <option value="POSTED">✓ Hiệu lực</option>
+                <option value="VOIDED">✕ Đã hủy (VOIDED)</option>
+              </select>
+
+              <input
+                type="search"
+                placeholder="Tìm mã phiếu, người nhận/nộp, diễn giải..."
+                value={txSearchText}
+                onChange={(e) => setTxSearchText(e.target.value)}
+                className={styles.searchInput}
+                style={{ flex: 1, minWidth: '180px' }}
+              />
+
+              <button
+                type="button"
+                className={styles.refreshBtn}
+                onClick={() => {
+                  if (filteredCashTxs.length === 0) return;
+                  const headers = ['Mã phiếu', 'Thời gian', 'Loại phiếu', 'Danh mục', 'Người nhận/nộp', 'Diễn giải', 'Số tiền', 'Số dư sổ', 'Người lập', 'Trạng thái', 'Lý do hủy'];
+                  const rows = filteredCashTxs.map((tx) => [
+                    tx.code,
+                    new Date(tx.createdAt).toLocaleString('vi-VN'),
+                    tx.type === 'RECEIPT' ? 'Phiếu Thu' : 'Phiếu Chi',
+                    `"${(CASH_CATEGORY_LABELS[tx.category] || tx.category).replace(/"/g, '""')}"`,
+                    `"${String(tx.recipientPayer || '').replace(/"/g, '""')}"`,
+                    `"${String(tx.notes || '').replace(/"/g, '""')}"`,
+                    tx.amount,
+                    tx.runningBalance || 0,
+                    `"${String(tx.createdByName || '').replace(/"/g, '""')}"`,
+                    tx.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
+                    `"${String(tx.voidReason || '').replace(/"/g, '""')}"`,
+                  ]);
+                  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `ULAB_SoQuy_${preset}_${new Date().toISOString().slice(0, 10)}.csv`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                📥 Xuất CSV Sổ Quỹ
+              </button>
+            </div>
+
             <div style={{ overflowX: 'auto' }}>
               <table className={styles.revenueTable}>
                 <thead>
@@ -851,56 +1314,110 @@ export default function RevenuePanel() {
                     <th>Loại phiếu</th>
                     <th>Danh mục thu / chi</th>
                     <th>Người nhận / Nộp</th>
-                    <th>Diễn giải lý do</th>
+                    <th>Diễn giải &amp; Ca</th>
                     <th>Số tiền</th>
-                    <th>Số dư tích lũy</th>
-                    <th>Người lập</th>
+                    <th>Số dư sổ PT/PC</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {!cashbook || cashbook.transactions.length === 0 ? (
+                  {filteredCashTxs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className={styles.tableEmpty}>
-                        Chưa có phiếu thu / chi nào trong kỳ này. Bấm [+ Lập Phiếu Thu] hoặc [− Lập Phiếu Chi] để ghi nhận.
+                      <td colSpan={9} className={styles.tableEmpty}>
+                        Không có phiếu thu / chi nào khớp với bộ lọc. Bấm [+ Lập Phiếu Thu] hoặc [− Lập Phiếu Chi] để ghi nhận.
                       </td>
                     </tr>
                   ) : (
-                    cashbook.transactions.map((tx) => (
-                      <tr key={tx.id}>
-                        <td>
-                          <span className={styles.codeMono}>#{tx.code}</span>
-                          <span className={styles.dateCell}>
-                            {new Date(tx.createdAt).toLocaleString('vi-VN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              day: '2-digit',
-                              month: '2-digit',
-                            })}
-                          </span>
-                        </td>
-                        <td>
-                          {tx.type === 'RECEIPT' ? (
-                            <span className={styles.receiptBadge}>+ Phiếu Thu</span>
-                          ) : (
-                            <span className={styles.paymentBadge}>− Phiếu Chi</span>
-                          )}
-                        </td>
-                        <td>
-                          <strong>{CASH_CATEGORY_LABELS[tx.category] || tx.category}</strong>
-                        </td>
-                        <td>{tx.recipientPayer}</td>
-                        <td>{tx.notes || '—'}</td>
-                        <td>
-                          <strong style={{ color: tx.type === 'RECEIPT' ? '#15803d' : '#dc2626' }}>
-                            {tx.type === 'RECEIPT' ? `+${formatVND(tx.amount)}` : `−${formatVND(tx.amount)}`}
-                          </strong>
-                        </td>
-                        <td>
-                          <strong>{formatVND(tx.runningBalance || 0)}</strong>
-                        </td>
-                        <td>{tx.createdByName}</td>
-                      </tr>
-                    ))
+                    filteredCashTxs.map((tx) => {
+                      const isVoided = tx.status === 'VOIDED';
+                      return (
+                        <tr key={tx.id} className={isVoided ? styles.voidedRow : ''}>
+                          <td>
+                            <span className={styles.codeMono}>#{tx.code}</span>
+                            <span className={styles.dateCell}>
+                              {new Date(tx.createdAt).toLocaleString('vi-VN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                day: '2-digit',
+                                month: '2-digit',
+                              })}
+                            </span>
+                          </td>
+                          <td>
+                            {tx.type === 'RECEIPT' ? (
+                              <span className={styles.receiptBadge}>+ Phiếu Thu</span>
+                            ) : (
+                              <span className={styles.paymentBadge}>− Phiếu Chi</span>
+                            )}
+                          </td>
+                          <td>
+                            <strong>{CASH_CATEGORY_LABELS[tx.category] || tx.category}</strong>
+                          </td>
+                          <td>{tx.recipientPayer}</td>
+                          <td>
+                            <div>{tx.notes || '—'}</div>
+                            <span className={styles.dateCell}>
+                              Lập bởi: {tx.createdByName}
+                              {tx.shiftId ? ' · Gắn ca' : ''}
+                            </span>
+                          </td>
+                          <td>
+                            <strong
+                              style={{
+                                color: isVoided
+                                  ? '#64748b'
+                                  : tx.type === 'RECEIPT'
+                                    ? '#15803d'
+                                    : '#dc2626',
+                                textDecoration: isVoided ? 'line-through' : 'none',
+                              }}
+                            >
+                              {tx.type === 'RECEIPT' ? `+${formatVND(tx.amount)}` : `−${formatVND(tx.amount)}`}
+                            </strong>
+                          </td>
+                          <td>
+                            <strong>{formatVND(tx.runningBalance || 0)}</strong>
+                          </td>
+                          <td>
+                            {isVoided ? (
+                              <div>
+                                <span className={styles.voidedBadge}>Đã hủy</span>
+                                {tx.voidReason && (
+                                  <span className={styles.dateCell}>Lý do: {tx.voidReason}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className={styles.receiptBadge}>✓ Hiệu lực</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className={styles.rowActionBtns}>
+                              <button
+                                type="button"
+                                className={styles.smallActionBtn}
+                                onClick={() => setVoucherModalTx(tx)}
+                              >
+                                🖨️ In
+                              </button>
+                              {!isVoided && (
+                                <button
+                                  type="button"
+                                  className={styles.smallDangerBtn}
+                                  onClick={() => {
+                                    setVoidReason('');
+                                    setErrorMsg(null);
+                                    setVoidTargetTx(tx);
+                                  }}
+                                >
+                                  ✕ Hủy
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -917,7 +1434,7 @@ export default function RevenuePanel() {
           {/* Active Shift Card */}
           {activeShift ? (
             <div className={styles.activeShiftCard}>
-              <div className={styles.activeShiftHeader}>
+              <div className={styles.activeShiftHeader} style={{ flexWrap: 'wrap', gap: '10px' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#006241' }}>
                     🟢 {activeShift.shiftName} (#{activeShift.code}) — ĐANG MỞ
@@ -926,13 +1443,39 @@ export default function RevenuePanel() {
                     Bắt đầu lúc: {new Date(activeShift.openedAt).toLocaleString('vi-VN')} · Thu ngân trực: {activeShift.openedByName}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className={styles.closeShiftBtn}
-                  onClick={() => setShowCloseShiftModal(true)}
-                >
-                  🏁 Kiểm Đếm &amp; Chốt Ca
-                </button>
+                <div className={styles.actionBtnGroup} style={{ flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={styles.createReceiptBtn}
+                    onClick={() => openTransactionModal('RECEIPT', 'OPENING_FLOAT')}
+                  >
+                    + Thu Trong Ca
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.createPaymentBtn}
+                    onClick={() => openTransactionModal('PAYMENT', 'RAW_MATERIAL')}
+                  >
+                    − Chi Trong Ca
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.midCheckBtn}
+                    onClick={() => {
+                      setMidDenomCounts({});
+                      setShowMidCheckModal(true);
+                    }}
+                  >
+                    🧮 Kiểm Két / X-Report
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.closeShiftBtn}
+                    onClick={handleOpenCloseShiftModal}
+                  >
+                    🏁 Kiểm Đếm &amp; Chốt Ca
+                  </button>
+                </div>
               </div>
 
               <div className={styles.shiftStatsGrid}>
@@ -941,15 +1484,23 @@ export default function RevenuePanel() {
                   <strong>{formatVND(activeShift.openingCash)}</strong>
                 </div>
                 <div className={styles.shiftStatBox}>
-                  <span>2. Tiền bán hàng trong ca</span>
+                  <span>2. + Bán hàng ({activeShift.orderCount || 0} đơn)</span>
                   <strong style={{ color: '#15803d' }}>+{formatVND(activeShift.cashSales)}</strong>
                 </div>
                 <div className={styles.shiftStatBox}>
-                  <span>3. Tiền hoàn đơn hủy</span>
+                  <span>3. + Phiếu thu trong ca (PT)</span>
+                  <strong style={{ color: '#15803d' }}>+{formatVND(activeShift.cashIn)}</strong>
+                </div>
+                <div className={styles.shiftStatBox}>
+                  <span>4. − Hoàn tiền đơn hủy</span>
                   <strong style={{ color: '#dc2626' }}>−{formatVND(activeShift.cashRefunds)}</strong>
                 </div>
+                <div className={styles.shiftStatBox}>
+                  <span>5. − Phiếu chi trong ca (PC)</span>
+                  <strong style={{ color: '#dc2626' }}>−{formatVND(activeShift.cashOut)}</strong>
+                </div>
                 <div className={`${styles.shiftStatBox} ${styles.expectedBox}`}>
-                  <span>4. Tiền lý thuyết trong quỹ</span>
+                  <span>6. = Tiền lý thuyết trong két</span>
                   <strong>{formatVND(activeShift.expectedCash)}</strong>
                 </div>
               </div>
@@ -957,12 +1508,12 @@ export default function RevenuePanel() {
           ) : (
             <div style={{ background: '#f8fafc', padding: '24px', borderRadius: '12px', textAlign: 'center', marginBottom: '24px', border: '1px dashed #cbd5e1' }}>
               <p style={{ margin: '0 0 12px 0', fontSize: '0.9375rem', fontWeight: 600, color: '#475569' }}>
-                Hiện chưa có ca làm việc nào đang mở tại quầy.
+                Hiện chưa có ca làm việc nào đang mở tại quầy ({reportData?.staff.locationName || 'Ủ LAB'}).
               </p>
               <button
                 type="button"
                 className={styles.openShiftBtn}
-                onClick={() => setShowOpenShiftModal(true)}
+                onClick={handleOpenShiftModal}
               >
                 ▶ Mở Ca Bán Hàng Đầu Ngày
               </button>
@@ -974,7 +1525,9 @@ export default function RevenuePanel() {
             <div className={styles.tableHeaderBar}>
               <div>
                 <h3 className={styles.tableSectionTitle}>Lịch Sử Các Ca Bán Hàng Đã Chốt</h3>
-                <p className={styles.tableSectionSub}>Lưu vết đối soát kiểm đếm, chênh lệch tiền két và biên bản bàn giao.</p>
+                <p className={styles.tableSectionSub}>
+                  Lưu vết đối soát kiểm đếm, phiếu thu/chi phát sinh trong ca, chênh lệch két và biên bản bàn giao.
+                </p>
               </div>
             </div>
 
@@ -985,9 +1538,10 @@ export default function RevenuePanel() {
                     <th>Mã ca &amp; Tên ca</th>
                     <th>Thời gian ca</th>
                     <th>Thu ngân</th>
-                    <th>Tiền đầu ca</th>
-                    <th>Tiền bán hàng</th>
-                    <th>Lý thuyết quỹ</th>
+                    <th>Đầu ca</th>
+                    <th>Bán hàng</th>
+                    <th>Thu / Chi ca</th>
+                    <th>Lý thuyết két</th>
                     <th>Thực tế đếm</th>
                     <th>Chênh lệch</th>
                     <th>Nộp chủ quán</th>
@@ -997,7 +1551,7 @@ export default function RevenuePanel() {
                 <tbody>
                   {shiftHistory.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className={styles.tableEmpty}>
+                      <td colSpan={11} className={styles.tableEmpty}>
                         Chưa có ca làm việc nào được chốt trong lịch sử.
                       </td>
                     </tr>
@@ -1009,14 +1563,26 @@ export default function RevenuePanel() {
                           <span className={styles.dateCell}>{sh.shiftName}</span>
                         </td>
                         <td>
-                          <span>{new Date(sh.openedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {sh.closedAt ? new Date(sh.closedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                          <span>
+                            {new Date(sh.openedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} -{' '}
+                            {sh.closedAt ? new Date(sh.closedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </span>
                           <span className={styles.dateCell}>{new Date(sh.openedAt).toLocaleDateString('vi-VN')}</span>
                         </td>
                         <td>
                           <strong>{sh.closedByName || sh.openedByName}</strong>
                         </td>
                         <td>{formatVND(sh.openingCash)}</td>
-                        <td>{formatVND(sh.cashSales)}</td>
+                        <td>
+                          <div>{formatVND(sh.cashSales)}</div>
+                          {typeof sh.orderCount === 'number' && sh.orderCount > 0 && (
+                            <span className={styles.dateCell}>{sh.orderCount} đơn</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ color: '#15803d', fontSize: '0.75rem' }}>+{formatVND(sh.cashIn || 0)}</div>
+                          <div style={{ color: '#dc2626', fontSize: '0.75rem' }}>−{formatVND(sh.cashOut || 0)}</div>
+                        </td>
                         <td>{formatVND(sh.expectedCash)}</td>
                         <td>
                           <strong>{formatVND(sh.actualCash || 0)}</strong>
@@ -1072,11 +1638,21 @@ export default function RevenuePanel() {
 
             <form onSubmit={handleCreateTransaction}>
               <div className={styles.modalBody}>
+                {activeShift && (
+                  <div className={styles.successBanner}>
+                    🔗 Phiếu này sẽ tự động gắn vào <strong>{activeShift.shiftName}</strong> (#{activeShift.code})
+                  </div>
+                )}
+
                 <div className={styles.formGroup}>
                   <label>Loại phiếu:</label>
                   <select
                     value={txType}
-                    onChange={(e) => setTxType(e.target.value as CashTransactionType)}
+                    onChange={(e) => {
+                      const nextType = e.target.value as CashTransactionType;
+                      setTxType(nextType);
+                      setTxCategory(nextType === 'RECEIPT' ? 'OPENING_FLOAT' : 'RAW_MATERIAL');
+                    }}
                     className={styles.formSelect}
                   >
                     <option value="PAYMENT">Phiếu Chi (Tiền ra khỏi quỹ)</option>
@@ -1098,6 +1674,7 @@ export default function RevenuePanel() {
                         <option value="UTILITIES">Sinh hoạt &amp; Tiện ích (Điện, nước, rác, gửi xe...)</option>
                         <option value="SALARY_ADVANCE">Tạm ứng lương nhân viên</option>
                         <option value="SHIPPING">Chi phí giao hàng (Shipper ngoài)</option>
+                        <option value="BANK_DEPOSIT">Nộp tiền doanh thu về chủ quán / Ngân hàng</option>
                         <option value="OTHER">Chi phí khác</option>
                       </>
                     ) : (
@@ -1177,6 +1754,69 @@ export default function RevenuePanel() {
         </div>
       )}
 
+      {/* ── MODAL: HỦY PHIẾU THU / CHI (VOIDED) ── */}
+      {voidTargetTx && (
+        <div className={styles.modalOverlay} onClick={() => setVoidTargetTx(null)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>✕ Hủy Phiếu Sổ Quỹ #{voidTargetTx.code}</h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setVoidTargetTx(null)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleVoidTransaction}>
+              <div className={styles.modalBody}>
+                <div className={styles.warningBanner}>
+                  Lưu ý kế toán: Phiếu bị hủy sẽ chuyển sang trạng thái <strong>VOIDED</strong> và không còn cộng/trừ vào số dư quỹ hoặc ca bán hàng, nhưng vẫn giữ vết kiểm toán.
+                </div>
+
+                <div style={{ fontSize: '0.8125rem', marginBottom: '14px', color: '#334155', lineHeight: 1.6 }}>
+                  <div>Loại phiếu: <strong>{voidTargetTx.type === 'RECEIPT' ? 'Phiếu Thu' : 'Phiếu Chi'}</strong></div>
+                  <div>Số tiền: <strong>{formatVND(voidTargetTx.amount)}</strong></div>
+                  <div>Người nhận/nộp: <strong>{voidTargetTx.recipientPayer}</strong></div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label>Lý do hủy phiếu (Bắt buộc, tối thiểu 3 ký tự):</label>
+                  <input
+                    type="text"
+                    required
+                    minLength={3}
+                    placeholder="VD: Nhập nhầm số tiền 500k thành 5000k"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    className={styles.formInput}
+                    autoFocus
+                  />
+                </div>
+
+                <div className={styles.modalFooter}>
+                  <button
+                    type="button"
+                    className={styles.cancelModalBtn}
+                    onClick={() => setVoidTargetTx(null)}
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    type="submit"
+                    className={styles.createPaymentBtn}
+                    disabled={submittingVoid}
+                  >
+                    {submittingVoid ? 'Đang hủy...' : 'Xác Nhận Hủy Phiếu'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL: MỞ CA BÁN HÀNG ── */}
       {showOpenShiftModal && (
         <div className={styles.modalOverlay} onClick={() => setShowOpenShiftModal(false)}>
@@ -1217,7 +1857,7 @@ export default function RevenuePanel() {
                     className={styles.formInput}
                   />
                   <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                    Số tiền mặt có sẵn trong két để thối tiền cho khách hàng.
+                    Gợi ý tự động theo tiền giữ lại từ ca trước / cấu hình điểm bán: <strong>{formatVND(reportData?.suggestedOpeningCash ?? 500000)}</strong>.
                   </span>
                 </div>
 
@@ -1254,6 +1894,138 @@ export default function RevenuePanel() {
         </div>
       )}
 
+      {/* ── MODAL: KIỂM KÉT GIỮA CA / IN X-REPORT ── */}
+      {showMidCheckModal && activeShift && (
+        <div className={styles.modalOverlay} onClick={() => setShowMidCheckModal(false)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>🧮 Kiểm Két Giữa Ca &amp; Phiếu Tạm Tính (X-Report)</h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setShowMidCheckModal(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className={styles.modalBody}>
+              <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', fontSize: '0.8125rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Lý thuyết két hiện tại ({activeShift.orderCount || 0} đơn):</span>
+                  <strong style={{ color: '#006241' }}>{formatVND(activeShift.expectedCash)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Thực tế đếm thử:</span>
+                  <strong>{formatVND(midCountedCash)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px', borderTop: '1px dashed #cbd5e1' }}>
+                  <span>Chênh lệch tạm tính:</span>
+                  <strong style={{ color: midCountedCash === activeShift.expectedCash ? '#15803d' : midCountedCash > activeShift.expectedCash ? '#15803d' : '#dc2626' }}>
+                    {midCountedCash === activeShift.expectedCash
+                      ? '✓ Khớp (0đ)'
+                      : midCountedCash > activeShift.expectedCash
+                        ? `Thừa +${formatVND(midCountedCash - activeShift.expectedCash)}`
+                        : `Thiếu ${formatVND(midCountedCash - activeShift.expectedCash)}`}
+                  </strong>
+                </div>
+              </div>
+
+              <table className={styles.denominationTable}>
+                <thead>
+                  <tr>
+                    <th>Mệnh giá</th>
+                    <th>Số tờ</th>
+                    <th>Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(Object.keys(DENOMINATION_VALUES) as DenominationKey[]).map((key) => {
+                    const denomVal = DENOMINATION_VALUES[key];
+                    const count = midDenomCounts[key] || 0;
+                    return (
+                      <tr key={key}>
+                        <td><strong>{formatVND(denomVal)}</strong></td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={count > 0 ? count : ''}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setMidDenomCounts((prev) => ({ ...prev, [key]: val }));
+                            }}
+                            className={styles.denomCountInput}
+                          />
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{formatVND(count * denomVal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div className={styles.thermalReceipt}>
+                <div className={styles.thermalReceiptHeader}>
+                  <h4>Ủ LAB COFFEE &amp; MATCHA</h4>
+                  <span>PHIẾU TẠM TÍNH CA (X-REPORT)</span>
+                  <div>#{activeShift.code}</div>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>Điểm bán:</span>
+                  <strong>{reportData?.staff.locationName || 'Ủ LAB'}</strong>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>Thời điểm xem:</span>
+                  <span>{new Date().toLocaleString('vi-VN')}</span>
+                </div>
+                <div className={styles.thermalDivider} />
+                <div className={styles.thermalRow}>
+                  <span>Tiền đầu ca:</span>
+                  <span>{formatVND(activeShift.openingCash)}</span>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>+ Bán hàng ({activeShift.orderCount || 0} đơn):</span>
+                  <span>{formatVND(activeShift.cashSales)}</span>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>+ Phiếu thu (PT):</span>
+                  <span>{formatVND(activeShift.cashIn)}</span>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>− Hoàn hủy đơn:</span>
+                  <span>−{formatVND(activeShift.cashRefunds)}</span>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>− Phiếu chi (PC):</span>
+                  <span>−{formatVND(activeShift.cashOut)}</span>
+                </div>
+                <div className={styles.thermalDivider} />
+                <div className={styles.thermalRow}>
+                  <strong>LÝ THUYẾT KÉT:</strong>
+                  <strong>{formatVND(activeShift.expectedCash)}</strong>
+                </div>
+                {midCountedCash > 0 && (
+                  <div className={styles.thermalRow}>
+                    <strong>ĐẾM THỬ HIỆN TẠI:</strong>
+                    <strong>{formatVND(midCountedCash)}</strong>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className={styles.printBtn}
+                onClick={() => window.print()}
+              >
+                🖨️ In Phiếu Tạm Tính (X-Report)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL: CHỐT CA & BẢNG KÊ MỆNH GIÁ TỜ TIỀN ── */}
       {showCloseShiftModal && activeShift && (
         <div className={styles.modalOverlay} onClick={() => setShowCloseShiftModal(false)}>
@@ -1271,8 +2043,28 @@ export default function RevenuePanel() {
 
             <form onSubmit={handleCloseShift}>
               <div className={styles.modalBody}>
-                <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', marginBottom: '14px', fontSize: '0.8125rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', fontSize: '0.8125rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <span>• Tiền đầu ca:</span>
+                    <span>{formatVND(activeShift.openingCash)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <span>• + Tiền bán hàng ({activeShift.orderCount || 0} đơn):</span>
+                    <span style={{ color: '#15803d' }}>+{formatVND(activeShift.cashSales)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <span>• + Phiếu thu trong ca (PT):</span>
+                    <span style={{ color: '#15803d' }}>+{formatVND(activeShift.cashIn)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <span>• − Hoàn hủy đơn:</span>
+                    <span style={{ color: '#dc2626' }}>−{formatVND(activeShift.cashRefunds)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span>• − Phiếu chi trong ca (PC):</span>
+                    <span style={{ color: '#dc2626' }}>−{formatVND(activeShift.cashOut)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', paddingTop: '4px', borderTop: '1px dashed #cbd5e1' }}>
                     <span>1. Tiền lý thuyết phải có trong két:</span>
                     <strong style={{ color: '#006241' }}>{formatVND(activeShift.expectedCash)}</strong>
                   </div>
@@ -1293,6 +2085,12 @@ export default function RevenuePanel() {
                     </strong>
                   </div>
                 </div>
+
+                {countedActualCash !== activeShift.expectedCash && (
+                  <div className={styles.warningBanner}>
+                    ⚠️ Tiền thực tế kiểm đếm đang lệch so với lý thuyết ({countedActualCash > activeShift.expectedCash ? 'Thừa' : 'Thiếu'}). Bắt buộc nhập lý do giải trình bên dưới trước khi chốt ca.
+                  </div>
+                )}
 
                 <label style={{ fontSize: '0.8125rem', fontWeight: 700, display: 'block', marginBottom: '6px' }}>
                   Bảng kê chi tiết số tờ tiền kiểm đếm:
@@ -1344,15 +2142,32 @@ export default function RevenuePanel() {
                     className={styles.formInput}
                   />
                   <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                    Tiền nộp về chủ quán / két an toàn: <strong>{formatVND(Math.max(0, countedActualCash - (Number(retainedCashInput.replace(/\D/g, '')) || 0)))}</strong>
+                    Tiền nộp về chủ quán / két an toàn: <strong>{formatVND(closeShiftHandoverPreview)}</strong>
                   </span>
                 </div>
 
+                {closeShiftHandoverPreview > 0 && (
+                  <label className={styles.checkboxRow}>
+                    <input
+                      type="checkbox"
+                      checked={autoRecordHandover}
+                      onChange={(e) => setAutoRecordHandover(e.target.checked)}
+                    />
+                    <span>
+                      Tự động lập Phiếu Chi nộp doanh thu ({formatVND(closeShiftHandoverPreview)}) vào Sổ Quỹ
+                    </span>
+                  </label>
+                )}
+
                 <div className={styles.formGroup}>
-                  <label>Ghi chú chốt ca / Lý do chênh lệch (nếu có):</label>
+                  <label>
+                    Ghi chú chốt ca / Lý do chênh lệch{' '}
+                    {countedActualCash !== activeShift.expectedCash ? '(Bắt buộc *)' : '(tùy chọn)'}:
+                  </label>
                   <input
                     type="text"
-                    placeholder="VD: Tiền két khớp chuẩn, đã nộp cho quản lý..."
+                    required={countedActualCash !== activeShift.expectedCash}
+                    placeholder="VD: Tiền két khớp chuẩn / Giải trình lý do thừa thiếu..."
                     value={closeShiftNotes}
                     onChange={(e) => setCloseShiftNotes(e.target.value)}
                     className={styles.formInput}
@@ -1377,6 +2192,105 @@ export default function RevenuePanel() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: IN PHIẾU THU / CHI SỔ QUỸ (80MM) ── */}
+      {voucherModalTx && (
+        <div className={styles.modalOverlay} onClick={() => setVoucherModalTx(null)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>
+                🖨️ In {voucherModalTx.type === 'RECEIPT' ? 'Phiếu Thu Tiền' : 'Phiếu Chi Tiền'} #{voucherModalTx.code}
+              </h3>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setVoucherModalTx(null)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className={styles.modalBody}>
+              <div className={styles.thermalReceipt}>
+                <div className={styles.thermalReceiptHeader}>
+                  <h4>Ủ LAB COFFEE &amp; MATCHA</h4>
+                  <span>
+                    {voucherModalTx.type === 'RECEIPT' ? 'PHIẾU THU TIỀN QUỸ' : 'PHIẾU CHI TIỀN QUỸ'}
+                  </span>
+                  <div>#{voucherModalTx.code}</div>
+                  {voucherModalTx.status === 'VOIDED' && (
+                    <div style={{ color: '#dc2626', fontWeight: 700, marginTop: '4px' }}>
+                      *** PHIẾU ĐÃ HỦY (VOIDED) ***
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.thermalRow}>
+                  <span>Điểm bán:</span>
+                  <strong>{reportData?.staff.locationName || 'Ủ LAB'}</strong>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>Thời gian lập:</span>
+                  <span>{new Date(voucherModalTx.createdAt).toLocaleString('vi-VN')}</span>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>Danh mục:</span>
+                  <strong>{CASH_CATEGORY_LABELS[voucherModalTx.category] || voucherModalTx.category}</strong>
+                </div>
+                <div className={styles.thermalRow}>
+                  <span>{voucherModalTx.type === 'RECEIPT' ? 'Người nộp:' : 'Người nhận:'}</span>
+                  <strong>{voucherModalTx.recipientPayer}</strong>
+                </div>
+
+                <div className={styles.thermalDivider} />
+
+                <div className={styles.thermalRow}>
+                  <strong>SỐ TIỀN:</strong>
+                  <strong>{formatVND(voucherModalTx.amount)}</strong>
+                </div>
+                {voucherModalTx.notes && (
+                  <div style={{ marginTop: '4px', fontSize: '0.72rem' }}>
+                    Diễn giải: {voucherModalTx.notes}
+                  </div>
+                )}
+                {voucherModalTx.status === 'VOIDED' && voucherModalTx.voidReason && (
+                  <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#dc2626' }}>
+                    Lý do hủy ({voucherModalTx.voidedByName || 'Quản lý'}): {voucherModalTx.voidReason}
+                  </div>
+                )}
+
+                <div className={styles.thermalDivider} />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '14px', textAlign: 'center', fontSize: '0.7rem' }}>
+                  <div>
+                    <span>Người lập</span>
+                    <div style={{ height: '32px' }} />
+                    <small>({voucherModalTx.createdByName})</small>
+                  </div>
+                  <div>
+                    <span>{voucherModalTx.type === 'RECEIPT' ? 'Người nộp' : 'Người nhận'}</span>
+                    <div style={{ height: '32px' }} />
+                    <small>(Ký tên)</small>
+                  </div>
+                  <div>
+                    <span>Quản lý duyệt</span>
+                    <div style={{ height: '32px' }} />
+                    <small>(Ký tên)</small>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className={styles.printBtn}
+                onClick={() => window.print()}
+              >
+                🖨️ In Phiếu Ra Máy In Nhiệt
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1425,6 +2339,12 @@ export default function RevenuePanel() {
                   <span>Thu ngân:</span>
                   <strong>{zReportShift.closedByName || zReportShift.openedByName}</strong>
                 </div>
+                {typeof zReportShift.orderCount === 'number' && (
+                  <div className={styles.thermalRow}>
+                    <span>Số đơn hoàn thành:</span>
+                    <strong>{zReportShift.orderCount} đơn</strong>
+                  </div>
+                )}
 
                 <div className={styles.thermalDivider} />
 
@@ -1437,11 +2357,15 @@ export default function RevenuePanel() {
                   <span>{formatVND(zReportShift.cashSales)}</span>
                 </div>
                 <div className={styles.thermalRow}>
+                  <span>+ Phiếu thu tại quầy (PT):</span>
+                  <span>{formatVND(zReportShift.cashIn || 0)}</span>
+                </div>
+                <div className={styles.thermalRow}>
                   <span>− Hoàn tiền đơn hủy:</span>
                   <span>−{formatVND(zReportShift.cashRefunds)}</span>
                 </div>
                 <div className={styles.thermalRow}>
-                  <span>− Chi khẩn cấp tại quầy:</span>
+                  <span>− Phiếu chi tại quầy (PC):</span>
                   <span>−{formatVND(zReportShift.cashOut || 0)}</span>
                 </div>
 
@@ -1465,6 +2389,26 @@ export default function RevenuePanel() {
                         : `THIẾU ${formatVND(zReportShift.cashVariance || 0)}`}
                   </strong>
                 </div>
+
+                {zReportShift.denominations &&
+                  Object.values(zReportShift.denominations).some((v) => (v || 0) > 0) && (
+                    <>
+                      <div className={styles.thermalDivider} />
+                      <div style={{ fontWeight: 700, marginBottom: '2px' }}>BẢNG KÊ MỆNH GIÁ ĐẾM:</div>
+                      {(Object.keys(DENOMINATION_VALUES) as DenominationKey[]).map((key) => {
+                        const qty = zReportShift.denominations?.[key] || 0;
+                        if (qty <= 0) return null;
+                        return (
+                          <div key={key} className={styles.thermalRow}>
+                            <span>
+                              {formatVND(DENOMINATION_VALUES[key])} × {qty} tờ
+                            </span>
+                            <span>{formatVND(DENOMINATION_VALUES[key] * qty)}</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
 
                 <div className={styles.thermalDivider} />
 

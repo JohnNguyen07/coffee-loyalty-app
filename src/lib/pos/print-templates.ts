@@ -1,5 +1,44 @@
 import { formatVND } from '@/data/menu';
-import type { PosOrderRecord } from './repository';
+import type { FulfillmentStatus } from './domain';
+
+export interface PrintablePosOrder {
+  orderCode: string;
+  orderType: string;
+  paymentMethod: string;
+  subtotal: number;
+  discountAmount: number;
+  discountPercent: number;
+  discountReason?: string;
+  pointsUsed: number;
+  shippingFee?: number;
+  customerAddress?: string;
+  totalDue: number;
+  amountReceived: number;
+  changeDue: number;
+  customerName: string;
+  customerPhone: string;
+  cashierName: string;
+  note: string;
+  fulfillmentStatus?: FulfillmentStatus;
+  pointsEarned?: number;
+  memberPointBalance?: number;
+  createdAt: string;
+  items: {
+    productName: string;
+    sizeLabel: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    optionsSummary: string;
+  }[];
+}
+
+export interface PrintLocationMeta {
+  locationName?: string;
+  address?: string;
+  phone?: string;
+  receiptFooter?: string;
+}
 
 const ORDER_TYPE_LABEL: Record<string, string> = {
   TAKEAWAY: 'Mang đi (Takeaway)',
@@ -13,6 +52,28 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   EWALLET: 'Tiền',
 };
 
+function resolveLocationMeta(locationNameOrMeta?: string | PrintLocationMeta): {
+  locationName: string;
+  address: string;
+  phone: string;
+  receiptFooter: string;
+} {
+  if (typeof locationNameOrMeta === 'string') {
+    return {
+      locationName: locationNameOrMeta || 'Ủ LAB — Quầy Chính',
+      address: '',
+      phone: '',
+      receiptFooter: '',
+    };
+  }
+  return {
+    locationName: locationNameOrMeta?.locationName || 'Ủ LAB — Quầy Chính',
+    address: locationNameOrMeta?.address || '',
+    phone: locationNameOrMeta?.phone || '',
+    receiptFooter: locationNameOrMeta?.receiptFooter || '',
+  };
+}
+
 function escapeHtml(str: string): string {
   return String(str || '')
     .replace(/&/g, '&amp;')
@@ -24,7 +85,11 @@ function escapeHtml(str: string): string {
 /**
  * Generate printable HTML for Phiếu Pha Chế (Barista Ticket & Cup Labels).
  */
-export function buildBaristaTicketHtml(order: PosOrderRecord, locationName = 'Ủ LAB — Quầy Chính'): string {
+export function buildBaristaTicketHtml(
+  order: PrintablePosOrder,
+  locationNameOrMeta: string | PrintLocationMeta = 'Ủ LAB — Quầy Chính'
+): string {
+  const loc = resolveLocationMeta(locationNameOrMeta);
   const timeStr = new Date(order.createdAt).toLocaleString('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -71,7 +136,7 @@ export function buildBaristaTicketHtml(order: PosOrderRecord, locationName = '�
         </div>
         <div class="drink-options">${escapeHtml(cup.optionsSummary)}</div>
         ${order.note ? `<div class="order-note">Ghi chú đơn: ${escapeHtml(order.note)}</div>` : ''}
-        <div class="cup-footer">${escapeHtml(locationName)} · KH: ${escapeHtml(order.customerName)}</div>
+        <div class="cup-footer">${escapeHtml(loc.locationName)} · KH: ${escapeHtml(order.customerName)}</div>
       </div>
     `
     )
@@ -194,10 +259,12 @@ export function buildBaristaTicketHtml(order: PosOrderRecord, locationName = '�
  * Generate printable HTML for Biên Nhận Thanh Toán (Customer Thermal Receipt 80mm).
  */
 export function buildCustomerReceiptHtml(
-  order: PosOrderRecord,
-  qrDataUrl?: string,
-  locationName = 'Ủ LAB — Quầy Chính'
+  order: PrintablePosOrder,
+  _qrDataUrl?: string,
+  locationNameOrMeta: string | PrintLocationMeta = 'Ủ LAB — Quầy Chính'
 ): string {
+  const loc = resolveLocationMeta(locationNameOrMeta);
+  void _qrDataUrl;
   const timeStr = new Date(order.createdAt).toLocaleString('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -364,7 +431,9 @@ export function buildCustomerReceiptHtml(
     <body>
       <div class="header">
         <div class="brand">Ủ LAB</div>
-        <div class="loc">${escapeHtml(locationName)}</div>
+        <div class="loc">${escapeHtml(loc.locationName)}</div>
+        ${loc.address ? `<div class="loc" style="font-size:7.5pt;margin-top:0.5mm;">${escapeHtml(loc.address)}</div>` : ''}
+        ${loc.phone ? `<div class="loc" style="font-size:7.5pt;">Hotline: ${escapeHtml(loc.phone)}</div>` : ''}
         <div class="receipt-title">Biên Nhận Thanh Toán</div>
       </div>
 
@@ -374,6 +443,7 @@ export function buildCustomerReceiptHtml(
         <div class="meta-row"><span>Hình thức:</span><span>${escapeHtml(ORDER_TYPE_LABEL[order.orderType] || order.orderType)}</span></div>
         <div class="meta-row"><span>Thu ngân:</span><span>${escapeHtml(order.cashierName)}</span></div>
         <div class="meta-row"><span>Khách hàng:</span><span>${escapeHtml(order.customerName)}${order.customerPhone ? ` (${escapeHtml(order.customerPhone)})` : ''}</span></div>
+        ${order.customerAddress ? `<div class="meta-row"><span>Địa chỉ / Hẹn:</span><span>${escapeHtml(order.customerAddress)}</span></div>` : ''}
       </div>
 
       <table>
@@ -408,6 +478,14 @@ export function buildCustomerReceiptHtml(
             ? `<div class="sum-row">
                 <span>Trừ điểm thành viên:</span>
                 <span>-${formatVND(order.pointsUsed)}</span>
+              </div>`
+            : ''
+        }
+        ${
+          (order.shippingFee || 0) > 0
+            ? `<div class="sum-row">
+                <span>Phí giao hàng (Ship):</span>
+                <span>+${formatVND(order.shippingFee || 0)}</span>
               </div>`
             : ''
         }
@@ -449,8 +527,11 @@ export function buildCustomerReceiptHtml(
       </div>
 
       <div class="footer">
-        Cảm ơn quý khách đã ghé Ủ LAB!<br/>
-        Hẹn gặp lại quý khách lần sau.
+        ${
+          loc.receiptFooter
+            ? escapeHtml(loc.receiptFooter).replace(/\n/g, '<br/>')
+            : 'Cảm ơn quý khách đã ghé Ủ LAB!<br/>Hẹn gặp lại quý khách lần sau.'
+        }
       </div>
 
       <script>

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveUserRbac } from '@/lib/rbac/server-guard';
 import {
+  deleteMenuProduct,
   getPosMenuCatalog,
   setProductAvailability,
   setProductPrices,
+  upsertMenuProduct,
 } from '@/lib/pos/repository';
 
 // GET /api/admin/products — Read live menu catalog synced with Supabase & POS
@@ -50,7 +51,7 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/products — Toggle availability, update prices, or create new menu product
+// POST /api/admin/products — Toggle availability, update prices, create, update, or delete menu products
 export async function POST(request: NextRequest) {
   try {
     const rbac = await resolveUserRbac();
@@ -62,7 +63,17 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { action, productId, isAvailable, sizes, name, categorySlug, isSignature, shelfLife } = body;
+    const {
+      action,
+      productId,
+      isAvailable,
+      sizes,
+      name,
+      categorySlug,
+      isSignature,
+      shelfLife,
+      description,
+    } = body;
 
     if (action === 'TOGGLE_AVAILABILITY' && productId) {
       const avail = Boolean(isAvailable);
@@ -84,73 +95,77 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'CREATE_PRODUCT') {
-      const cleanName = String(name || '').trim();
-      const catSlug = String(categorySlug || 'matcha').trim();
-      const rawSizes = Array.isArray(sizes) ? sizes : [];
+      const result = await upsertMenuProduct({
+        name: String(name || ''),
+        categorySlug: String(categorySlug || 'matcha'),
+        sizes: Array.isArray(sizes) ? sizes : [],
+        isSignature: Boolean(isSignature),
+        shelfLife: shelfLife ? String(shelfLife) : undefined,
+        description: description ? String(description) : undefined,
+        isAvailable: true,
+      });
 
-      if (!cleanName || rawSizes.length === 0) {
+      if (!result.success || !result.product) {
         return NextResponse.json(
-          { error: 'Vui lòng nhập tên món và ít nhất 1 mức giá theo Size.' },
+          { error: result.error || 'Không thể tạo món mới trong thực đơn.' },
           { status: 400 }
         );
       }
 
-      const adminClient = createAdminClient();
-      const { data: catRow } = await adminClient
-        .from('menu_categories')
-        .select('id, name, slug')
-        .eq('slug', catSlug)
-        .maybeSingle();
+      return NextResponse.json({
+        success: true,
+        product: {
+          ...result.product,
+          is_available: result.product.isAvailable,
+        },
+      });
+    }
 
-      if (!catRow) {
+    if (action === 'UPDATE_PRODUCT') {
+      if (!productId) {
+        return NextResponse.json({ error: 'Thiếu mã sản phẩm cần cập nhật.' }, { status: 400 });
+      }
+      const result = await upsertMenuProduct({
+        id: String(productId),
+        name: String(name || ''),
+        categorySlug: String(categorySlug || 'matcha'),
+        sizes: Array.isArray(sizes) ? sizes : [],
+        isSignature: Boolean(isSignature),
+        shelfLife: shelfLife ? String(shelfLife) : undefined,
+        description: description ? String(description) : undefined,
+        isAvailable: isAvailable !== false,
+      });
+
+      if (!result.success || !result.product) {
         return NextResponse.json(
-          { error: 'Không tìm thấy danh mục thực đơn tương ứng trong cơ sở dữ liệu.' },
-          { status: 404 }
+          { error: result.error || 'Không thể cập nhật thông tin sản phẩm.' },
+          { status: 400 }
         );
       }
-
-      const { data: insertedItem, error: itemErr } = await adminClient
-        .from('menu_items')
-        .insert({
-          category_id: catRow.id,
-          name: cleanName,
-          description: shelfLife ? String(shelfLife).trim() : null,
-          is_signature: Boolean(isSignature),
-          is_available: true,
-          sort_order: 99,
-        })
-        .select('*')
-        .single();
-
-      if (itemErr || !insertedItem) {
-        return NextResponse.json(
-          { error: itemErr?.message || 'Không thể tạo món mới trong cơ sở dữ liệu.' },
-          { status: 500 }
-        );
-      }
-
-      const sizeRows = rawSizes.map((sz: { label: string; price: number }, idx: number) => ({
-        item_id: insertedItem.id,
-        size_label: String(sz.label || 'M'),
-        price: Math.max(1000, Number(sz.price) || 0),
-        is_available: true,
-        sort_order: idx + 1,
-      }));
-
-      await adminClient.from('menu_item_sizes').insert(sizeRows);
 
       return NextResponse.json({
         success: true,
         product: {
-          id: insertedItem.id,
-          name: cleanName,
-          category: catRow.name,
-          categorySlug: catRow.slug,
-          isSignature: Boolean(isSignature),
-          shelfLife: shelfLife ? String(shelfLife).trim() : undefined,
-          sizes: sizeRows.map((s) => ({ label: s.size_label, price: s.price })),
-          is_available: true,
+          ...result.product,
+          is_available: result.product.isAvailable,
         },
+      });
+    }
+
+    if (action === 'DELETE_PRODUCT') {
+      if (!productId) {
+        return NextResponse.json({ error: 'Thiếu mã sản phẩm cần ẩn/xóa.' }, { status: 400 });
+      }
+      const result = await deleteMenuProduct(String(productId));
+      if (!result.success) {
+        return NextResponse.json(
+          { error: result.error || 'Không thể ẩn/xóa sản phẩm.' },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        productId: String(productId),
       });
     }
 

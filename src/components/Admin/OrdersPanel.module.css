@@ -858,3 +858,192 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
+/* ── M01 V2: KPI Strip, Fulfillment Progress, SLA Badges, Export & Audit Modal ── */
+.headerActionsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exportCsvBtn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e3932;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exportCsvBtn:hover {
+  border-color: #006241;
+  color: #006241;
+  background: #f0fdf4;
+}
+
+.kpiStrip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kpiCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpiLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.kpiVal {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.kpiAccentGreen {
+  color: #006241;
+}
+
+.kpiAccentAmber {
+  color: #b45309;
+}
+
+.kpiAccentRed {
+  color: #b91c1c;
+}
+
+.fulfillmentFiltersRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.fulfillmentPillBtn {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.fulfillmentPillActive {
+  background: #1e3932;
+  border-color: #1e3932;
+  color: #ffffff;
+}
+
+.fulfillmentBadgePending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.fulfillmentBadgePreparing {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.fulfillmentBadgeReady {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.fulfillmentBadgeCompleted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.slaBadgeNormal {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.slaBadgeWarning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.slaBadgeOverdue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.fulfillmentActionBtn {
+  background: #0f766e;
+  color: #ffffff;
+  border: 1px solid #0f766e;
+}
+
+.fulfillmentActionBtn:hover {
+  background: #115e59;
+}
+
+.auditBtn {
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.auditBtn:hover {
+  background: #e2e8f0;
+}
+
+.auditLogList {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.auditLogItem {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.8rem;
+}
+
+.auditLogTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.auditLogAction {
+  font-weight: 800;
+  color: #1e3932;
+}
+
+.auditLogTime {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+@media (max-width: 900px) {
+  .kpiStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+

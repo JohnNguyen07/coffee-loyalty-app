@@ -8,6 +8,15 @@ export type StaffRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'INVENTORY_S
 export type OrderType = 'TAKEAWAY' | 'DINE_IN' | 'DELIVERY';
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'EWALLET';
 export type DiscountType = 'NONE' | 'PERCENT' | 'FIXED';
+export type FulfillmentStatus = 'PENDING' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+
+export const FULFILLMENT_STATUS_LABELS: Record<FulfillmentStatus, string> = {
+  PENDING: 'Chờ xác nhận',
+  PREPARING: 'Đang pha chế',
+  READY: 'Sẵn sàng trả món',
+  COMPLETED: 'Đã hoàn tất',
+  CANCELLED: 'Đã hủy',
+};
 
 export interface PosAddonOption {
   id: string;
@@ -477,6 +486,13 @@ export interface PosOrderMetadata {
   orderType: OrderType;
   paymentMethod: PaymentMethod;
   paymentStatus: 'PAID' | 'UNPAID' | 'REFUNDED';
+  fulfillmentStatus?: FulfillmentStatus;
+  shippingFee?: number;
+  customerAddress?: string;
+  linkedOrderId?: string;
+  linkedOrderCode?: string;
+  pointsEarned?: number;
+  memberPointBalance?: number;
   discountAmount: number;
   discountPercent: number;
   discountReason?: string;
@@ -493,6 +509,251 @@ export interface PosOrderMetadata {
 
 const POS_META_PREFIX = '[[ULAB_POS_META:';
 const POS_META_SUFFIX = ']]';
+
+/**
+ * Normalize order fulfillment status across migrated DB columns and legacy order statuses.
+ */
+export function normalizeFulfillmentStatus(
+  status?: string | null,
+  orderStatus?: string | null,
+  channel?: 'POS' | 'WEB'
+): FulfillmentStatus {
+  if (orderStatus === 'CANCELLED') {
+    return 'CANCELLED';
+  }
+  const upper = String(status || '').trim().toUpperCase();
+  if (
+    upper === 'PENDING' ||
+    upper === 'PREPARING' ||
+    upper === 'READY' ||
+    upper === 'COMPLETED' ||
+    upper === 'CANCELLED'
+  ) {
+    return upper;
+  }
+  if (orderStatus === 'CONFIRMED') {
+    return channel === 'WEB' ? 'PREPARING' : 'COMPLETED';
+  }
+  return 'PENDING';
+}
+
+const FULFILLMENT_RANK: Record<Exclude<FulfillmentStatus, 'CANCELLED'>, number> = {
+  PENDING: 0,
+  PREPARING: 1,
+  READY: 2,
+  COMPLETED: 3,
+};
+
+/**
+ * Validate forward-only transition for order preparation & handover progress.
+ */
+export function validateFulfillmentTransition(
+  current: FulfillmentStatus,
+  next: FulfillmentStatus
+): ValidationResult {
+  if (current === 'CANCELLED') {
+    return {
+      valid: false,
+      error: 'Đơn hàng đã hủy không thể cập nhật tiến độ phục vụ.',
+    };
+  }
+  if (next === 'CANCELLED') {
+    return {
+      valid: false,
+      error: 'Vui lòng sử dụng chức năng Hủy đơn kèm lý do bắt buộc.',
+    };
+  }
+  if (current === next) {
+    return {
+      valid: false,
+      error: `Đơn hàng đã ở trạng thái "${FULFILLMENT_STATUS_LABELS[current]}".`,
+    };
+  }
+  if (FULFILLMENT_RANK[next] < FULFILLMENT_RANK[current]) {
+    return {
+      valid: false,
+      error: `Không thể chuyển lùi từ "${FULFILLMENT_STATUS_LABELS[current]}" về "${FULFILLMENT_STATUS_LABELS[next]}".`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Compute waiting time & SLA alert badge for open orders.
+ */
+export function calculateOrderWaitStatus(
+  createdAtIso: string,
+  fulfillmentStatus: FulfillmentStatus,
+  now: Date = new Date()
+): { elapsedMinutes: number; slaLevel: 'NORMAL' | 'WARNING' | 'OVERDUE'; label: string } {
+  if (fulfillmentStatus === 'COMPLETED' || fulfillmentStatus === 'CANCELLED') {
+    return {
+      elapsedMinutes: 0,
+      slaLevel: 'NORMAL',
+      label: FULFILLMENT_STATUS_LABELS[fulfillmentStatus],
+    };
+  }
+
+  const createdMs = new Date(createdAtIso).getTime();
+  const diffMs = Number.isNaN(createdMs) ? 0 : Math.max(0, now.getTime() - createdMs);
+  const elapsedMinutes = Math.floor(diffMs / 60000);
+
+  if (elapsedMinutes >= 20) {
+    return {
+      elapsedMinutes,
+      slaLevel: 'OVERDUE',
+      label: `Trễ ${elapsedMinutes} phút (Quá SLA)`,
+    };
+  }
+
+  if (elapsedMinutes >= 10) {
+    return {
+      elapsedMinutes,
+      slaLevel: 'WARNING',
+      label: `Chờ ${elapsedMinutes} phút (Cần ưu tiên)`,
+    };
+  }
+
+  return {
+    elapsedMinutes,
+    slaLevel: 'NORMAL',
+    label: elapsedMinutes <= 1 ? 'Vừa tiếp nhận' : `Chờ ${elapsedMinutes} phút`,
+  };
+}
+
+/**
+ * Validate manual delivery shipping fee input (0 - 500,000 VND).
+ */
+export function validateShippingFeeInput(
+  feeInput: unknown
+): ValidationResult & { shippingFee: number } {
+  if (feeInput === null || feeInput === undefined || feeInput === '') {
+    return { valid: true, shippingFee: 0 };
+  }
+  const num = Number(feeInput);
+  if (!Number.isFinite(num) || num < 0) {
+    return {
+      valid: false,
+      error: 'Phí giao hàng phải là số không âm.',
+      shippingFee: 0,
+    };
+  }
+  const shippingFee = Math.floor(num);
+  if (shippingFee > 500000) {
+    return {
+      valid: false,
+      error: 'Phí giao hàng không được vượt quá 500.000đ.',
+      shippingFee: 0,
+    };
+  }
+  return { valid: true, shippingFee };
+}
+
+export interface MenuProductInput {
+  name: string;
+  categorySlug: string;
+  sizes: { label: string; price: number }[];
+  isSignature?: boolean;
+  shelfLife?: string;
+  description?: string;
+}
+
+const VALID_MENU_CATEGORY_SLUGS = ['cold-brew', 'matcha', 'cold-brew-chai'];
+
+/**
+ * Validate creating or updating a menu beverage item.
+ */
+export function validateMenuProductInput(input: MenuProductInput): ValidationResult {
+  const cleanName = (input.name || '').trim();
+  if (cleanName.length < 2 || cleanName.length > 120) {
+    return {
+      valid: false,
+      error: 'Tên món phải từ 2 đến 120 ký tự.',
+    };
+  }
+
+  const slug = (input.categorySlug || '').trim();
+  if (!VALID_MENU_CATEGORY_SLUGS.includes(slug)) {
+    return {
+      valid: false,
+      error: 'Nhóm thực đơn không hợp lệ (chỉ hỗ trợ Cold Brew, Matcha, Cold Brew Chai).',
+    };
+  }
+
+  if (!Array.isArray(input.sizes) || input.sizes.length === 0) {
+    return {
+      valid: false,
+      error: 'Món nước phải có ít nhất 1 kích cỡ (Size) và mức giá.',
+    };
+  }
+
+  for (const sz of input.sizes) {
+    const label = (sz?.label || '').trim();
+    const price = Number(sz?.price);
+    if (!label) {
+      return { valid: false, error: 'Tên kích cỡ (Size) không được để trống.' };
+    }
+    if (!Number.isFinite(price) || price < 1000 || price > 5000000) {
+      return {
+        valid: false,
+        error: `Giá bán Size ${label} phải nằm trong khoảng 1.000đ – 5.000.000đ.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+export interface HeldPosCart {
+  holdId: string;
+  label: string;
+  createdAt: string;
+  orderType: OrderType;
+  customerPhone: string;
+  customerName: string;
+  orderNote: string;
+  discountType: DiscountType;
+  discountValue: string;
+  discountReason: string;
+  linkedOrderId?: string | null;
+  linkedOrderCode?: string | null;
+  items: {
+    itemId: string;
+    productName: string;
+    sizeLabel: string;
+    basePrice: number;
+    quantity: number;
+    sweetness: string;
+    ice: string;
+    addons: string[];
+    itemNote: string;
+  }[];
+  totalQuantity: number;
+  subtotal: number;
+}
+
+/**
+ * Validate whether current POS cart can be parked into Held Orders tray.
+ */
+export function validateHoldCartInput(
+  itemsCount: number,
+  existingHeldCount: number,
+  maxHeld = 10
+): ValidationResult {
+  if (itemsCount <= 0) {
+    return {
+      valid: false,
+      error: 'Giỏ hàng đang trống, không có món để lưu tạm.',
+    };
+  }
+  if (existingHeldCount >= maxHeld) {
+    return {
+      valid: false,
+      error: `Chỉ được giữ tối đa ${maxHeld} đơn tạm cùng lúc. Vui lòng xử lý hoặc xóa bớt đơn tạm cũ.`,
+    };
+  }
+  return { valid: true };
+}
 
 /**
  * Encode POS metadata into the `note` field as a resilient fallback when extended columns are not yet migrated,
@@ -527,15 +788,50 @@ export function extractPosOrderMetadata(orderRow: Record<string, unknown>): PosO
   }
 
   const userObj = orderRow.user as { full_name?: string; phone?: string } | undefined;
+  const resolvedChannel =
+    (orderRow.channel as 'POS' | 'WEB' | undefined) ||
+    parsedMeta.channel ||
+    (String(orderRow.order_code || '').startsWith('POS-') ? 'POS' : 'WEB');
+
+  let parsedShippingFee = Number(orderRow.shipping_fee ?? parsedMeta.shippingFee ?? 0);
+  if (!parsedShippingFee) {
+    const shipMatch = cleanUserNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
+    if (shipMatch) {
+      parsedShippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
+    }
+  }
+
+  let parsedAddress =
+    (orderRow.customer_address as string | undefined) || parsedMeta.customerAddress || undefined;
+  if (!parsedAddress) {
+    const dcMatch = cleanUserNote.match(/Đ\/c:\s*([^|]+)/);
+    if (dcMatch && dcMatch[1]?.trim()) {
+      parsedAddress = dcMatch[1].trim();
+    }
+  }
+
+  const orderStatusStr = typeof orderRow.status === 'string' ? orderRow.status : undefined;
+  const fulfillmentStatus = normalizeFulfillmentStatus(
+    (orderRow.fulfillment_status as string | undefined) || parsedMeta.fulfillmentStatus,
+    orderStatusStr,
+    resolvedChannel
+  );
 
   return {
-    channel: (orderRow.channel as 'POS' | 'WEB' | undefined) || parsedMeta.channel || ( String(orderRow.order_code || '').startsWith('POS-') ? 'POS' : 'WEB' ),
+    channel: resolvedChannel,
     orderType: (orderRow.order_type as OrderType | undefined) || parsedMeta.orderType || 'TAKEAWAY',
     paymentMethod: (orderRow.payment_method as PaymentMethod | undefined) || parsedMeta.paymentMethod || 'CASH',
     paymentStatus:
       orderRow.status === 'CANCELLED'
         ? 'REFUNDED'
         : (orderRow.payment_status as 'PAID' | 'UNPAID' | 'REFUNDED' | undefined) || parsedMeta.paymentStatus || 'PAID',
+    fulfillmentStatus,
+    shippingFee: parsedShippingFee,
+    customerAddress: parsedAddress,
+    linkedOrderId: (orderRow.linked_order_id as string | undefined) || parsedMeta.linkedOrderId || undefined,
+    linkedOrderCode: parsedMeta.linkedOrderCode || undefined,
+    pointsEarned: parsedMeta.pointsEarned,
+    memberPointBalance: parsedMeta.memberPointBalance,
     discountAmount: Number(orderRow.discount_amount ?? parsedMeta.discountAmount ?? 0),
     discountPercent: Number(orderRow.discount_percent ?? parsedMeta.discountPercent ?? 0),
     discountReason: (orderRow.discount_reason as string | undefined) || parsedMeta.discountReason || undefined,

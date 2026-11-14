@@ -1,19 +1,30 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { escapeFilterInput, type PosStaffContext } from '@/lib/auth-utils';
 import { menuData, allMenuItems, type MenuCategory, type MenuItem } from '@/data/menu';
 import { processPosOrderInventory, reversePosOrderInventory } from '@/lib/inventory/pos-integration';
+import { buildUserRbacProfile } from '@/lib/rbac/domain';
+import { getBusinessProfile, listLocationsForUser } from '@/lib/rbac/repository';
+import { getActiveShiftSession } from '@/lib/revenue/repository';
 import {
   ADDON_OPTIONS,
+  DEFAULT_LOCATION_ID,
   ICE_OPTIONS,
   SWEETNESS_OPTIONS,
   calculatePosOrderTotals,
   extractPosOrderMetadata,
   formatItemOptionsSummary,
   generatePosOrderCode,
+  normalizeFulfillmentStatus,
   resolveTierCashbackRate,
   serializePosFallbackNote,
+  validateFulfillmentTransition,
+  validateMenuProductInput,
   validatePosOrderCancel,
+  validateShippingFeeInput,
   type DiscountType,
+  type FulfillmentStatus,
   type NormalizedPosOrderItem,
   type OrderType,
   type PaymentMethod,
@@ -42,12 +53,17 @@ export interface CreatePosOrderPayload {
   pointsUsed?: number;
   note?: string;
   idempotencyKey?: string;
+  linkedOrderId?: string;
+  linkedOrderCode?: string;
+  shippingFee?: number;
+  customerAddress?: string;
 }
 
 export interface PosOrderRecord {
   id: string;
   orderCode: string;
   status: 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+  fulfillmentStatus: FulfillmentStatus;
   channel: 'POS' | 'WEB';
   orderType: OrderType;
   paymentMethod: PaymentMethod;
@@ -57,12 +73,17 @@ export interface PosOrderRecord {
   discountPercent: number;
   discountReason?: string;
   pointsUsed: number;
+  shippingFee: number;
+  customerAddress?: string;
+  linkedOrderId?: string;
+  linkedOrderCode?: string;
   totalDue: number;
   amountReceived: number;
   changeDue: number;
   customerName: string;
   customerPhone: string;
   cashierName: string;
+  locationId?: string;
   note: string;
   cancelReason?: string;
   cancelledBy?: string;
@@ -89,14 +110,179 @@ export interface PosOrderRecord {
   }[];
 }
 
+export interface OrderAuditLogItem {
+  id: string;
+  orderId: string;
+  orderCode: string;
+  action: string;
+  actorName: string;
+  actorRole: string;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface PosLocationContextInfo {
+  location: {
+    locationId: string;
+    locationName: string;
+    address?: string;
+    phone?: string;
+    receiptFooter?: string;
+  };
+  activeShift: {
+    isOpen: boolean;
+    shiftId?: string;
+    shiftCode?: string;
+    shiftName?: string;
+    openedAt?: string;
+    openedByName?: string;
+  };
+}
+
+interface PersistedCustomProduct {
+  id: string;
+  name: string;
+  category: string;
+  categorySlug: string;
+  description?: string;
+  shelfLife?: string;
+  isSignature?: boolean;
+  badgeLabel?: string;
+  sizes: { label: string; price: number }[];
+  isAvailable: boolean;
+  deleted?: boolean;
+}
+
+interface PersistedPosStore {
+  availability: Record<string, boolean>;
+  priceOverrides: Record<string, { label: string; price: number }[]>;
+  productMetaOverrides: Record<
+    string,
+    {
+      name?: string;
+      description?: string;
+      shelfLife?: string;
+      isSignature?: boolean;
+      badgeLabel?: string;
+    }
+  >;
+  customProducts: Record<string, PersistedCustomProduct>;
+  orderFulfillment: Record<
+    string,
+    {
+      fulfillmentStatus: FulfillmentStatus;
+      shippingFee?: number;
+      updatedAt: string;
+    }
+  >;
+  auditLogs: Record<string, OrderAuditLogItem[]>;
+  updatedAt: string;
+}
+
+const POS_STORE_DIR = path.join(process.cwd(), '.data');
+const POS_STORE_PATH = path.join(POS_STORE_DIR, 'pos-store.json');
+
+declare global {
+  var __ulabPosStore: PersistedPosStore | undefined;
+}
+
+function getEmptyPosStore(): PersistedPosStore {
+  return {
+    availability: {},
+    priceOverrides: {},
+    productMetaOverrides: {},
+    customProducts: {},
+    orderFulfillment: {},
+    auditLogs: {},
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function readPosStore(): PersistedPosStore {
+  if (globalThis.__ulabPosStore) {
+    return globalThis.__ulabPosStore;
+  }
+  try {
+    if (fs.existsSync(POS_STORE_PATH)) {
+      const raw = fs.readFileSync(POS_STORE_PATH, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<PersistedPosStore>;
+      const hydrated: PersistedPosStore = {
+        availability: parsed.availability || {},
+        priceOverrides: parsed.priceOverrides || {},
+        productMetaOverrides: parsed.productMetaOverrides || {},
+        customProducts: parsed.customProducts || {},
+        orderFulfillment: parsed.orderFulfillment || {},
+        auditLogs: parsed.auditLogs || {},
+        updatedAt: parsed.updatedAt || new Date().toISOString(),
+      };
+      globalThis.__ulabPosStore = hydrated;
+      return hydrated;
+    }
+  } catch (err) {
+    console.warn('readPosStore fallback:', err);
+  }
+  const empty = getEmptyPosStore();
+  globalThis.__ulabPosStore = empty;
+  return empty;
+}
+
+function writePosStore(store: PersistedPosStore): void {
+  store.updatedAt = new Date().toISOString();
+  globalThis.__ulabPosStore = store;
+  try {
+    if (!fs.existsSync(POS_STORE_DIR)) {
+      fs.mkdirSync(POS_STORE_DIR, { recursive: true });
+    }
+    fs.writeFileSync(POS_STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('writePosStore warning:', err);
+  }
+}
+
+export function getPersistedOrderFulfillmentMap(): Record<
+  string,
+  { fulfillmentStatus: FulfillmentStatus; shippingFee?: number; updatedAt: string }
+> {
+  return readPosStore().orderFulfillment;
+}
+
+export function matchesOrderLocation(rowLocationId: unknown, targetLocationId?: string): boolean {
+  if (!targetLocationId) return true;
+  const target = targetLocationId.trim();
+  const rowLoc = typeof rowLocationId === 'string' && rowLocationId.trim() ? rowLocationId.trim() : null;
+  if (target === DEFAULT_LOCATION_ID) {
+    return !rowLoc || rowLoc === DEFAULT_LOCATION_ID;
+  }
+  return rowLoc === target;
+}
+
 // Track recent idempotency keys in memory as a secondary guard when DB column is not migrated yet
 const recentIdempotencyCache = new Map<string, PosOrderRecord>();
 
-// Global in-memory cache for product availability and price overrides
+// Global in-memory cache mirrored from .data/pos-store.json
 const globalProductAvailability = new Map<string, boolean>();
 const globalProductPriceOverrides = new Map<string, Map<string, number>>();
 
+function syncMemoryCachesFromStore(): PersistedPosStore {
+  const store = readPosStore();
+  Object.entries(store.availability).forEach(([pid, avail]) => {
+    if (!globalProductAvailability.has(pid)) {
+      globalProductAvailability.set(pid, avail);
+    }
+  });
+  Object.entries(store.priceOverrides).forEach(([pid, sizes]) => {
+    if (!globalProductPriceOverrides.has(pid) && Array.isArray(sizes)) {
+      const m = new Map<string, number>();
+      sizes.forEach((s) => m.set(s.label, s.price));
+      globalProductPriceOverrides.set(pid, m);
+    }
+  });
+  return store;
+}
+
 export function getProductAvailabilityMap(): Record<string, boolean> {
+  syncMemoryCachesFromStore();
   const result: Record<string, boolean> = {};
   globalProductAvailability.forEach((v, k) => {
     result[k] = v;
@@ -105,6 +291,7 @@ export function getProductAvailabilityMap(): Record<string, boolean> {
 }
 
 export function isProductAvailable(productId: string): boolean {
+  syncMemoryCachesFromStore();
   if (globalProductAvailability.has(productId)) {
     return globalProductAvailability.get(productId) === true;
   }
@@ -116,6 +303,12 @@ export async function setProductAvailability(
   isAvailable: boolean
 ): Promise<boolean> {
   globalProductAvailability.set(productId, isAvailable);
+  const store = readPosStore();
+  store.availability[productId] = isAvailable;
+  if (store.customProducts[productId]) {
+    store.customProducts[productId].isAvailable = isAvailable;
+  }
+  writePosStore(store);
 
   try {
     const adminClient = createAdminClient();
@@ -137,6 +330,11 @@ export async function setProductAvailability(
       }
 
       await query;
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(productId)) {
+      await adminClient
+        .from('menu_items')
+        .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
+        .eq('id', productId);
     }
   } catch (err) {
     console.warn('DB menu_items availability update fallback:', err);
@@ -149,13 +347,26 @@ export async function setProductPrices(
   productId: string,
   sizes: { label: string; price: number }[]
 ): Promise<boolean> {
+  const cleanSizes = sizes.map((s) => ({
+    label: String(s.label || 'M').trim(),
+    price: Math.max(1000, Math.round(Number(s.price) || 0)),
+  }));
   const sizeMap = new Map<string, number>();
-  sizes.forEach((s) => sizeMap.set(s.label, s.price));
+  cleanSizes.forEach((s) => sizeMap.set(s.label, s.price));
   globalProductPriceOverrides.set(productId, sizeMap);
+
+  const store = readPosStore();
+  store.priceOverrides[productId] = cleanSizes;
+  if (store.customProducts[productId]) {
+    store.customProducts[productId].sizes = cleanSizes;
+  }
+  writePosStore(store);
 
   try {
     const adminClient = createAdminClient();
     const staticItem = allMenuItems.find((m) => m.id === productId);
+    let targetDbId: string | null = null;
+
     if (staticItem) {
       const { data: dbCat } = await adminClient
         .from('menu_categories')
@@ -173,20 +384,22 @@ export async function setProductPrices(
       }
 
       const { data: dbItems } = await query;
-      const dbItem = dbItems?.[0];
+      targetDbId = dbItems?.[0]?.id ? String(dbItems[0].id) : null;
+    } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(productId)) {
+      targetDbId = productId;
+    }
 
-      if (dbItem?.id) {
-        await adminClient.from('menu_item_sizes').delete().eq('menu_item_id', dbItem.id);
-        await adminClient.from('menu_item_sizes').insert(
-          sizes.map((s, idx) => ({
-            menu_item_id: dbItem.id,
-            size_label: s.label,
-            price: s.price,
-            is_available: true,
-            sort_order: idx + 1,
-          }))
-        );
-      }
+    if (targetDbId) {
+      await adminClient.from('menu_item_sizes').delete().eq('menu_item_id', targetDbId);
+      await adminClient.from('menu_item_sizes').insert(
+        cleanSizes.map((s, idx) => ({
+          menu_item_id: targetDbId,
+          size_label: s.label,
+          price: s.price,
+          is_available: true,
+          sort_order: idx + 1,
+        }))
+      );
     }
   } catch (err) {
     console.warn('DB menu_item_sizes price update fallback:', err);
@@ -196,6 +409,7 @@ export async function setProductPrices(
 }
 
 export function getProductPriceOverridesMap(): Record<string, { label: string; price: number }[]> {
+  syncMemoryCachesFromStore();
   const result: Record<string, { label: string; price: number }[]> = {};
   globalProductPriceOverrides.forEach((map, pid) => {
     const arr: { label: string; price: number }[] = [];
@@ -205,10 +419,372 @@ export function getProductPriceOverridesMap(): Record<string, { label: string; p
   return result;
 }
 
+const CATEGORY_NAME_BY_SLUG: Record<string, string> = {
+  'cold-brew': 'Cold Brew',
+  matcha: 'Matcha',
+  'cold-brew-chai': 'Cold Brew Chai',
+};
+
+/**
+ * Create or update a menu beverage item across Supabase (`menu_items`/`menu_item_sizes`)
+ * and resilient `.data/pos-store.json`.
+ */
+export async function upsertMenuProduct(input: {
+  id?: string;
+  name: string;
+  categorySlug: string;
+  sizes: { label: string; price: number }[];
+  isSignature?: boolean;
+  shelfLife?: string;
+  description?: string;
+  isAvailable?: boolean;
+}): Promise<{ success: boolean; error?: string; product?: PersistedCustomProduct }> {
+  const cleanSizes = Array.isArray(input.sizes)
+    ? input.sizes.map((s) => ({
+        label: String(s.label || 'M').trim(),
+        price: Math.max(1000, Math.round(Number(s.price) || 0)),
+      }))
+    : [];
+
+  const check = validateMenuProductInput({
+    name: input.name,
+    categorySlug: input.categorySlug,
+    sizes: cleanSizes,
+    isSignature: input.isSignature,
+    shelfLife: input.shelfLife,
+    description: input.description,
+  });
+
+  if (!check.valid) {
+    return { success: false, error: check.error };
+  }
+
+  const cleanName = input.name.trim();
+  const categoryName = CATEGORY_NAME_BY_SLUG[input.categorySlug] || 'Matcha';
+  const cleanDesc = (input.description || input.shelfLife || '').trim() || undefined;
+  const cleanShelf = input.shelfLife?.trim() || undefined;
+  const isAvailable = input.isAvailable !== false;
+  const productId = input.id?.trim() || `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+  const store = readPosStore();
+  let resolvedId = productId;
+
+  try {
+    const adminClient = createAdminClient();
+    const { data: catRow } = await adminClient
+      .from('menu_categories')
+      .select('id, name, slug')
+      .eq('slug', input.categorySlug)
+      .maybeSingle();
+
+    const staticMatch = allMenuItems.find((m) => m.id === productId);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(productId);
+
+    if (input.id && (staticMatch || isUuid)) {
+      let targetDbId: string | null = isUuid ? productId : null;
+      if (!targetDbId && staticMatch) {
+        const { data: existingRows } = await adminClient
+          .from('menu_items')
+          .select('id')
+          .ilike('name', staticMatch.name)
+          .limit(1);
+        targetDbId = existingRows?.[0]?.id ? String(existingRows[0].id) : null;
+      }
+
+      if (targetDbId) {
+        await adminClient
+          .from('menu_items')
+          .update({
+            name: cleanName,
+            description: cleanDesc || null,
+            is_signature: Boolean(input.isSignature),
+            is_available: isAvailable,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', targetDbId);
+
+        await adminClient.from('menu_item_sizes').delete().eq('menu_item_id', targetDbId);
+        await adminClient.from('menu_item_sizes').insert(
+          cleanSizes.map((sz, idx) => ({
+            menu_item_id: targetDbId,
+            size_label: sz.label,
+            price: sz.price,
+            is_available: true,
+            sort_order: idx + 1,
+          }))
+        );
+      }
+    } else if (!input.id && catRow) {
+      const { data: insertedItem, error: insertErr } = await adminClient
+        .from('menu_items')
+        .insert({
+          category_id: catRow.id,
+          name: cleanName,
+          description: cleanDesc || null,
+          is_signature: Boolean(input.isSignature),
+          is_available: isAvailable,
+          sort_order: 99,
+        })
+        .select('*')
+        .maybeSingle();
+
+      if (!insertErr && insertedItem?.id) {
+        resolvedId = String(insertedItem.id);
+        await adminClient.from('menu_item_sizes').insert(
+          cleanSizes.map((sz, idx) => ({
+            menu_item_id: resolvedId,
+            size_label: sz.label,
+            price: sz.price,
+            is_available: true,
+            sort_order: idx + 1,
+          }))
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('upsertMenuProduct DB fallback:', err);
+  }
+
+  const sizeMap = new Map<string, number>();
+  cleanSizes.forEach((s) => sizeMap.set(s.label, s.price));
+  globalProductPriceOverrides.set(resolvedId, sizeMap);
+  globalProductAvailability.set(resolvedId, isAvailable);
+
+  store.priceOverrides[resolvedId] = cleanSizes;
+  store.availability[resolvedId] = isAvailable;
+  store.productMetaOverrides[resolvedId] = {
+    name: cleanName,
+    description: cleanDesc,
+    shelfLife: cleanShelf,
+    isSignature: Boolean(input.isSignature),
+    badgeLabel: input.isSignature ? 'Signature' : undefined,
+  };
+
+  const isExistingStatic = allMenuItems.some((m) => m.id === resolvedId);
+  const productDto: PersistedCustomProduct = {
+    id: resolvedId,
+    name: cleanName,
+    category: categoryName,
+    categorySlug: input.categorySlug,
+    description: cleanDesc,
+    shelfLife: cleanShelf,
+    isSignature: Boolean(input.isSignature),
+    badgeLabel: input.isSignature ? 'Signature' : undefined,
+    sizes: cleanSizes,
+    isAvailable,
+  };
+
+  if (!isExistingStatic) {
+    store.customProducts[resolvedId] = productDto;
+  }
+  writePosStore(store);
+
+  return { success: true, product: productDto };
+}
+
+/**
+ * Soft-hide/delete a custom menu product (never hard-deletes canonical static catalog items).
+ */
+export async function deleteMenuProduct(
+  productId: string
+): Promise<{ success: boolean; error?: string }> {
+  const cleanId = (productId || '').trim();
+  if (!cleanId) {
+    return { success: false, error: 'Thiếu mã sản phẩm cần ẩn/xóa.' };
+  }
+
+  const isCanonical = allMenuItems.some((m) => m.id === cleanId);
+  if (isCanonical) {
+    await setProductAvailability(cleanId, false);
+    return { success: true };
+  }
+
+  const store = readPosStore();
+  if (store.customProducts[cleanId]) {
+    store.customProducts[cleanId].deleted = true;
+    store.customProducts[cleanId].isAvailable = false;
+  } else {
+    store.customProducts[cleanId] = {
+      id: cleanId,
+      name: cleanId,
+      category: 'Matcha',
+      categorySlug: 'matcha',
+      sizes: [{ label: 'M', price: 40000 }],
+      isAvailable: false,
+      deleted: true,
+    };
+  }
+  store.availability[cleanId] = false;
+  globalProductAvailability.set(cleanId, false);
+  writePosStore(store);
+
+  try {
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(cleanId)) {
+      const adminClient = createAdminClient();
+      await adminClient
+        .from('menu_items')
+        .update({ is_available: false, updated_at: new Date().toISOString() })
+        .eq('id', cleanId);
+    }
+  } catch (err) {
+    console.warn('deleteMenuProduct DB fallback:', err);
+  }
+
+  return { success: true };
+}
+
+/**
+ * Resolve active location metadata (address, phone, receiptFooter from Module D)
+ * and current cash drawer shift status (from Module B) for POS counter display & receipts.
+ */
+export async function getPosLocationAndShiftContext(
+  staff: PosStaffContext
+): Promise<PosLocationContextInfo> {
+  let address: string | undefined;
+  let phone: string | undefined;
+  let receiptFooter: string | undefined;
+  let locationName = staff.locationName;
+
+  try {
+    const rbacProfile = buildUserRbacProfile({
+      userId: staff.id,
+      fullName: staff.fullName,
+      email: staff.email,
+      phone: staff.phone,
+      businessId: staff.businessId,
+      role: staff.staffRole,
+      assignedLocationIds: [staff.locationId],
+    });
+    const [locs, bizProfile] = await Promise.all([
+      listLocationsForUser(rbacProfile),
+      getBusinessProfile(rbacProfile),
+    ]);
+    const matched = locs.find((l) => l.id === staff.locationId);
+    if (matched) {
+      locationName = matched.name || locationName;
+      address = matched.address || undefined;
+      phone = matched.phone || undefined;
+      receiptFooter = matched.receiptFooter || bizProfile?.defaultReceiptFooter || undefined;
+    } else if (bizProfile) {
+      phone = bizProfile.phone || undefined;
+      receiptFooter = bizProfile.defaultReceiptFooter || undefined;
+    }
+  } catch {
+    // Fallback to staff context defaults
+  }
+
+  let activeShiftInfo: PosLocationContextInfo['activeShift'] = { isOpen: false };
+  try {
+    const activeShift = await getActiveShiftSession(staff.locationId);
+    if (activeShift && activeShift.status === 'OPEN') {
+      activeShiftInfo = {
+        isOpen: true,
+        shiftId: activeShift.id,
+        shiftCode: activeShift.code,
+        shiftName: activeShift.shiftName,
+        openedAt: activeShift.openedAt,
+        openedByName: activeShift.openedByName,
+      };
+    }
+  } catch {
+    // Keep default closed status
+  }
+
+  return {
+    location: {
+      locationId: staff.locationId,
+      locationName,
+      address,
+      phone,
+      receiptFooter,
+    },
+    activeShift: activeShiftInfo,
+  };
+}
+
+function applyCatalogItemOverrides(item: MenuItem, store: PersistedPosStore): MenuItem | null {
+  if (store.customProducts[item.id]?.deleted) {
+    return null;
+  }
+
+  const metaOverride = store.productMetaOverrides[item.id];
+  const overrideSizes = store.priceOverrides[item.id];
+  const priceMap = globalProductPriceOverrides.get(item.id);
+  const finalSizes =
+    Array.isArray(overrideSizes) && overrideSizes.length > 0
+      ? overrideSizes
+      : priceMap
+      ? item.sizes.map((s) => ({
+          label: s.label,
+          price: priceMap.get(s.label) ?? s.price,
+        }))
+      : item.sizes;
+
+  const isAvailable = globalProductAvailability.has(item.id)
+    ? globalProductAvailability.get(item.id)!
+    : item.isAvailable !== false;
+
+  const nextIsSignature = metaOverride?.isSignature ?? item.isSignature;
+  const nextBadgeLabel = metaOverride
+    ? nextIsSignature
+      ? metaOverride.badgeLabel || 'Signature'
+      : item.badgeLabel === 'Signature'
+      ? undefined
+      : item.badgeLabel
+    : item.badgeLabel;
+
+  return {
+    ...item,
+    name: metaOverride?.name || item.name,
+    description: metaOverride?.description ?? item.description,
+    shelfLife: metaOverride?.shelfLife ?? item.shelfLife,
+    isSignature: nextIsSignature,
+    badgeLabel: nextBadgeLabel,
+    sizes: finalSizes,
+    isAvailable,
+  };
+}
+
+function appendCustomProductsForCategory(
+  catSlug: string,
+  catItems: MenuItem[],
+  store: PersistedPosStore
+): void {
+  const customList = Object.values(store.customProducts).filter(
+    (cp) => cp.categorySlug === catSlug && !cp.deleted
+  );
+  for (const cp of customList) {
+    const alreadyPresent = catItems.some(
+      (ci) => ci.id === cp.id || ci.name.toLowerCase() === cp.name.toLowerCase()
+    );
+    if (!alreadyPresent) {
+      const resolved = applyCatalogItemOverrides(
+        {
+          id: cp.id,
+          name: cp.name,
+          description: cp.description,
+          category: cp.category,
+          categorySlug: cp.categorySlug,
+          shelfLife: cp.shelfLife,
+          isSignature: cp.isSignature,
+          badgeLabel: cp.badgeLabel,
+          sizes: cp.sizes,
+          isAvailable: cp.isAvailable,
+        },
+        store
+      );
+      if (resolved) {
+        catItems.push(resolved);
+      }
+    }
+  }
+}
+
 /**
  * Fetch POS menu categories, items, sizes, and customization options.
  */
 export async function getPosMenuCatalog() {
+  const store = syncMemoryCachesFromStore();
   const adminClient = createAdminClient();
 
   try {
@@ -231,6 +807,7 @@ export async function getPosMenuCatalog() {
         const catItems: MenuItem[] = dbItems
           .filter((item) => {
             if (item.category_id !== cat.id) return false;
+            if (store.customProducts[item.id]?.deleted) return false;
             const lower = item.name.trim().toLowerCase();
             // Exclude standalone Matcha Oat (now a free milk choice)
             if (lower === 'matcha oat') {
@@ -251,11 +828,15 @@ export async function getPosMenuCatalog() {
               staticCat?.items.find(
                 (m) =>
                   m.name.toLowerCase() === lowerDbName ||
+                  store.productMetaOverrides[m.id]?.name?.toLowerCase() === lowerDbName ||
                   (isStrawberryMatcha && m.id === 'strawberry-matcha') ||
                   (isMatchaKemBeo && m.id === 'matcha-kem-beo')
               ) ||
               allMenuItems.find(
-                (m) => m.name.toLowerCase() === lowerDbName && m.categorySlug === cat.slug
+                (m) =>
+                  (m.name.toLowerCase() === lowerDbName ||
+                    store.productMetaOverrides[m.id]?.name?.toLowerCase() === lowerDbName) &&
+                  m.categorySlug === cat.slug
               ) ||
               allMenuItems.find((m) => m.id === item.id);
             const pid = staticMatch?.id || item.id;
@@ -274,18 +855,7 @@ export async function getPosMenuCatalog() {
                 price: Number(s.price) || 0,
               }));
 
-            const priceMap = globalProductPriceOverrides.get(pid);
-            const baseSizes = staticMatch?.sizes || (sortedSizes.length > 0 ? sortedSizes : [{ label: 'M', price: 30000 }]);
-            const finalSizes = baseSizes.map((sz) => ({
-              label: sz.label,
-              price: priceMap?.get(sz.label) ?? sz.price,
-            }));
-
-            const isAvailable = globalProductAvailability.has(pid)
-              ? globalProductAvailability.get(pid)!
-              : item.is_available !== false;
-
-            return {
+            const baseItem: MenuItem = {
               id: pid,
               name: staticMatch?.name || item.name,
               description: staticMatch?.description || item.description || undefined,
@@ -295,36 +865,35 @@ export async function getPosMenuCatalog() {
               isSignature: Boolean(item.is_signature ?? staticMatch?.isSignature),
               badgeLabel: staticMatch?.badgeLabel,
               hasMilkChoice: staticMatch?.hasMilkChoice,
+              shelfLife: staticMatch?.shelfLife,
               tag: staticMatch?.tag,
-              sizes: finalSizes,
-              isAvailable,
+              sizes:
+                staticMatch?.sizes ||
+                (sortedSizes.length > 0 ? sortedSizes : [{ label: 'M', price: 30000 }]),
+              isAvailable: item.is_available !== false,
             };
-          });
+            return applyCatalogItemOverrides(baseItem, store);
+          })
+          .filter((item): item is MenuItem => item !== null);
 
         // Merge any canonical items from static menuData that haven't been seeded into DB yet
         if (staticCat) {
           for (const stItem of staticCat.items) {
+            const overrideName = store.productMetaOverrides[stItem.id]?.name?.toLowerCase();
             const alreadyPresent = catItems.some(
               (ci) =>
                 ci.id === stItem.id ||
-                ci.name.toLowerCase() === stItem.name.toLowerCase()
+                ci.name.toLowerCase() === stItem.name.toLowerCase() ||
+                (overrideName ? ci.name.toLowerCase() === overrideName : false)
             );
             if (!alreadyPresent) {
-              const priceMap = globalProductPriceOverrides.get(stItem.id);
-              const sizes = priceMap
-                ? stItem.sizes.map((s) => ({
-                    label: s.label,
-                    price: priceMap.get(s.label) ?? s.price,
-                  }))
-                : stItem.sizes;
-              const isAvailable = globalProductAvailability.has(stItem.id)
-                ? globalProductAvailability.get(stItem.id)!
-                : true;
-              catItems.push({
-                ...stItem,
-                sizes,
-                isAvailable,
-              });
+              const resolved = applyCatalogItemOverrides(
+                { ...stItem, isAvailable: true },
+                store
+              );
+              if (resolved) {
+                catItems.push(resolved);
+              }
             }
           }
           // Sort catItems to match canonical menu order first, then any custom DB items
@@ -335,6 +904,8 @@ export async function getPosMenuCatalog() {
             return ia - ib;
           });
         }
+
+        appendCustomProductsForCategory(cat.slug, catItems, store);
 
         return {
           name: cat.name,
@@ -358,28 +929,16 @@ export async function getPosMenuCatalog() {
     console.warn('POS menu DB fetch fallback to static catalog:', err);
   }
 
-  const mappedCategories: MenuCategory[] = menuData.map((cat) => ({
-    ...cat,
-    items: cat.items.map((item) => {
-      const priceMap = globalProductPriceOverrides.get(item.id);
-      const sizes = priceMap
-        ? item.sizes.map((s) => ({
-            label: s.label,
-            price: priceMap.get(s.label) ?? s.price,
-          }))
-        : item.sizes;
-
-      const isAvailable = globalProductAvailability.has(item.id)
-        ? globalProductAvailability.get(item.id)!
-        : true;
-
-      return {
-        ...item,
-        sizes,
-        isAvailable,
-      };
-    }),
-  }));
+  const mappedCategories: MenuCategory[] = menuData.map((cat) => {
+    const catItems = cat.items
+      .map((item) => applyCatalogItemOverrides({ ...item, isAvailable: true }, store))
+      .filter((item): item is MenuItem => item !== null);
+    appendCustomProductsForCategory(cat.slug, catItems, store);
+    return {
+      ...cat,
+      items: catItems,
+    };
+  });
 
   return {
     categories: mappedCategories,
@@ -436,16 +995,125 @@ function parseOrderItemRow(row: Record<string, unknown>) {
 }
 
 /**
+ * Persist order audit log into both `.data/pos-store.json` and Supabase `order_audit_logs` (best-effort).
+ */
+export async function recordOrderAuditLog(params: {
+  businessId: string;
+  locationId: string;
+  orderId: string;
+  orderCode: string;
+  action: string;
+  actorId?: string | null;
+  actorName: string;
+  actorRole: string;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const store = readPosStore();
+  const entry: OrderAuditLogItem = {
+    id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    orderId: params.orderId,
+    orderCode: params.orderCode,
+    action: params.action,
+    actorName: params.actorName,
+    actorRole: params.actorRole,
+    reason: params.reason ?? null,
+    metadata: params.metadata || {},
+    createdAt: nowIso,
+  };
+  const existingLogs = store.auditLogs[params.orderId] || [];
+  store.auditLogs[params.orderId] = [entry, ...existingLogs].slice(0, 50);
+  writePosStore(store);
+
+  try {
+    const adminClient = createAdminClient();
+    await adminClient.from('order_audit_logs').insert({
+      business_id: params.businessId,
+      location_id: params.locationId,
+      order_id: params.orderId,
+      order_code: params.orderCode,
+      action: params.action,
+      actor_id: params.actorId || null,
+      actor_name: params.actorName,
+      actor_role: params.actorRole,
+      reason: params.reason ?? null,
+      metadata: params.metadata || {},
+    });
+  } catch {
+    // Ignore if order_audit_logs table is not yet migrated
+  }
+}
+
+/**
+ * Fetch order audit trail combining Supabase `order_audit_logs` and `.data/pos-store.json`.
+ */
+export async function getOrderAuditLogs(orderId: string): Promise<OrderAuditLogItem[]> {
+  const storeLogs = readPosStore().auditLogs[orderId] || [];
+  try {
+    const adminClient = createAdminClient();
+    const { data: rows, error } = await adminClient
+      .from('order_audit_logs')
+      .select('id, order_id, order_code, action, actor_name, actor_role, reason, metadata, created_at')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(rows) && rows.length > 0) {
+      const dbLogs: OrderAuditLogItem[] = rows.map((r) => ({
+        id: String(r.id || ''),
+        orderId: String(r.order_id || orderId),
+        orderCode: String(r.order_code || ''),
+        action: String(r.action || ''),
+        actorName: String(r.actor_name || 'Hệ thống'),
+        actorRole: String(r.actor_role || 'STAFF'),
+        reason: typeof r.reason === 'string' ? r.reason : null,
+        metadata: (r.metadata as Record<string, unknown> | null) || {},
+        createdAt: typeof r.created_at === 'string' ? r.created_at : new Date().toISOString(),
+      }));
+      const seenKeys = new Set(dbLogs.map((l) => `${l.action}:${l.createdAt.slice(0, 19)}`));
+      const merged = [...dbLogs];
+      for (const s of storeLogs) {
+        const key = `${s.action}:${s.createdAt.slice(0, 19)}`;
+        if (!seenKeys.has(key)) {
+          merged.push(s);
+        }
+      }
+      return merged.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    }
+  } catch {
+    // Fallback to store logs
+  }
+  return [...storeLogs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
+/**
  * Map a raw DB order row to `PosOrderRecord`.
  */
 function mapOrderRowToPosRecord(row: Record<string, unknown>, qrTokenCode?: string): PosOrderRecord {
   const meta = extractPosOrderMetadata(row);
   const rawItems = Array.isArray(row.items) ? (row.items as Record<string, unknown>[]) : [];
+  const orderId = String(row.id || '');
+  const status = (row.status as 'PENDING' | 'CONFIRMED' | 'CANCELLED') || 'CONFIRMED';
+  const persisted = readPosStore().orderFulfillment[orderId];
+
+  const fulfillmentStatus: FulfillmentStatus =
+    status === 'CANCELLED'
+      ? 'CANCELLED'
+      : persisted?.fulfillmentStatus ||
+        meta.fulfillmentStatus ||
+        normalizeFulfillmentStatus(null, status, meta.channel);
+
+  const shippingFee = persisted?.shippingFee ?? meta.shippingFee ?? 0;
 
   return {
-    id: String(row.id || ''),
+    id: orderId,
     orderCode: String(row.order_code || ''),
-    status: (row.status as 'PENDING' | 'CONFIRMED' | 'CANCELLED') || 'CONFIRMED',
+    status,
+    fulfillmentStatus,
     channel: meta.channel,
     orderType: meta.orderType,
     paymentMethod: meta.paymentMethod,
@@ -455,16 +1123,23 @@ function mapOrderRowToPosRecord(row: Record<string, unknown>, qrTokenCode?: stri
     discountPercent: meta.discountPercent,
     discountReason: meta.discountReason,
     pointsUsed: Number(row.points_used) || 0,
+    shippingFee,
+    customerAddress: meta.customerAddress,
+    linkedOrderId: meta.linkedOrderId,
+    linkedOrderCode: meta.linkedOrderCode,
     totalDue: Number(row.total_due) || 0,
     amountReceived: meta.amountReceived,
     changeDue: meta.changeDue,
     customerName: meta.customerName || 'Khách lẻ tại quầy',
     customerPhone: meta.customerPhone || '',
     cashierName: meta.cashierName || 'Thu ngân Ủ LAB',
+    locationId: typeof row.location_id === 'string' ? row.location_id : undefined,
     note: meta.userNote || '',
     cancelReason: meta.cancelReason,
     cancelledBy: meta.cancelledBy,
     qrTokenCode,
+    pointsEarned: meta.pointsEarned,
+    memberPointBalance: meta.memberPointBalance,
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
     confirmedAt: typeof row.confirmed_at === 'string' ? row.confirmed_at : null,
     cancelledAt: typeof row.cancelled_at === 'string' ? row.cancelled_at : null,
@@ -605,6 +1280,31 @@ export async function createPosOrder(
 
   const { totals } = calc;
 
+  const shippingCheck = validateShippingFeeInput(payload.shippingFee);
+  if (!shippingCheck.valid) {
+    return {
+      success: false,
+      error: shippingCheck.error || 'Phí giao hàng không hợp lệ.',
+    };
+  }
+  const shippingFee = shippingCheck.shippingFee;
+
+  const finalTotalDue = totals.totalDue + shippingFee;
+  const rawReceivedWithShip =
+    (payload.paymentMethod || 'CASH') === 'CASH'
+      ? payload.amountReceived !== undefined && payload.amountReceived > 0
+        ? Math.floor(payload.amountReceived)
+        : finalTotalDue
+      : finalTotalDue;
+
+  if ((payload.paymentMethod || 'CASH') === 'CASH' && rawReceivedWithShip < finalTotalDue) {
+    return {
+      success: false,
+      error: `Số tiền khách đưa (${rawReceivedWithShip.toLocaleString('vi-VN')}đ) nhỏ hơn tổng cần thu (${finalTotalDue.toLocaleString('vi-VN')}đ).`,
+    };
+  }
+  const finalChangeDue = Math.max(0, rawReceivedWithShip - finalTotalDue);
+
   // 4. Generate unique POS Order Code (POS-YYMMDD-XXXX)
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -631,26 +1331,35 @@ export async function createPosOrder(
     memberProfile?.full_name ||
     (cleanPhone ? `Khách (${cleanPhone})` : 'Khách lẻ tại quầy');
 
+  const cleanAddress = payload.customerAddress?.trim() || undefined;
+  const linkedOrderId = payload.linkedOrderId?.trim() || undefined;
+  const linkedOrderCode = payload.linkedOrderCode?.trim() || undefined;
+
   const fallbackNote = serializePosFallbackNote({
     channel: 'POS',
     orderType: payload.orderType || 'TAKEAWAY',
     paymentMethod: payload.paymentMethod || 'CASH',
     paymentStatus: 'PAID',
+    fulfillmentStatus: 'COMPLETED',
+    shippingFee,
+    customerAddress: cleanAddress,
+    linkedOrderId,
+    linkedOrderCode,
     discountAmount: totals.discountAmount,
     discountPercent: totals.discountPercent,
     discountReason: payload.discount?.reason?.trim() || undefined,
-    amountReceived: totals.amountReceived,
-    changeDue: totals.changeDue,
+    amountReceived: rawReceivedWithShip,
+    changeDue: finalChangeDue,
     customerName,
     customerPhone: cleanPhone,
     cashierName: staff.fullName,
     userNote: payload.note?.trim() || '',
   });
 
-  // 5. Try inserting with full M01 schema first; fallback to base schema if migration 0001 hasn't run yet
+  // 5. Try inserting with V2 (0013) -> M01 (0001) -> base schema fallback
   let insertedOrder: Record<string, unknown> | null = null;
 
-  const fullInsertPayload: Record<string, unknown> = {
+  const m01InsertPayload: Record<string, unknown> = {
     order_code: orderCode,
     user_id: memberProfile?.id || null,
     business_id: staff.businessId,
@@ -666,53 +1375,73 @@ export async function createPosOrder(
     discount_reason: payload.discount?.reason?.trim() || null,
     discount_approved_by: totals.discountAmount > 0 ? staff.dbUserId : null,
     points_used: totals.pointsUsed,
-    total_due: totals.totalDue,
+    total_due: finalTotalDue,
     payment_method: payload.paymentMethod || 'CASH',
     payment_status: 'PAID',
-    amount_received: totals.amountReceived,
-    change_due: totals.changeDue,
+    amount_received: rawReceivedWithShip,
+    change_due: finalChangeDue,
     idempotency_key: idempotencyKey || null,
     created_by: staff.dbUserId,
     confirmed_at: now.toISOString(),
     note: fallbackNote,
   };
 
-  const { data: fullInserted, error: fullError } = await adminClient
+  const v2InsertPayload: Record<string, unknown> = {
+    ...m01InsertPayload,
+    fulfillment_status: 'COMPLETED',
+    shipping_fee: shippingFee,
+    customer_address: cleanAddress || null,
+    linked_order_id: linkedOrderId || null,
+    prepared_at: now.toISOString(),
+    completed_at: now.toISOString(),
+  };
+
+  const { data: v2Inserted, error: v2Error } = await adminClient
     .from('orders')
-    .insert(fullInsertPayload)
+    .insert(v2InsertPayload)
     .select('*')
     .single();
 
-  if (!fullError && fullInserted) {
-    insertedOrder = fullInserted as Record<string, unknown>;
+  if (!v2Error && v2Inserted) {
+    insertedOrder = v2Inserted as Record<string, unknown>;
   } else {
-    // Fallback for unmigrated schema (e.g. missing columns or user_id NOT NULL constraint)
-    const fallbackUserId = memberProfile?.id || (await resolveFallbackUserId(adminClient, staff));
-    const baseInsertPayload: Record<string, unknown> = {
-      order_code: orderCode,
-      user_id: fallbackUserId,
-      status: 'CONFIRMED',
-      subtotal: totals.subtotal,
-      points_used: totals.pointsUsed,
-      total_due: totals.totalDue,
-      confirmed_at: now.toISOString(),
-      note: fallbackNote,
-    };
-
-    const { data: baseInserted, error: baseError } = await adminClient
+    const { data: m01Inserted, error: m01Error } = await adminClient
       .from('orders')
-      .insert(baseInsertPayload)
+      .insert(m01InsertPayload)
       .select('*')
       .single();
 
-    if (baseError || !baseInserted) {
-      console.error('POS Order creation failed:', { fullError, baseError });
-      return {
-        success: false,
-        error: baseError?.message || 'Không thể lưu đơn hàng vào cơ sở dữ liệu.',
+    if (!m01Error && m01Inserted) {
+      insertedOrder = m01Inserted as Record<string, unknown>;
+    } else {
+      // Fallback for unmigrated schema (e.g. missing columns or user_id NOT NULL constraint)
+      const fallbackUserId = memberProfile?.id || (await resolveFallbackUserId(adminClient, staff));
+      const baseInsertPayload: Record<string, unknown> = {
+        order_code: orderCode,
+        user_id: fallbackUserId,
+        status: 'CONFIRMED',
+        subtotal: totals.subtotal,
+        points_used: totals.pointsUsed,
+        total_due: finalTotalDue,
+        confirmed_at: now.toISOString(),
+        note: fallbackNote,
       };
+
+      const { data: baseInserted, error: baseError } = await adminClient
+        .from('orders')
+        .insert(baseInsertPayload)
+        .select('*')
+        .single();
+
+      if (baseError || !baseInserted) {
+        console.error('POS Order creation failed:', { v2Error, m01Error, baseError });
+        return {
+          success: false,
+          error: baseError?.message || 'Không thể lưu đơn hàng vào cơ sở dữ liệu.',
+        };
+      }
+      insertedOrder = baseInserted as Record<string, unknown>;
     }
-    insertedOrder = baseInserted as Record<string, unknown>;
   }
 
   // 6. Insert order items (try extended columns first, fallback to base columns)
@@ -863,38 +1592,133 @@ export async function createPosOrder(
   // 8. QR Sticker generation retired — Phone-based loyalty is now handled directly above.
   const qrTokenCode: string | undefined = undefined;
 
-  // 9. Write audit log (best-effort if migration 0001 is active)
-  try {
-    await adminClient.from('order_audit_logs').insert({
-      business_id: staff.businessId,
-      location_id: staff.locationId,
-      order_id: String(insertedOrder!.id),
-      order_code: String(insertedOrder!.order_code),
-      action: totals.discountAmount > 0 ? 'CREATED_WITH_DISCOUNT' : 'CREATED_AND_PAID',
-      actor_id: staff.dbUserId,
-      actor_name: staff.fullName,
-      actor_role: staff.staffRole,
-      reason: payload.discount?.reason || null,
-      metadata: {
-        subtotal: totals.subtotal,
-        discountAmount: totals.discountAmount,
-        pointsUsed: totals.pointsUsed,
-        totalDue: totals.totalDue,
-        paymentMethod: payload.paymentMethod,
-      },
-    });
-  } catch {
-    // Ignore if order_audit_logs table is not yet migrated
+  // 8b. Persist fulfillment status in resilient store & complete linked Web order if applicable
+  const createdOrderId = String(insertedOrder!.id);
+  const storeAfterCreate = readPosStore();
+  storeAfterCreate.orderFulfillment[createdOrderId] = {
+    fulfillmentStatus: 'COMPLETED',
+    shippingFee,
+    updatedAt: now.toISOString(),
+  };
+
+  if (linkedOrderId) {
+    try {
+      const { data: linkedRow } = await adminClient
+        .from('orders')
+        .select('*')
+        .eq('id', linkedOrderId)
+        .maybeSingle();
+
+      if (linkedRow) {
+        const linkedObj = linkedRow as Record<string, unknown>;
+        const linkedMeta = extractPosOrderMetadata(linkedObj);
+        const linkedHuman = [
+          linkedMeta.userNote,
+          `[Đã thu tiền & xuất bill tại POS #${orderCode}]`,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        const linkedUpdatedNote = serializePosFallbackNote({
+          ...linkedMeta,
+          paymentStatus: 'PAID',
+          fulfillmentStatus: 'COMPLETED',
+          linkedOrderId: createdOrderId,
+          linkedOrderCode: orderCode,
+          userNote: linkedHuman,
+        });
+
+        const { error: linkV2Err } = await adminClient
+          .from('orders')
+          .update({
+            status: 'CONFIRMED',
+            payment_status: 'PAID',
+            fulfillment_status: 'COMPLETED',
+            linked_order_id: createdOrderId,
+            confirmed_at: linkedObj.confirmed_at || now.toISOString(),
+            completed_at: now.toISOString(),
+            note: linkedUpdatedNote,
+            updated_at: now.toISOString(),
+          })
+          .eq('id', linkedOrderId);
+
+        if (linkV2Err) {
+          await adminClient
+            .from('orders')
+            .update({
+              status: 'CONFIRMED',
+              confirmed_at: linkedObj.confirmed_at || now.toISOString(),
+              note: linkedUpdatedNote,
+              updated_at: now.toISOString(),
+            })
+            .eq('id', linkedOrderId);
+        }
+
+        storeAfterCreate.orderFulfillment[linkedOrderId] = {
+          fulfillmentStatus: 'COMPLETED',
+          shippingFee: linkedMeta.shippingFee || 0,
+          updatedAt: now.toISOString(),
+        };
+
+        writePosStore(storeAfterCreate);
+
+        await recordOrderAuditLog({
+          businessId: staff.businessId,
+          locationId: staff.locationId,
+          orderId: linkedOrderId,
+          orderCode: String(linkedObj.order_code || linkedOrderCode || linkedOrderId),
+          action: 'LINKED_TO_POS_ORDER',
+          actorId: staff.dbUserId,
+          actorName: staff.fullName,
+          actorRole: staff.staffRole,
+          reason: `Đã thu tiền & xuất hóa đơn tại POS (${orderCode})`,
+          metadata: {
+            posOrderId: createdOrderId,
+            posOrderCode: orderCode,
+          },
+        });
+      } else {
+        writePosStore(storeAfterCreate);
+      }
+    } catch (linkErr) {
+      console.warn('Linked Web order auto-complete warning:', linkErr);
+      writePosStore(storeAfterCreate);
+    }
+  } else {
+    writePosStore(storeAfterCreate);
   }
+
+  // 9. Write audit log (best-effort + local store)
+  await recordOrderAuditLog({
+    businessId: staff.businessId,
+    locationId: staff.locationId,
+    orderId: createdOrderId,
+    orderCode: String(insertedOrder!.order_code),
+    action: totals.discountAmount > 0 ? 'CREATED_WITH_DISCOUNT' : 'CREATED_AND_PAID',
+    actorId: staff.dbUserId,
+    actorName: staff.fullName,
+    actorRole: staff.staffRole,
+    reason: payload.discount?.reason || null,
+    metadata: {
+      subtotal: totals.subtotal,
+      discountAmount: totals.discountAmount,
+      pointsUsed: totals.pointsUsed,
+      shippingFee,
+      totalDue: finalTotalDue,
+      paymentMethod: payload.paymentMethod,
+      linkedOrderId,
+      linkedOrderCode,
+    },
+  });
 
   // 10. Record payment in PAYMENTS table & Deduct Inventory via Recipe/FEFO/FIFO
   try {
     await adminClient.from('payments').insert({
       business_id: staff.businessId,
       location_id: staff.locationId,
-      order_id: String(insertedOrder!.id),
+      order_id: createdOrderId,
       payment_method: payload.paymentMethod || 'CASH',
-      amount: totals.totalDue,
+      amount: finalTotalDue,
       status: 'COMPLETED',
       reference_code: String(insertedOrder!.order_code),
     });
@@ -904,7 +1728,7 @@ export async function createPosOrder(
 
   try {
     await processPosOrderInventory(
-      String(insertedOrder!.id),
+      createdOrderId,
       staff.businessId,
       staff.locationId,
       totals.items,
@@ -921,6 +1745,7 @@ export async function createPosOrder(
     },
     qrTokenCode
   );
+  record.shippingFee = shippingFee;
   if (pointsEarned > 0) {
     record.pointsEarned = pointsEarned;
   }
@@ -939,23 +1764,26 @@ export async function createPosOrder(
 }
 
 /**
- * List recent orders for POS lookup and management.
+ * List recent orders for POS lookup and management (filtered by active location & fulfillment progress).
  */
 export async function listPosOrders(params: {
   status?: string;
+  fulfillmentStatus?: string;
+  locationId?: string;
   search?: string;
   date?: string; // YYYY-MM-DD
   limit?: number;
 }): Promise<{ orders: PosOrderRecord[]; total: number }> {
   const adminClient = createAdminClient();
   const limit = Math.min(Math.max(1, params.limit || 30), 100);
+  const fetchLimit = Math.min(Math.max(limit * 3, 60), 300);
 
   const buildPosOrdersQuery = (selectStr: string) => {
     let q = adminClient
       .from('orders')
-      .select(selectStr, { count: 'exact' })
+      .select(selectStr)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(fetchLimit);
 
     if (params.status && params.status !== 'ALL') {
       q = q.eq('status', params.status);
@@ -976,7 +1804,7 @@ export async function listPosOrders(params: {
     return q;
   };
 
-  let { data: rows, error, count } = await buildPosOrdersQuery(
+  let { data: rows, error } = await buildPosOrdersQuery(
     '*, items:order_items(*), user:users!user_id(id, full_name, email, phone)'
   );
 
@@ -984,7 +1812,6 @@ export async function listPosOrders(params: {
     const fallback = await buildPosOrdersQuery('*, items:order_items(*)');
     rows = fallback.data;
     error = fallback.error;
-    count = fallback.count;
   }
 
   if (error || !rows) {
@@ -992,10 +1819,134 @@ export async function listPosOrders(params: {
     return { orders: [], total: 0 };
   }
 
-  const mapped = (rows as unknown as Record<string, unknown>[]).map((r) => mapOrderRowToPosRecord(r));
+  const locationRows = (rows as unknown as Record<string, unknown>[]).filter((r) =>
+    matchesOrderLocation(r.location_id, params.locationId)
+  );
+
+  let mapped = locationRows.map((r) => mapOrderRowToPosRecord(r));
+
+  if (params.fulfillmentStatus && params.fulfillmentStatus !== 'ALL') {
+    const targetFulfillment = params.fulfillmentStatus.trim().toUpperCase();
+    mapped = mapped.filter((o) => o.fulfillmentStatus === targetFulfillment);
+  }
+
   return {
-    orders: mapped,
-    total: count || mapped.length,
+    orders: mapped.slice(0, limit),
+    total: mapped.length,
+  };
+}
+
+/**
+ * Update fulfillment progress (`PENDING` -> `PREPARING` -> `READY` -> `COMPLETED`) for any order.
+ */
+export async function updateOrderFulfillmentStatus(params: {
+  orderId: string;
+  fulfillmentStatus: FulfillmentStatus;
+  staff: PosStaffContext;
+}): Promise<{ success: boolean; error?: string; order?: PosOrderRecord }> {
+  const adminClient = createAdminClient();
+  const { data: existing, error: fetchErr } = await adminClient
+    .from('orders')
+    .select('*, items:order_items(*), user:users(id, full_name, email, phone)')
+    .eq('id', params.orderId)
+    .maybeSingle();
+
+  let existingRow = existing as Record<string, unknown> | null;
+  if (fetchErr || !existingRow) {
+    const fallback = await adminClient
+      .from('orders')
+      .select('*, items:order_items(*)')
+      .eq('id', params.orderId)
+      .maybeSingle();
+    existingRow = fallback.data as Record<string, unknown> | null;
+  }
+
+  if (!existingRow) {
+    return { success: false, error: 'Không tìm thấy đơn hàng.' };
+  }
+
+  const currentRecord = mapOrderRowToPosRecord(existingRow);
+  const check = validateFulfillmentTransition(
+    currentRecord.fulfillmentStatus,
+    params.fulfillmentStatus
+  );
+  if (!check.valid) {
+    return { success: false, error: check.error };
+  }
+
+  const nowIso = new Date().toISOString();
+  const prevMeta = extractPosOrderMetadata(existingRow);
+  const updatedNote = serializePosFallbackNote({
+    ...prevMeta,
+    fulfillmentStatus: params.fulfillmentStatus,
+  });
+
+  const v2Payload: Record<string, unknown> = {
+    fulfillment_status: params.fulfillmentStatus,
+    note: updatedNote,
+    updated_at: nowIso,
+  };
+  if (params.fulfillmentStatus === 'READY' && !existingRow.prepared_at) {
+    v2Payload.prepared_at = nowIso;
+  }
+  if (params.fulfillmentStatus === 'COMPLETED') {
+    v2Payload.completed_at = nowIso;
+  }
+
+  let updatedRow: Record<string, unknown> | null = null;
+  const { data: v2Updated, error: v2Err } = await adminClient
+    .from('orders')
+    .update(v2Payload)
+    .eq('id', params.orderId)
+    .select('*, items:order_items(*)')
+    .maybeSingle();
+
+  if (!v2Err && v2Updated) {
+    updatedRow = v2Updated as Record<string, unknown>;
+  } else {
+    const { data: baseUpdated, error: baseErr } = await adminClient
+      .from('orders')
+      .update({
+        note: updatedNote,
+        updated_at: nowIso,
+      })
+      .eq('id', params.orderId)
+      .select('*, items:order_items(*)')
+      .maybeSingle();
+
+    if (baseErr || !baseUpdated) {
+      return { success: false, error: 'Không thể cập nhật tiến độ phục vụ đơn hàng.' };
+    }
+    updatedRow = baseUpdated as Record<string, unknown>;
+  }
+
+  const store = readPosStore();
+  store.orderFulfillment[params.orderId] = {
+    fulfillmentStatus: params.fulfillmentStatus,
+    shippingFee: currentRecord.shippingFee,
+    updatedAt: nowIso,
+  };
+  writePosStore(store);
+
+  await recordOrderAuditLog({
+    businessId: params.staff.businessId,
+    locationId: params.staff.locationId,
+    orderId: params.orderId,
+    orderCode: String(existingRow.order_code || currentRecord.orderCode),
+    action: `FULFILLMENT_${params.fulfillmentStatus}`,
+    actorId: params.staff.dbUserId,
+    actorName: params.staff.fullName,
+    actorRole: params.staff.staffRole,
+    reason: null,
+    metadata: {
+      previousFulfillmentStatus: currentRecord.fulfillmentStatus,
+      nextFulfillmentStatus: params.fulfillmentStatus,
+    },
+  });
+
+  return {
+    success: true,
+    order: mapOrderRowToPosRecord(updatedRow),
   };
 }
 
@@ -1037,47 +1988,72 @@ export async function cancelPosOrder(params: {
   const updatedNote = serializePosFallbackNote({
     ...prevMeta,
     paymentStatus: 'REFUNDED',
+    fulfillmentStatus: 'CANCELLED',
     cancelReason: params.cancelReason.trim(),
     cancelledBy: `${params.staff.fullName} (${params.staff.staffRole})`,
   });
 
-  // Update order status to CANCELLED (try extended columns first, fallback to base columns)
+  // Update order status to CANCELLED (try V2 -> M01 -> base columns)
   let updatedRow: Record<string, unknown> | null = null;
-  const { data: extUpdate, error: extErr } = await adminClient
+  const m01CancelPayload = {
+    status: 'CANCELLED',
+    payment_status: 'REFUNDED',
+    cancelled_at: nowIso,
+    cancelled_by: params.staff.dbUserId,
+    cancel_reason: params.cancelReason.trim(),
+    note: updatedNote,
+    updated_at: nowIso,
+  };
+
+  const { data: v2Update, error: v2Err } = await adminClient
     .from('orders')
     .update({
-      status: 'CANCELLED',
-      payment_status: 'REFUNDED',
-      cancelled_at: nowIso,
-      cancelled_by: params.staff.dbUserId,
-      cancel_reason: params.cancelReason.trim(),
-      note: updatedNote,
-      updated_at: nowIso,
+      ...m01CancelPayload,
+      fulfillment_status: 'CANCELLED',
     })
     .eq('id', params.orderId)
     .select('*, items:order_items(*), user:users(id, full_name, email, phone)')
     .single();
 
-  if (!extErr && extUpdate) {
-    updatedRow = extUpdate as Record<string, unknown>;
+  if (!v2Err && v2Update) {
+    updatedRow = v2Update as Record<string, unknown>;
   } else {
-    const { data: baseUpdate, error: baseErr } = await adminClient
+    const { data: extUpdate, error: extErr } = await adminClient
       .from('orders')
-      .update({
-        status: 'CANCELLED',
-        cancelled_at: nowIso,
-        note: updatedNote,
-        updated_at: nowIso,
-      })
+      .update(m01CancelPayload)
       .eq('id', params.orderId)
       .select('*, items:order_items(*), user:users(id, full_name, email, phone)')
       .single();
 
-    if (baseErr || !baseUpdate) {
-      return { success: false, error: 'Lỗi cập nhật trạng thái hủy đơn.' };
+    if (!extErr && extUpdate) {
+      updatedRow = extUpdate as Record<string, unknown>;
+    } else {
+      const { data: baseUpdate, error: baseErr } = await adminClient
+        .from('orders')
+        .update({
+          status: 'CANCELLED',
+          cancelled_at: nowIso,
+          note: updatedNote,
+          updated_at: nowIso,
+        })
+        .eq('id', params.orderId)
+        .select('*, items:order_items(*), user:users(id, full_name, email, phone)')
+        .single();
+
+      if (baseErr || !baseUpdate) {
+        return { success: false, error: 'Lỗi cập nhật trạng thái hủy đơn.' };
+      }
+      updatedRow = baseUpdate as Record<string, unknown>;
     }
-    updatedRow = baseUpdate as Record<string, unknown>;
   }
+
+  const cancelStore = readPosStore();
+  cancelStore.orderFulfillment[params.orderId] = {
+    fulfillmentStatus: 'CANCELLED',
+    shippingFee: prevMeta.shippingFee || 0,
+    updatedAt: nowIso,
+  };
+  writePosStore(cancelStore);
 
   // Refund member points if points were used on this order, AND revoke earned cashback points if any were credited
   const pointsUsed = Number(existingRow.points_used) || 0;
@@ -1202,28 +2178,24 @@ export async function cancelPosOrder(params: {
     }
   }
 
-  // Write audit log (best-effort)
-  try {
-    await adminClient.from('order_audit_logs').insert({
-      business_id: params.staff.businessId,
-      location_id: params.staff.locationId,
-      order_id: String(existingRow.id),
-      order_code: String(existingRow.order_code),
-      action: 'CANCELLED',
-      actor_id: params.staff.dbUserId,
-      actor_name: params.staff.fullName,
-      actor_role: params.staff.staffRole,
-      reason: params.cancelReason.trim(),
-      metadata: {
-        previousStatus: currentStatus,
-        refundedPoints: pointsUsed,
-        revokedCashbackPoints,
-        totalDue: existingRow.total_due,
-      },
-    });
-  } catch {
-    // Ignore if order_audit_logs table is not yet migrated
-  }
+  // Write audit log (best-effort + local store)
+  await recordOrderAuditLog({
+    businessId: params.staff.businessId,
+    locationId: params.staff.locationId,
+    orderId: String(existingRow.id),
+    orderCode: String(existingRow.order_code),
+    action: 'CANCELLED',
+    actorId: params.staff.dbUserId,
+    actorName: params.staff.fullName,
+    actorRole: params.staff.staffRole,
+    reason: params.cancelReason.trim(),
+    metadata: {
+      previousStatus: currentStatus,
+      refundedPoints: pointsUsed,
+      revokedCashbackPoints,
+      totalDue: existingRow.total_due,
+    },
+  });
 
   // Reverse payment in PAYMENTS table & reverse inventory deductions back to original lot & layer
   try {
@@ -1268,11 +2240,13 @@ export async function applyPhoneLoyaltyForConfirmedOrder(orderId: string): Promi
   const totalDue = Number(orderRow.total_due) || 0;
   const rawNote = String(orderRow.note || '');
 
-  // Extract shipping fee from note if present so cashback only applies to drink payment
-  let shippingFee = 0;
-  const shipMatch = rawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
-  if (shipMatch) {
-    shippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
+  // Extract shipping fee from column or note if present so cashback only applies to drink payment
+  let shippingFee = Number((orderRow as Record<string, unknown>).shipping_fee) || 0;
+  if (!shippingFee) {
+    const shipMatch = rawNote.match(/\[Phí ship:\s*([\d.,]+)\s*đ?\]/i);
+    if (shipMatch) {
+      shippingFee = Number(shipMatch[1].replace(/\D/g, '')) || 0;
+    }
   }
   const eligibleDrinkAmount = Math.max(0, totalDue - shippingFee);
 

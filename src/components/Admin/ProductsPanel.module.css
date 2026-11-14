@@ -381,3 +381,33 @@
     opacity: 1;
   }
 }
+
+.actionBtnDelete {
+  background: #fff1f2;
+  border-color: #fda4af;
+  color: #be123c;
+}
+
+.actionBtnDelete:hover {
+  background: #ffe4e6;
+  border-color: #e11d48;
+}
+
+.editSizeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.addSizeMiniBtn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px dashed #006241;
+  background: #ecfdf5;
+  color: #006241;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+

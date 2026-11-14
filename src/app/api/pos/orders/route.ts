@@ -15,11 +15,19 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'ALL';
+    const fulfillmentStatus = searchParams.get('fulfillmentStatus') || 'ALL';
     const search = searchParams.get('search') || '';
     const date = searchParams.get('date') || '';
     const limit = parseInt(searchParams.get('limit') || '30', 10);
 
-    const result = await listPosOrders({ status, search, date, limit });
+    const result = await listPosOrders({
+      status,
+      fulfillmentStatus,
+      locationId: staff.locationId,
+      search,
+      date,
+      limit,
+    });
     return NextResponse.json(result);
   } catch (err) {
     console.error('GET /api/pos/orders error:', err);
