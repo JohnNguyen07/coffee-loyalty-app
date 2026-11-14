@@ -64,11 +64,22 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
 
       if (rbacRes && rbacRes.ok) {
         const rbacData = await rbacRes.json();
-        if (rbacData.locations && rbacData.locations.length > 0) {
-          const savedLocId = typeof window !== 'undefined' ? localStorage.getItem('ulab_active_location_id') : null;
-          const matchedLoc = savedLocId
-            ? rbacData.locations.find((l: { id: string; name: string }) => l.id === savedLocId)
+        if (rbacData.activeLocation?.name) {
+          locName = rbacData.activeLocation.name;
+          if (typeof window !== 'undefined' && rbacData.activeLocation.id) {
+            localStorage.setItem('ulab_active_location_id', rbacData.activeLocation.id);
+          }
+        } else if (rbacData.locations && rbacData.locations.length > 0) {
+          const serverLocId = rbacData.activeLocationId || rbacData.profile?.assignedLocationIds?.[0];
+          const matchedByServer = serverLocId
+            ? rbacData.locations.find((l: { id: string; name: string }) => l.id === serverLocId)
             : null;
+          const savedLocId = typeof window !== 'undefined' ? localStorage.getItem('ulab_active_location_id') : null;
+          const matchedLoc =
+            matchedByServer ||
+            (savedLocId
+              ? rbacData.locations.find((l: { id: string; name: string }) => l.id === savedLocId)
+              : null);
           locName = matchedLoc ? matchedLoc.name : rbacData.locations[0].name;
         }
       }
@@ -89,10 +100,15 @@ export default function DashboardOverview({ onNavigate }: DashboardOverviewProps
   }, []);
 
   useEffect(() => {
-    fetchQuickStats();
-    const handleLocationChanged = () => fetchQuickStats();
+    const initTimer = window.setTimeout(() => {
+      void fetchQuickStats();
+    }, 0);
+    const handleLocationChanged = () => {
+      void fetchQuickStats();
+    };
     window.addEventListener('ulab:location-changed', handleLocationChanged);
     return () => {
+      window.clearTimeout(initTimer);
       window.removeEventListener('ulab:location-changed', handleLocationChanged);
     };
   }, [fetchQuickStats]);

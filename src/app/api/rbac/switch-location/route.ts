@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRbacUser } from '@/lib/rbac/server-guard';
-import { listLocationsForUser } from '@/lib/rbac/repository';
+import { listLocationsForUser, recordRbacAuditLog } from '@/lib/rbac/repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +23,18 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    await recordRbacAuditLog({
+      actor: user,
+      action: 'SWITCH_LOCATION',
+      targetType: 'LOCATION',
+      targetId: targetLoc.id,
+      targetName: `${targetLoc.code} — ${targetLoc.name}`,
+      summary: `${user.fullName} chuyển điểm bán làm việc sang "${targetLoc.name}"`,
+      metadata: {
+        locationCode: targetLoc.code,
+      },
+    }).catch((err) => console.warn('switch-location audit log fallback:', err));
 
     const res = NextResponse.json({
       success: true,

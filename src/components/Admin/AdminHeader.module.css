@@ -176,9 +176,76 @@
 
 /* ── Account Section ── */
 .accountWrap {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.profileBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.profileBtn:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.profileDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 310px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.16);
+  padding: 14px;
+  z-index: 70;
+  text-align: left;
+}
+
+.profileDropHeader {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 10px;
+}
+
+.profileDropName {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.profileDropContact {
+  font-size: 0.775rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.profileDropSectionLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 8px 0 6px;
+}
+
+.profileLocList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .userMeta {

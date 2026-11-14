@@ -32,6 +32,14 @@ export async function POST(request: NextRequest) {
       name: body.name,
       address: body.address,
       phone: body.phone,
+      openingHours: body.openingHours,
+      managerName: body.managerName,
+      defaultOpeningCash:
+        body.defaultOpeningCash !== undefined && body.defaultOpeningCash !== ''
+          ? Number(body.defaultOpeningCash)
+          : undefined,
+      acceptWebOrders: body.acceptWebOrders,
+      receiptFooter: body.receiptFooter,
     });
 
     return NextResponse.json({

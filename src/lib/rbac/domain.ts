@@ -13,9 +13,21 @@ export interface BusinessItem {
   name: string;
   taxCode?: string | null;
   phone?: string | null;
+  email?: string | null;
   address?: string | null;
+  defaultReceiptFooter?: string | null;
   isActive: boolean;
   createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UpdateBusinessProfileInput {
+  name?: string;
+  taxCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  defaultReceiptFooter?: string | null;
 }
 
 export interface LocationItem {
@@ -25,6 +37,11 @@ export interface LocationItem {
   name: string;
   address?: string | null;
   phone?: string | null;
+  openingHours?: string | null;
+  managerName?: string | null;
+  defaultOpeningCash?: number;
+  acceptWebOrders?: boolean;
+  receiptFooter?: string | null;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -82,13 +99,90 @@ export interface CreateLocationInput {
   name: string;
   address?: string;
   phone?: string;
+  openingHours?: string;
+  managerName?: string;
+  defaultOpeningCash?: number;
+  acceptWebOrders?: boolean;
+  receiptFooter?: string;
 }
 
 export interface UpdateLocationInput {
   name?: string;
   address?: string;
   phone?: string;
+  openingHours?: string;
+  managerName?: string;
+  defaultOpeningCash?: number;
+  acceptWebOrders?: boolean;
+  receiptFooter?: string;
   isActive?: boolean;
+}
+
+/**
+ * Check if a role can view and update Business Profile settings.
+ * Only OWNER and ADMIN can manage business-wide profile settings.
+ */
+export function canManageBusinessProfile(role: MvpRole): boolean {
+  return role === 'OWNER' || role === 'ADMIN';
+}
+
+/**
+ * Validate business profile update input.
+ */
+export function validateUpdateBusinessProfile(input: UpdateBusinessProfileInput): {
+  name?: string;
+  taxCode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  defaultReceiptFooter?: string | null;
+} {
+  const result: {
+    name?: string;
+    taxCode?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    defaultReceiptFooter?: string | null;
+  } = {};
+
+  if (input.name !== undefined) {
+    const trimmed = input.name.trim();
+    if (!trimmed || trimmed.length < 2 || trimmed.length > 255) {
+      throw new Error('Tên doanh nghiệp phải từ 2 đến 255 ký tự.');
+    }
+    result.name = trimmed;
+  }
+
+  if (input.phone !== undefined) {
+    const phone = (input.phone || '').trim();
+    if (phone && !/^[0-9+]{9,15}$/.test(phone.replace(/[\s\-()]/g, ''))) {
+      throw new Error('Số điện thoại doanh nghiệp không đúng định dạng.');
+    }
+    result.phone = phone || null;
+  }
+
+  if (input.email !== undefined) {
+    const email = (input.email || '').trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Email doanh nghiệp không đúng định dạng.');
+    }
+    result.email = email || null;
+  }
+
+  if (input.taxCode !== undefined) {
+    result.taxCode = (input.taxCode || '').trim() || null;
+  }
+
+  if (input.address !== undefined) {
+    result.address = (input.address || '').trim() || null;
+  }
+
+  if (input.defaultReceiptFooter !== undefined) {
+    result.defaultReceiptFooter = (input.defaultReceiptFooter || '').trim() || null;
+  }
+
+  return result;
 }
 
 /**
@@ -260,7 +354,64 @@ export function validateCreateLocationInput(input: CreateLocationInput): { code:
     throw new Error('Tên điểm bán phải từ 2 đến 255 ký tự.');
   }
 
+  validateLocationOperationalFields(input);
+
   return { code, name };
+}
+
+/**
+ * Validate and normalize location operational configuration fields.
+ */
+export function validateLocationOperationalFields(input: {
+  openingHours?: string | null;
+  managerName?: string | null;
+  defaultOpeningCash?: number | null;
+  acceptWebOrders?: boolean;
+  receiptFooter?: string | null;
+}): {
+  openingHours?: string | null;
+  managerName?: string | null;
+  defaultOpeningCash?: number;
+  acceptWebOrders?: boolean;
+  receiptFooter?: string | null;
+} {
+  const result: {
+    openingHours?: string | null;
+    managerName?: string | null;
+    defaultOpeningCash?: number;
+    acceptWebOrders?: boolean;
+    receiptFooter?: string | null;
+  } = {};
+
+  if (input.openingHours !== undefined) {
+    const trimmed = (input.openingHours || '').trim();
+    if (trimmed.length > 100) {
+      throw new Error('Khung giờ mở cửa không được vượt quá 100 ký tự.');
+    }
+    result.openingHours = trimmed || null;
+  }
+
+  if (input.managerName !== undefined) {
+    result.managerName = (input.managerName || '').trim() || null;
+  }
+
+  if (input.defaultOpeningCash !== undefined && input.defaultOpeningCash !== null) {
+    const val = Number(input.defaultOpeningCash);
+    if (!Number.isFinite(val) || val < 0) {
+      throw new Error('Tiền đầu ca mặc định phải là số nguyên không âm (VND).');
+    }
+    result.defaultOpeningCash = Math.round(val);
+  }
+
+  if (input.acceptWebOrders !== undefined) {
+    result.acceptWebOrders = Boolean(input.acceptWebOrders);
+  }
+
+  if (input.receiptFooter !== undefined) {
+    result.receiptFooter = (input.receiptFooter || '').trim() || null;
+  }
+
+  return result;
 }
 
 /**
@@ -295,6 +446,30 @@ export interface CreateStaffInput {
   email?: string;
   phone?: string;
   locationIds: string[];
+  initialPassword?: string;
+}
+
+export interface UpdateStaffInput {
+  targetUserId: string;
+  targetRole: MvpRole;
+  locationIds: string[];
+  fullName?: string;
+  email?: string;
+  phone?: string;
+}
+
+/**
+ * Validate staff password (min 6 chars when provided or required).
+ */
+export function validateStaffPassword(password?: string, required = false): string | undefined {
+  const raw = (password || '').trim();
+  if (required && raw.length < 6) {
+    throw new Error('Mật khẩu nhân viên phải có ít nhất 6 ký tự.');
+  }
+  if (password !== undefined && password !== '' && raw.length < 6) {
+    throw new Error('Mật khẩu nhân viên phải có ít nhất 6 ký tự.');
+  }
+  return raw || undefined;
 }
 
 /**
@@ -324,10 +499,51 @@ export function validateStaffCreateInput(input: CreateStaffInput): void {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('Email không đúng định dạng.');
   }
+
+  if (input.initialPassword !== undefined && input.initialPassword !== '') {
+    validateStaffPassword(input.initialPassword, true);
+  }
 }
 
 /**
- * Check if actor role can toggle or revoke staff status
+ * Validate editable staff contact/profile fields when updating staff details.
+ */
+export function validateStaffUpdateInput(input: {
+  fullName?: string;
+  email?: string | null;
+  phone?: string | null;
+}): { fullName?: string; email?: string | null; phone?: string | null } {
+  const result: { fullName?: string; email?: string | null; phone?: string | null } = {};
+
+  if (input.fullName !== undefined) {
+    const name = input.fullName.trim();
+    if (!name || name.length < 2) {
+      throw new Error('Họ và tên nhân viên phải có ít nhất 2 ký tự.');
+    }
+    result.fullName = name;
+  }
+
+  if (input.phone !== undefined) {
+    const phone = (input.phone || '').trim();
+    if (phone && !/^[0-9+]{9,15}$/.test(phone.replace(/[\s\-()]/g, ''))) {
+      throw new Error('Số điện thoại không đúng định dạng.');
+    }
+    result.phone = phone ? phone.replace(/[\s\-()]/g, '') : null;
+  }
+
+  if (input.email !== undefined) {
+    const email = (input.email || '').trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Email không đúng định dạng.');
+    }
+    result.email = email || null;
+  }
+
+  return result;
+}
+
+/**
+ * Check if actor role can toggle, revoke, or reset password for a staff member
  */
 export function canToggleStaffStatus(actorRole: MvpRole, targetRole: MvpRole): boolean {
   return canAssignRole(actorRole, targetRole);
@@ -335,6 +551,207 @@ export function canToggleStaffStatus(actorRole: MvpRole, targetRole: MvpRole): b
 
 export function canRevokeStaff(actorRole: MvpRole, targetRole: MvpRole): boolean {
   return canAssignRole(actorRole, targetRole);
+}
+
+export function canResetStaffPassword(actorRole: MvpRole, targetRole: MvpRole): boolean {
+  return canAssignRole(actorRole, targetRole);
+}
+
+export interface RolePermissionMatrixRow {
+  key: string;
+  group: string;
+  capability: string;
+  description: string;
+  permissions: Record<MvpRole, string>;
+}
+
+/**
+ * Canonical permission matrix across all 5 RBAC roles and 9 operational groups.
+ */
+export function getRolePermissionMatrix(): RolePermissionMatrixRow[] {
+  return [
+    {
+      key: 'pos_sales',
+      group: 'Bán hàng & Quầy',
+      capability: 'Bán hàng POS & In tem',
+      description: 'Tạo đơn tại quầy, tra cứu điểm thành viên và in tem pha chế / biên nhận',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Điểm bán được gán',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'pos_discount',
+      group: 'Bán hàng & Quầy',
+      capability: 'Áp dụng giảm giá đơn hàng',
+      description: 'Hạn mức chiết khấu tối đa trên hóa đơn bán hàng POS',
+      permissions: {
+        OWNER: 'Tối đa 100% (kèm lý do)',
+        ADMIN: 'Tối đa 100% (kèm lý do)',
+        MANAGER: 'Tối đa 100% (kèm lý do)',
+        CASHIER: 'Tối đa 10% hoặc 20.000đ',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'order_cancel',
+      group: 'Bán hàng & Quầy',
+      capability: 'Hủy đơn & Hoàn kho/điểm',
+      description: 'Chuyển trạng thái đơn sang CANCELLED, ghi log lý do và hoàn tồn kho',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'shift_cash',
+      group: 'Tài chính & Ca',
+      capability: 'Mở/Chốt ca & Kiểm đếm két',
+      description: 'Mở ca bán hàng, nhập tiền đầu ca, đếm mệnh giá tờ tiền và in Z-Report',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'revenue_cashbook',
+      group: 'Tài chính & Ca',
+      capability: 'Sổ quỹ Thu-Chi & Báo cáo doanh thu',
+      description: 'Xem doanh thu thuần, biểu đồ peak hours, lập phiếu thu/chi quỹ tiền',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'inventory_ops',
+      group: 'Kho & Sản xuất',
+      capability: 'Nhập kho, Sản xuất & Kiểm kê',
+      description: 'Nhập NCC (FIFO/FEFO), đóng chai Cold Brew, xuất hủy và kiểm kê kho',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Điểm bán được gán',
+      },
+    },
+    {
+      key: 'menu_pricing',
+      group: 'Danh mục & Giá',
+      capability: 'Quản lý Thực đơn & Báo hết món',
+      description: 'Bật/tắt trạng thái còn hàng và cập nhật giá bán theo size',
+      permissions: {
+        OWNER: 'Toàn chuỗi',
+        ADMIN: 'Toàn chuỗi',
+        MANAGER: 'Điểm bán được gán',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+    {
+      key: 'locations_biz',
+      group: 'Quản trị Hệ thống',
+      capability: 'Quản lý Điểm bán & Hồ sơ Chuỗi',
+      description: 'Tạo/sửa chi nhánh, cấu hình vận hành điểm bán và thông tin doanh nghiệp',
+      permissions: {
+        OWNER: 'Toàn quyền',
+        ADMIN: 'Tạo & Cấu hình chi nhánh',
+        MANAGER: 'Chỉ xem chi nhánh được gán',
+        CASHIER: 'Chỉ xem chi nhánh được gán',
+        INVENTORY_STAFF: 'Chỉ xem chi nhánh được gán',
+      },
+    },
+    {
+      key: 'staff_rbac',
+      group: 'Quản trị Hệ thống',
+      capability: 'Nhân sự, Phân quyền & Đổi mật khẩu',
+      description: 'Thêm nhân viên, gán vai trò, phân công chi nhánh, khóa & đặt lại mật khẩu',
+      permissions: {
+        OWNER: 'Mọi vai trò (kể cả Admin/Owner)',
+        ADMIN: 'Chỉ Manager, Cashier, Inventory',
+        MANAGER: 'Không được phép',
+        CASHIER: 'Không được phép',
+        INVENTORY_STAFF: 'Không được phép',
+      },
+    },
+  ];
+}
+
+export type RbacAuditAction =
+  | 'CREATE_LOCATION'
+  | 'UPDATE_LOCATION'
+  | 'CREATE_STAFF'
+  | 'UPDATE_STAFF'
+  | 'RESET_STAFF_PASSWORD'
+  | 'TOGGLE_STAFF_STATUS'
+  | 'REVOKE_STAFF'
+  | 'UPDATE_BUSINESS_PROFILE'
+  | 'SWITCH_LOCATION';
+
+export type RbacAuditTargetType = 'LOCATION' | 'STAFF' | 'BUSINESS';
+
+export interface RbacAuditLogItem {
+  id: string;
+  businessId: string;
+  actorUserId?: string | null;
+  actorName: string;
+  actorRole: MvpRole;
+  action: RbacAuditAction;
+  targetType: RbacAuditTargetType;
+  targetId?: string | null;
+  targetName?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+/**
+ * Create a normalized RBAC audit entry.
+ */
+export function createRbacAuditEntry(params: {
+  businessId: string;
+  actorUserId?: string | null;
+  actorName: string;
+  actorRole: MvpRole;
+  action: RbacAuditAction;
+  targetType: RbacAuditTargetType;
+  targetId?: string | null;
+  targetName?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}): RbacAuditLogItem {
+  const id =
+    typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `audit-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  return {
+    id,
+    businessId: params.businessId,
+    actorUserId: params.actorUserId || null,
+    actorName: params.actorName,
+    actorRole: params.actorRole,
+    action: params.action,
+    targetType: params.targetType,
+    targetId: params.targetId || null,
+    targetName: params.targetName || null,
+    summary: params.summary,
+    metadata: params.metadata || {},
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /**

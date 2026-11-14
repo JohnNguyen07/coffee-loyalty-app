@@ -8,6 +8,7 @@ import {
   type StaffRole,
 } from '@/lib/pos/domain';
 import { resolveUserRbac } from '@/lib/rbac/server-guard';
+import { listLocationsForUser } from '@/lib/rbac/repository';
 
 export interface PosStaffContext {
   id: string;
@@ -110,6 +111,20 @@ export async function verifyAdmin() {
 export async function verifyPosStaff(): Promise<PosStaffContext | null> {
   const rbac = await resolveUserRbac();
   if (rbac) {
+    const activeLocationId = rbac.assignedLocationIds[0] || DEFAULT_LOCATION_ID;
+    let activeLocationName = DEFAULT_LOCATION_NAME;
+
+    try {
+      const accessibleLocs = await listLocationsForUser(rbac);
+      const matched = accessibleLocs.find((l) => l.id === activeLocationId);
+      if (matched?.name) {
+        activeLocationName = matched.name;
+      }
+    } catch {
+      const cookieStore = await cookies();
+      activeLocationName = cookieStore.get('ulab_active_location_name')?.value || DEFAULT_LOCATION_NAME;
+    }
+
     return {
       id: rbac.userId,
       dbUserId: rbac.userId,
@@ -119,8 +134,8 @@ export async function verifyPosStaff(): Promise<PosStaffContext | null> {
       role: 'ADMIN',
       staffRole: rbac.role,
       businessId: rbac.businessId,
-      locationId: rbac.assignedLocationIds[0] || DEFAULT_LOCATION_ID,
-      locationName: DEFAULT_LOCATION_NAME,
+      locationId: activeLocationId,
+      locationName: activeLocationName,
     };
   }
 

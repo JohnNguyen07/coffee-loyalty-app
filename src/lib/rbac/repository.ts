@@ -2,17 +2,29 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   type MvpRole,
   type UserRbacProfile,
+  type BusinessItem,
+  type UpdateBusinessProfileInput,
   type LocationItem,
   type StaffMemberDto,
   type CreateLocationInput,
   type UpdateLocationInput,
+  type RbacAuditLogItem,
+  type RbacAuditAction,
+  type RbacAuditTargetType,
   canManageLocations,
+  canManageBusinessProfile,
   canAssignRole,
   canAssignLocations,
+  canResetStaffPassword,
   validateCreateLocationInput,
+  validateLocationOperationalFields,
+  validateUpdateBusinessProfile,
   filterAccessibleLocations,
   validateStaffCreateInput,
+  validateStaffUpdateInput,
+  validateStaffPassword,
   canRevokeStaff,
+  createRbacAuditEntry,
   type CreateStaffInput,
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
@@ -24,19 +36,73 @@ interface LocationDbRow {
   name: string;
   address?: string | null;
   phone?: string | null;
+  opening_hours?: string | null;
+  manager_name?: string | null;
+  default_opening_cash?: number | null;
+  accept_web_orders?: boolean | null;
+  receipt_footer?: string | null;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
+interface BusinessDbRow {
+  id: string;
+  code: string;
+  name: string;
+  tax_code?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  default_receipt_footer?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface AuditLogDbRow {
+  id: string;
+  business_id: string;
+  actor_user_id?: string | null;
+  actor_name: string;
+  actor_role: string;
+  action: string;
+  target_type: string;
+  target_id?: string | null;
+  target_name?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+}
+
 interface PersistedRbacState {
   locations: LocationItem[];
   staffByBusiness: Record<string, StaffMemberDto[]>;
+  businessById?: Record<string, BusinessItem>;
+  auditLogsByBusiness?: Record<string, RbacAuditLogItem[]>;
   updatedAt: string;
 }
 
 const RBAC_BUCKET = 'ulab-system';
 const RBAC_OBJECT_PATH = 'rbac-store.json';
+const MAX_STORED_AUDIT_LOGS = 200;
+
+function buildSeedBusiness(businessId = DEFAULT_BUSINESS_ID): BusinessItem {
+  const now = new Date().toISOString();
+  return {
+    id: businessId,
+    code: businessId === DEFAULT_BUSINESS_ID ? 'ULAB' : 'BIZ',
+    name: businessId === DEFAULT_BUSINESS_ID ? 'Ủ LAB — Matcha & Cold Brew' : 'Doanh nghiệp Ủ LAB',
+    taxCode: null,
+    phone: '0909000001',
+    email: 'hello@ulab.vn',
+    address: 'TP. Hồ Chí Minh, Việt Nam',
+    defaultReceiptFooter: 'Cảm ơn quý khách — Hẹn gặp lại tại Ủ LAB!',
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function buildSeedLocations(): LocationItem[] {
   const now = new Date().toISOString();
@@ -48,6 +114,11 @@ function buildSeedLocations(): LocationItem[] {
       name: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
       address: 'Công Trường Quốc Tế, Quận 3, TP. Hồ Chí Minh',
       phone: '0909000001',
+      openingHours: '06:30 - 22:00',
+      managerName: 'Quản trị viên Ủ LAB',
+      defaultOpeningCash: 500000,
+      acceptWebOrders: true,
+      receiptFooter: 'Cảm ơn quý khách — Hẹn gặp lại tại Ủ LAB Hồ Con Rùa!',
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -59,6 +130,11 @@ function buildSeedLocations(): LocationItem[] {
       name: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
       address: 'Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
       phone: '0909000012',
+      openingHours: '07:00 - 22:30',
+      managerName: 'Nguyễn cao Hoàng Minh',
+      defaultOpeningCash: 500000,
+      acceptWebOrders: true,
+      receiptFooter: 'Cảm ơn quý khách — Hẹn gặp lại tại Ủ LAB Nguyễn Huệ!',
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -124,6 +200,12 @@ function getInMemoryState(): PersistedRbacState {
       staffByBusiness: {
         [DEFAULT_BUSINESS_ID]: buildSeedStaff(),
       },
+      businessById: {
+        [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID),
+      },
+      auditLogsByBusiness: {
+        [DEFAULT_BUSINESS_ID]: [],
+      },
       updatedAt: new Date().toISOString(),
     };
   }
@@ -187,6 +269,14 @@ async function loadPersistedRbacState(): Promise<PersistedRbacState> {
           parsed.staffByBusiness && typeof parsed.staffByBusiness === 'object'
             ? parsed.staffByBusiness
             : { [DEFAULT_BUSINESS_ID]: buildSeedStaff() },
+        businessById:
+          parsed.businessById && typeof parsed.businessById === 'object'
+            ? parsed.businessById
+            : { [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID) },
+        auditLogsByBusiness:
+          parsed.auditLogsByBusiness && typeof parsed.auditLogsByBusiness === 'object'
+            ? parsed.auditLogsByBusiness
+            : { [DEFAULT_BUSINESS_ID]: [] },
         updatedAt: parsed.updatedAt || new Date().toISOString(),
       };
       globalForRbac.__ulabRbacState = normalized;
@@ -253,6 +343,287 @@ function getBusinessStaff(state: PersistedRbacState, businessId: string): StaffM
   return state.staffByBusiness[businessId];
 }
 
+function getBusinessAuditLogs(state: PersistedRbacState, businessId: string): RbacAuditLogItem[] {
+  if (!state.auditLogsByBusiness) {
+    state.auditLogsByBusiness = {};
+  }
+  if (!state.auditLogsByBusiness[businessId]) {
+    state.auditLogsByBusiness[businessId] = [];
+  }
+  return state.auditLogsByBusiness[businessId];
+}
+
+function getPersistedBusiness(state: PersistedRbacState, businessId: string): BusinessItem {
+  if (!state.businessById) {
+    state.businessById = {};
+  }
+  if (!state.businessById[businessId]) {
+    state.businessById[businessId] = buildSeedBusiness(businessId);
+  }
+  return state.businessById[businessId];
+}
+
+function mapLocationRow(row: LocationDbRow, persisted?: LocationItem): LocationItem {
+  const hasExtendedCols = row.opening_hours !== undefined || row.default_opening_cash !== undefined;
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    code: row.code,
+    name: row.name,
+    address: row.address || null,
+    phone: row.phone || null,
+    openingHours: hasExtendedCols
+      ? (row.opening_hours ?? '06:30 - 22:00')
+      : (persisted?.openingHours ?? '06:30 - 22:00'),
+    managerName: hasExtendedCols
+      ? (row.manager_name ?? null)
+      : (persisted?.managerName ?? null),
+    defaultOpeningCash: hasExtendedCols
+      ? (typeof row.default_opening_cash === 'number' ? row.default_opening_cash : 500000)
+      : (typeof persisted?.defaultOpeningCash === 'number' ? persisted.defaultOpeningCash : 500000),
+    acceptWebOrders: hasExtendedCols
+      ? (row.accept_web_orders !== null && row.accept_web_orders !== undefined ? Boolean(row.accept_web_orders) : true)
+      : (persisted?.acceptWebOrders !== undefined ? persisted.acceptWebOrders : true),
+    receiptFooter: hasExtendedCols
+      ? (row.receipt_footer ?? null)
+      : (persisted?.receiptFooter ?? null),
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Record an RBAC audit log entry into PostgreSQL (if migrated) and persisted RBAC store.
+ */
+export async function recordRbacAuditLog(params: {
+  actor: Pick<UserRbacProfile, 'businessId' | 'userId' | 'fullName' | 'role'>;
+  action: RbacAuditAction;
+  targetType: RbacAuditTargetType;
+  targetId?: string | null;
+  targetName?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+  stateOverride?: PersistedRbacState;
+}): Promise<RbacAuditLogItem> {
+  const entry = createRbacAuditEntry({
+    businessId: params.actor.businessId,
+    actorUserId: params.actor.userId,
+    actorName: params.actor.fullName,
+    actorRole: params.actor.role,
+    action: params.action,
+    targetType: params.targetType,
+    targetId: params.targetId,
+    targetName: params.targetName,
+    summary: params.summary,
+    metadata: params.metadata,
+  });
+
+  try {
+    const adminClient = createAdminClient();
+    await adminClient.from('rbac_audit_logs').insert({
+      id: entry.id,
+      business_id: entry.businessId,
+      actor_user_id: entry.actorUserId,
+      actor_name: entry.actorName,
+      actor_role: entry.actorRole,
+      action: entry.action,
+      target_type: entry.targetType,
+      target_id: entry.targetId,
+      target_name: entry.targetName,
+      summary: entry.summary,
+      metadata: entry.metadata || {},
+      created_at: entry.createdAt,
+    });
+  } catch (err) {
+    console.warn('DB rbac_audit_logs insert fallback:', err);
+  }
+
+  const state = params.stateOverride || (await loadPersistedRbacState());
+  const logs = getBusinessAuditLogs(state, params.actor.businessId);
+  logs.unshift(entry);
+  if (logs.length > MAX_STORED_AUDIT_LOGS) {
+    logs.length = MAX_STORED_AUDIT_LOGS;
+  }
+  if (!params.stateOverride) {
+    await savePersistedRbacState(state);
+  }
+
+  return entry;
+}
+
+/**
+ * List RBAC audit logs for the user's business.
+ * Only OWNER and ADMIN can view audit logs.
+ */
+export async function listRbacAuditLogs(
+  user: UserRbacProfile,
+  limit = 100
+): Promise<RbacAuditLogItem[]> {
+  if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
+    throw new Error('FORBIDDEN_VIEW_AUDIT_LOGS: Chỉ Owner hoặc Admin mới có quyền xem nhật ký kiểm toán an ninh.');
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from('rbac_audit_logs')
+      .select('*')
+      .eq('business_id', user.businessId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return (data as AuditLogDbRow[]).map((row) => ({
+        id: row.id,
+        businessId: row.business_id,
+        actorUserId: row.actor_user_id || null,
+        actorName: row.actor_name,
+        actorRole: row.actor_role as MvpRole,
+        action: row.action as RbacAuditAction,
+        targetType: row.target_type as RbacAuditTargetType,
+        targetId: row.target_id || null,
+        targetName: row.target_name || null,
+        summary: row.summary,
+        metadata: row.metadata || {},
+        createdAt: row.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn('DB rbac_audit_logs query fallback:', err);
+  }
+
+  const state = await loadPersistedRbacState();
+  return getBusinessAuditLogs(state, user.businessId).slice(0, limit);
+}
+
+/**
+ * Get the user's business profile.
+ */
+export async function getBusinessProfile(user: UserRbacProfile): Promise<BusinessItem> {
+  const state = await loadPersistedRbacState();
+  const persisted = getPersistedBusiness(state, user.businessId);
+
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from('businesses')
+      .select('*')
+      .eq('id', user.businessId)
+      .maybeSingle();
+
+    if (!error && data) {
+      const row = data as BusinessDbRow;
+      const hasExtended = row.email !== undefined || row.default_receipt_footer !== undefined;
+      return {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        taxCode: row.tax_code ?? null,
+        phone: row.phone ?? null,
+        email: hasExtended ? (row.email ?? null) : (persisted.email ?? null),
+        address: row.address ?? null,
+        defaultReceiptFooter: hasExtended
+          ? (row.default_receipt_footer ?? persisted.defaultReceiptFooter ?? null)
+          : (persisted.defaultReceiptFooter ?? null),
+        isActive: Boolean(row.is_active),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    }
+  } catch (err) {
+    console.warn('DB getBusinessProfile fallback:', err);
+  }
+
+  return persisted;
+}
+
+/**
+ * Update the business profile (OWNER and ADMIN only).
+ */
+export async function updateBusinessProfile(
+  user: UserRbacProfile,
+  input: UpdateBusinessProfileInput
+): Promise<BusinessItem> {
+  if (!canManageBusinessProfile(user.role)) {
+    throw new Error('FORBIDDEN_CANNOT_MANAGE_BUSINESS: Chỉ Owner hoặc Admin mới có quyền cập nhật hồ sơ doanh nghiệp.');
+  }
+
+  const validated = validateUpdateBusinessProfile(input);
+  const state = await loadPersistedRbacState();
+  const existing = getPersistedBusiness(state, user.businessId);
+  const now = new Date().toISOString();
+
+  const nextBusiness: BusinessItem = {
+    ...existing,
+    name: validated.name !== undefined ? validated.name : existing.name,
+    taxCode: validated.taxCode !== undefined ? validated.taxCode : existing.taxCode,
+    phone: validated.phone !== undefined ? validated.phone : existing.phone,
+    email: validated.email !== undefined ? validated.email : existing.email,
+    address: validated.address !== undefined ? validated.address : existing.address,
+    defaultReceiptFooter:
+      validated.defaultReceiptFooter !== undefined
+        ? validated.defaultReceiptFooter
+        : existing.defaultReceiptFooter,
+    updatedAt: now,
+  };
+
+  try {
+    const adminClient = createAdminClient();
+    const fullPayload: Record<string, unknown> = {
+      name: nextBusiness.name,
+      tax_code: nextBusiness.taxCode ?? null,
+      phone: nextBusiness.phone ?? null,
+      email: nextBusiness.email ?? null,
+      address: nextBusiness.address ?? null,
+      default_receipt_footer: nextBusiness.defaultReceiptFooter ?? null,
+      updated_at: now,
+    };
+
+    const { error } = await adminClient
+      .from('businesses')
+      .update(fullPayload)
+      .eq('id', user.businessId);
+
+    if (error) {
+      // Fallback to base columns if migration 0011 has not been applied
+      await adminClient
+        .from('businesses')
+        .update({
+          name: nextBusiness.name,
+          tax_code: nextBusiness.taxCode ?? null,
+          phone: nextBusiness.phone ?? null,
+          address: nextBusiness.address ?? null,
+          updated_at: now,
+        })
+        .eq('id', user.businessId);
+    }
+  } catch (err) {
+    console.warn('DB updateBusinessProfile fallback:', err);
+  }
+
+  if (!state.businessById) state.businessById = {};
+  state.businessById[user.businessId] = nextBusiness;
+
+  await recordRbacAuditLog({
+    actor: user,
+    action: 'UPDATE_BUSINESS_PROFILE',
+    targetType: 'BUSINESS',
+    targetId: nextBusiness.id,
+    targetName: nextBusiness.name,
+    summary: `Cập nhật hồ sơ doanh nghiệp "${nextBusiness.name}"`,
+    metadata: {
+      phone: nextBusiness.phone,
+      email: nextBusiness.email,
+      address: nextBusiness.address,
+    },
+    stateOverride: state,
+  });
+
+  await savePersistedRbacState(state);
+  return nextBusiness;
+}
+
 function normalizePhone(phone?: string | null): string | null {
   if (!phone) return null;
   const clean = phone.trim().replace(/[\s\-()]/g, '');
@@ -310,10 +681,234 @@ export async function findStaffMemberAsync(params: {
 }
 
 /**
+ * Helper to resolve a target staff member from persisted state or PostgreSQL tables.
+ */
+async function resolveTargetStaff(
+  state: PersistedRbacState,
+  businessId: string,
+  targetUserId: string
+): Promise<{ staff: StaffMemberDto; stateIdx: number }> {
+  const staffList = getBusinessStaff(state, businessId);
+  const stateIdx = staffList.findIndex((s) => s.userId === targetUserId);
+  if (stateIdx !== -1) {
+    return { staff: staffList[stateIdx], stateIdx };
+  }
+
+  try {
+    const adminClient = createAdminClient();
+    const { data: membership } = await adminClient
+      .from('business_memberships')
+      .select('user_id, role, is_active')
+      .eq('business_id', businessId)
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    if (membership) {
+      const { data: userInfo } = await adminClient
+        .from('users')
+        .select('id, full_name, email, phone')
+        .eq('id', targetUserId)
+        .maybeSingle();
+
+      const hydrated: StaffMemberDto = {
+        userId: targetUserId,
+        fullName: userInfo?.full_name || 'Nhân viên',
+        email: userInfo?.email || null,
+        phone: userInfo?.phone || null,
+        role: membership.role as MvpRole,
+        assignedLocations: [],
+        isActive: Boolean(membership.is_active),
+      };
+      staffList.push(hydrated);
+      return { staff: hydrated, stateIdx: staffList.length - 1 };
+    }
+  } catch (err) {
+    console.warn('resolveTargetStaff DB fallback:', err);
+  }
+
+  throw new Error('Nhân viên không tồn tại.');
+}
+
+/**
+ * Synchronize staff login credentials with Supabase Auth using service role client.
+ */
+async function syncAuthUserAccount(params: {
+  existingUserId?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  fullName: string;
+  password?: string;
+}): Promise<{ authUserId: string | null; provisioned: boolean }> {
+  const cleanPhone = normalizePhone(params.phone);
+  const cleanEmail = params.email ? params.email.trim().toLowerCase() : null;
+  const authEmail = cleanEmail || (cleanPhone ? `${cleanPhone}@coffeehouse.vn` : null);
+  const adminClient = createAdminClient();
+
+  if (!authEmail) {
+    return { authUserId: params.existingUserId || null, provisioned: false };
+  }
+
+  try {
+    if (params.existingUserId) {
+      const updateAttrs: {
+        email?: string;
+        password?: string;
+        email_confirm?: boolean;
+        user_metadata?: Record<string, unknown>;
+      } = {
+        email_confirm: true,
+        user_metadata: {
+          full_name: params.fullName,
+          ...(cleanPhone ? { phone: cleanPhone } : {}),
+        },
+      };
+      if (params.password) {
+        updateAttrs.password = params.password;
+      }
+
+      const { data: updatedData, error: updateErr } = await adminClient.auth.admin.updateUserById(
+        params.existingUserId,
+        updateAttrs
+      );
+
+      if (!updateErr && updatedData?.user) {
+        return { authUserId: updatedData.user.id, provisioned: Boolean(params.password) };
+      }
+
+      // If not found by existingUserId (e.g. legacy row or different auth id), search by email or create
+      if (params.password) {
+        const { data: userRow } = await adminClient
+          .from('users')
+          .select('google_id')
+          .eq('id', params.existingUserId)
+          .maybeSingle();
+
+        if (userRow?.google_id && userRow.google_id !== params.existingUserId) {
+          const retryByGoogleId = await adminClient.auth.admin.updateUserById(
+            String(userRow.google_id),
+            updateAttrs
+          );
+          if (!retryByGoogleId.error && retryByGoogleId.data?.user) {
+            return { authUserId: retryByGoogleId.data.user.id, provisioned: true };
+          }
+        }
+
+        const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
+          email: authEmail,
+          password: params.password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: params.fullName,
+            ...(cleanPhone ? { phone: cleanPhone } : {}),
+          },
+        });
+
+        if (!createErr && created?.user) {
+          await adminClient
+            .from('users')
+            .update({ google_id: created.user.id })
+            .eq('id', params.existingUserId);
+          return { authUserId: created.user.id, provisioned: true };
+        }
+
+        const { data: listData } = await adminClient.auth.admin.listUsers();
+        const existingAuth = listData?.users?.find(
+          (u) => u.email?.toLowerCase() === authEmail
+        );
+        if (existingAuth) {
+          await adminClient.auth.admin.updateUserById(existingAuth.id, updateAttrs);
+          await adminClient
+            .from('users')
+            .update({ google_id: existingAuth.id })
+            .eq('id', params.existingUserId);
+          return { authUserId: existingAuth.id, provisioned: true };
+        }
+      }
+
+      return { authUserId: params.existingUserId, provisioned: false };
+    }
+
+    if (!params.password) {
+      return { authUserId: null, provisioned: false };
+    }
+
+    const { data: createdData, error: createErr } = await adminClient.auth.admin.createUser({
+      email: authEmail,
+      password: params.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: params.fullName,
+        ...(cleanPhone ? { phone: cleanPhone } : {}),
+      },
+    });
+
+    if (!createErr && createdData?.user) {
+      return { authUserId: createdData.user.id, provisioned: true };
+    }
+
+    if (
+      createErr &&
+      (createErr.message.toLowerCase().includes('already') ||
+        createErr.message.toLowerCase().includes('registered'))
+    ) {
+      const { data: listData } = await adminClient.auth.admin.listUsers();
+      const existingAuth = listData?.users?.find(
+        (u) => u.email?.toLowerCase() === authEmail
+      );
+      if (existingAuth) {
+        await adminClient.auth.admin.updateUserById(existingAuth.id, {
+          password: params.password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: params.fullName,
+            ...(cleanPhone ? { phone: cleanPhone } : {}),
+          },
+        });
+        return { authUserId: existingAuth.id, provisioned: true };
+      }
+    }
+  } catch (err) {
+    console.warn('Supabase Auth sync fallback:', err);
+  }
+
+  return { authUserId: params.existingUserId || null, provisioned: false };
+}
+
+/**
+ * List all location IDs belonging to a business (used by server-guard for OWNER/ADMIN).
+ */
+export async function listAllLocationIdsForBusiness(businessId: string): Promise<string[]> {
+  try {
+    const adminClient = createAdminClient();
+    const { data, error } = await adminClient
+      .from('locations')
+      .select('id, is_active')
+      .eq('business_id', businessId)
+      .order('is_active', { ascending: false })
+      .order('created_at', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data.map((l: { id: string }) => l.id);
+    }
+  } catch {
+    // fallback to persisted state
+  }
+
+  const state = await loadPersistedRbacState();
+  return state.locations
+    .filter((l) => l.businessId === businessId)
+    .sort((a, b) => Number(b.isActive) - Number(a.isActive))
+    .map((l) => l.id);
+}
+
+/**
  * List locations accessible to the given user based on their business and role.
  * Reads from PostgreSQL locations if migrated, otherwise persisted Supabase Storage state.
  */
 export async function listLocationsForUser(user: UserRbacProfile): Promise<LocationItem[]> {
+  const state = await loadPersistedRbacState();
+  const persistedMap = new Map(state.locations.map((l) => [l.id, l]));
+
   try {
     const adminClient = createAdminClient();
 
@@ -333,23 +928,12 @@ export async function listLocationsForUser(user: UserRbacProfile): Promise<Locat
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
       const rows = data as LocationDbRow[];
-      return rows.map((r) => ({
-        id: r.id,
-        businessId: r.business_id,
-        code: r.code,
-        name: r.name,
-        address: r.address || null,
-        phone: r.phone || null,
-        isActive: Boolean(r.is_active),
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      }));
+      return rows.map((r) => mapLocationRow(r, persistedMap.get(r.id)));
     }
   } catch (err) {
     console.warn('DB locations query fallback:', err);
   }
 
-  const state = await loadPersistedRbacState();
   return filterAccessibleLocations(state.locations, user);
 }
 
@@ -366,6 +950,7 @@ export async function createLocation(
   }
 
   const { code, name } = validateCreateLocationInput(input);
+  const ops = validateLocationOperationalFields(input);
   const state = await loadPersistedRbacState();
 
   const existingCode = state.locations.find(
@@ -375,36 +960,59 @@ export async function createLocation(
     throw new Error(`Điểm bán với mã "${code}" đã tồn tại trong doanh nghiệp.`);
   }
 
+  const openingHours = ops.openingHours ?? '06:30 - 22:00';
+  const managerName = ops.managerName ?? null;
+  const defaultOpeningCash = ops.defaultOpeningCash ?? 500000;
+  const acceptWebOrders = ops.acceptWebOrders ?? true;
+  const receiptFooter = ops.receiptFooter ?? null;
+
   let createdLoc: LocationItem | null = null;
 
   try {
     const adminClient = createAdminClient();
-    const { data, error } = await adminClient
+    const baseInsert = {
+      business_id: user.businessId,
+      code,
+      name,
+      address: input.address?.trim() || null,
+      phone: input.phone?.trim() || null,
+      is_active: true,
+    };
+
+    const fullRes = await adminClient
       .from('locations')
       .insert({
-        business_id: user.businessId,
-        code,
-        name,
-        address: input.address?.trim() || null,
-        phone: input.phone?.trim() || null,
-        is_active: true,
+        ...baseInsert,
+        opening_hours: openingHours,
+        manager_name: managerName,
+        default_opening_cash: defaultOpeningCash,
+        accept_web_orders: acceptWebOrders,
+        receipt_footer: receiptFooter,
       })
       .select('*')
       .single();
 
-    if (!error && data) {
-      const row = data as LocationDbRow;
-      createdLoc = {
-        id: row.id,
-        businessId: row.business_id,
-        code: row.code,
-        name: row.name,
-        address: row.address || null,
-        phone: row.phone || null,
-        isActive: Boolean(row.is_active),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
+    if (!fullRes.error && fullRes.data) {
+      createdLoc = mapLocationRow(fullRes.data as LocationDbRow);
+    } else if (fullRes.error) {
+      // Fallback insert without migration 0011 columns
+      const baseRes = await adminClient
+        .from('locations')
+        .insert(baseInsert)
+        .select('*')
+        .single();
+
+      if (!baseRes.error && baseRes.data) {
+        const mappedBase = mapLocationRow(baseRes.data as LocationDbRow);
+        createdLoc = {
+          ...mappedBase,
+          openingHours,
+          managerName,
+          defaultOpeningCash,
+          acceptWebOrders,
+          receiptFooter,
+        };
+      }
     }
   } catch (err) {
     console.warn('DB locations insert fallback:', err);
@@ -418,6 +1026,11 @@ export async function createLocation(
       name,
       address: input.address?.trim() || null,
       phone: input.phone?.trim() || null,
+      openingHours,
+      managerName,
+      defaultOpeningCash,
+      acceptWebOrders,
+      receiptFooter,
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -425,6 +1038,21 @@ export async function createLocation(
   }
 
   state.locations.push(createdLoc);
+  await recordRbacAuditLog({
+    actor: user,
+    action: 'CREATE_LOCATION',
+    targetType: 'LOCATION',
+    targetId: createdLoc.id,
+    targetName: `${createdLoc.code} — ${createdLoc.name}`,
+    summary: `Tạo điểm bán mới "${createdLoc.name}" (${createdLoc.code})`,
+    metadata: {
+      openingHours: createdLoc.openingHours,
+      defaultOpeningCash: createdLoc.defaultOpeningCash,
+      acceptWebOrders: createdLoc.acceptWebOrders,
+    },
+    stateOverride: state,
+  });
+
   await savePersistedRbacState(state);
   return createdLoc;
 }
@@ -442,8 +1070,10 @@ export async function updateLocation(
     throw new Error('FORBIDDEN_CANNOT_MANAGE_LOCATIONS: Chỉ Owner hoặc Admin mới có quyền chỉnh sửa điểm bán.');
   }
 
-  const updates: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
+  const ops = validateLocationOperationalFields(input);
+  const now = new Date().toISOString();
+  const baseUpdates: Record<string, unknown> = {
+    updated_at: now,
   };
 
   if (input.name !== undefined) {
@@ -451,78 +1081,120 @@ export async function updateLocation(
     if (trimmedName.length < 2) {
       throw new Error('Tên điểm bán không được để trống.');
     }
-    updates.name = trimmedName;
+    baseUpdates.name = trimmedName;
   }
   if (input.address !== undefined) {
-    updates.address = input.address.trim() || null;
+    baseUpdates.address = input.address.trim() || null;
   }
   if (input.phone !== undefined) {
-    updates.phone = input.phone.trim() || null;
+    baseUpdates.phone = input.phone.trim() || null;
   }
   if (input.isActive !== undefined) {
-    updates.is_active = Boolean(input.isActive);
+    baseUpdates.is_active = Boolean(input.isActive);
   }
 
+  const extendedUpdates: Record<string, unknown> = { ...baseUpdates };
+  if (ops.openingHours !== undefined) extendedUpdates.opening_hours = ops.openingHours;
+  if (ops.managerName !== undefined) extendedUpdates.manager_name = ops.managerName;
+  if (ops.defaultOpeningCash !== undefined) extendedUpdates.default_opening_cash = ops.defaultOpeningCash;
+  if (ops.acceptWebOrders !== undefined) extendedUpdates.accept_web_orders = ops.acceptWebOrders;
+  if (ops.receiptFooter !== undefined) extendedUpdates.receipt_footer = ops.receiptFooter;
+
   const state = await loadPersistedRbacState();
+  const idx = state.locations.findIndex((l) => l.id === locationId);
+  const existing = idx !== -1 ? state.locations[idx] : undefined;
+
+  if (existing && existing.businessId !== user.businessId) {
+    throw new Error('FORBIDDEN_CROSS_BUSINESS: Không thể chỉnh sửa điểm bán của doanh nghiệp khác.');
+  }
+
   let updatedFromDb: LocationItem | null = null;
 
   try {
     const adminClient = createAdminClient();
-    const { data, error } = await adminClient
+    const fullRes = await adminClient
       .from('locations')
-      .update(updates)
+      .update(extendedUpdates)
       .eq('id', locationId)
       .eq('business_id', user.businessId)
       .select('*')
       .single();
 
-    if (!error && data) {
-      const row = data as LocationDbRow;
-      updatedFromDb = {
-        id: row.id,
-        businessId: row.business_id,
-        code: row.code,
-        name: row.name,
-        address: row.address || null,
-        phone: row.phone || null,
-        isActive: Boolean(row.is_active),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
+    if (!fullRes.error && fullRes.data) {
+      updatedFromDb = mapLocationRow(fullRes.data as LocationDbRow, existing);
+    } else if (fullRes.error) {
+      const baseRes = await adminClient
+        .from('locations')
+        .update(baseUpdates)
+        .eq('id', locationId)
+        .eq('business_id', user.businessId)
+        .select('*')
+        .single();
+
+      if (!baseRes.error && baseRes.data) {
+        const mappedBase = mapLocationRow(baseRes.data as LocationDbRow, existing);
+        updatedFromDb = {
+          ...mappedBase,
+          openingHours: ops.openingHours !== undefined ? ops.openingHours : mappedBase.openingHours,
+          managerName: ops.managerName !== undefined ? ops.managerName : mappedBase.managerName,
+          defaultOpeningCash:
+            ops.defaultOpeningCash !== undefined ? ops.defaultOpeningCash : mappedBase.defaultOpeningCash,
+          acceptWebOrders:
+            ops.acceptWebOrders !== undefined ? ops.acceptWebOrders : mappedBase.acceptWebOrders,
+          receiptFooter: ops.receiptFooter !== undefined ? ops.receiptFooter : mappedBase.receiptFooter,
+        };
+      }
     }
   } catch (err) {
     console.warn('DB locations update fallback:', err);
   }
 
-  const idx = state.locations.findIndex((l) => l.id === locationId);
+  let finalLocation: LocationItem;
   if (updatedFromDb) {
+    finalLocation = updatedFromDb;
     if (idx !== -1) state.locations[idx] = updatedFromDb;
     else state.locations.push(updatedFromDb);
-    await savePersistedRbacState(state);
-    return updatedFromDb;
+  } else {
+    if (idx === -1 || !existing) {
+      throw new Error('Điểm bán không tồn tại.');
+    }
+    finalLocation = {
+      ...existing,
+      name: input.name !== undefined ? input.name.trim() : existing.name,
+      address: input.address !== undefined ? input.address.trim() || null : existing.address,
+      phone: input.phone !== undefined ? input.phone.trim() || null : existing.phone,
+      openingHours: ops.openingHours !== undefined ? ops.openingHours : existing.openingHours,
+      managerName: ops.managerName !== undefined ? ops.managerName : existing.managerName,
+      defaultOpeningCash:
+        ops.defaultOpeningCash !== undefined ? ops.defaultOpeningCash : existing.defaultOpeningCash,
+      acceptWebOrders:
+        ops.acceptWebOrders !== undefined ? ops.acceptWebOrders : existing.acceptWebOrders,
+      receiptFooter: ops.receiptFooter !== undefined ? ops.receiptFooter : existing.receiptFooter,
+      isActive: input.isActive !== undefined ? Boolean(input.isActive) : existing.isActive,
+      updatedAt: now,
+    };
+    state.locations[idx] = finalLocation;
   }
 
-  if (idx === -1) {
-    throw new Error('Điểm bán không tồn tại.');
-  }
+  await recordRbacAuditLog({
+    actor: user,
+    action: 'UPDATE_LOCATION',
+    targetType: 'LOCATION',
+    targetId: finalLocation.id,
+    targetName: `${finalLocation.code} — ${finalLocation.name}`,
+    summary: `Cập nhật cấu hình điểm bán "${finalLocation.name}" (${finalLocation.isActive ? 'Đang hoạt động' : 'Tạm dừng'})`,
+    metadata: {
+      openingHours: finalLocation.openingHours,
+      managerName: finalLocation.managerName,
+      defaultOpeningCash: finalLocation.defaultOpeningCash,
+      acceptWebOrders: finalLocation.acceptWebOrders,
+      isActive: finalLocation.isActive,
+    },
+    stateOverride: state,
+  });
 
-  const existing = state.locations[idx];
-  if (existing.businessId !== user.businessId) {
-    throw new Error('FORBIDDEN_CROSS_BUSINESS: Không thể chỉnh sửa điểm bán của doanh nghiệp khác.');
-  }
-
-  const updatedItem: LocationItem = {
-    ...existing,
-    name: input.name !== undefined ? input.name.trim() : existing.name,
-    address: input.address !== undefined ? input.address.trim() || null : existing.address,
-    phone: input.phone !== undefined ? input.phone.trim() || null : existing.phone,
-    isActive: input.isActive !== undefined ? Boolean(input.isActive) : existing.isActive,
-    updatedAt: new Date().toISOString(),
-  };
-
-  state.locations[idx] = updatedItem;
   await savePersistedRbacState(state);
-  return updatedItem;
+  return finalLocation;
 }
 
 /**
@@ -533,6 +1205,9 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
   if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
     throw new Error('FORBIDDEN_VIEW_STAFF: Chỉ Owner hoặc Admin mới có quyền xem danh sách nhân sự.');
   }
+
+  const state = await loadPersistedRbacState();
+  const persistedStaff = getBusinessStaff(state, user.businessId);
 
   try {
     const adminClient = createAdminClient();
@@ -576,44 +1251,55 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
           userMap.set(u.id, u);
         });
 
-        return memberships.map((m: { user_id: string; role: string; is_active: boolean }) => {
-          const userInfo = userMap.get(m.user_id);
-          const locIds = assignmentMap.get(m.user_id) || [];
-          return {
-            userId: m.user_id,
-            fullName: userInfo?.full_name || 'Nhân viên',
-            email: userInfo?.email || null,
-            phone: userInfo?.phone || null,
-            role: m.role as MvpRole,
-            isActive: m.is_active,
-            assignedLocations: locIds.map((lid) => {
-              const lInfo = locMap.get(lid);
-              return {
-                locationId: lid,
-                locationCode: lInfo?.code || lid,
-                locationName: lInfo?.name || 'Điểm bán',
-              };
-            }),
-          };
+        const dbStaffList: StaffMemberDto[] = memberships.map(
+          (m: { user_id: string; role: string; is_active: boolean }) => {
+            const userInfo = userMap.get(m.user_id);
+            const locIds = assignmentMap.get(m.user_id) || [];
+            return {
+              userId: m.user_id,
+              fullName: userInfo?.full_name || 'Nhân viên',
+              email: userInfo?.email || null,
+              phone: userInfo?.phone || null,
+              role: m.role as MvpRole,
+              isActive: m.is_active,
+              assignedLocations: locIds.map((lid) => {
+                const lInfo = locMap.get(lid);
+                return {
+                  locationId: lid,
+                  locationCode: lInfo?.code || lid,
+                  locationName: lInfo?.name || 'Điểm bán',
+                };
+              }),
+            };
+          }
+        );
+
+        // Merge any persisted-only staff members not yet present in DB
+        const dbIds = new Set(dbStaffList.map((s) => s.userId));
+        persistedStaff.forEach((ps) => {
+          if (!dbIds.has(ps.userId)) {
+            dbStaffList.push(ps);
+          }
         });
+        return dbStaffList;
       }
     }
   } catch (err) {
     console.warn('DB listStaffMembers fallback:', err);
   }
 
-  const state = await loadPersistedRbacState();
-  return getBusinessStaff(state, user.businessId);
+  return persistedStaff;
 }
 
 /**
- * Assign or update a staff member's role and multiple location assignments.
+ * Assign or update a staff member's role, location assignments, and optional contact info.
  */
 export async function assignStaffRoleAndLocations(
   actor: UserRbacProfile,
   targetUserId: string,
   targetRole: MvpRole,
-  locationIds: string[]
+  locationIds: string[],
+  contactUpdates?: { fullName?: string; email?: string | null; phone?: string | null }
 ): Promise<void> {
   if (!canAssignRole(actor.role, targetRole)) {
     throw new Error(
@@ -624,6 +1310,8 @@ export async function assignStaffRoleAndLocations(
   if (!canAssignLocations(actor.role)) {
     throw new Error('FORBIDDEN_CANNOT_ASSIGN_LOCATIONS: Bạn không có quyền phân công điểm bán.');
   }
+
+  const validatedContact = contactUpdates ? validateStaffUpdateInput(contactUpdates) : {};
 
   const state = await loadPersistedRbacState();
   const staffList = getBusinessStaff(state, actor.businessId);
@@ -663,9 +1351,17 @@ export async function assignStaffRoleAndLocations(
     }
 
     const isElevated = targetRole === 'OWNER' || targetRole === 'ADMIN';
+    const userUpdatePayload: Record<string, unknown> = {
+      role: isElevated ? 'ADMIN' : 'USER',
+      updated_at: new Date().toISOString(),
+    };
+    if (validatedContact.fullName !== undefined) userUpdatePayload.full_name = validatedContact.fullName;
+    if (validatedContact.phone !== undefined) userUpdatePayload.phone = validatedContact.phone;
+    if (validatedContact.email !== undefined) userUpdatePayload.email = validatedContact.email;
+
     await adminClient
       .from('users')
-      .update({ role: isElevated ? 'ADMIN' : 'USER' })
+      .update(userUpdatePayload)
       .eq('id', targetUserId);
   } catch (err) {
     console.warn('DB assignStaffRoleAndLocations fallback:', err);
@@ -680,9 +1376,15 @@ export async function assignStaffRoleAndLocations(
     }));
 
   const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
+  let staffName = 'Nhân viên';
+
   if (staffIdx !== -1) {
     staffList[staffIdx].role = targetRole;
     staffList[staffIdx].assignedLocations = matchedLocations;
+    if (validatedContact.fullName !== undefined) staffList[staffIdx].fullName = validatedContact.fullName;
+    if (validatedContact.phone !== undefined) staffList[staffIdx].phone = validatedContact.phone;
+    if (validatedContact.email !== undefined) staffList[staffIdx].email = validatedContact.email;
+    staffName = staffList[staffIdx].fullName;
   } else {
     const { data: userInfo } = await adminClient
       .from('users')
@@ -690,22 +1392,49 @@ export async function assignStaffRoleAndLocations(
       .eq('id', targetUserId)
       .maybeSingle();
 
+    staffName = validatedContact.fullName || userInfo?.full_name || 'Nhân viên mới';
     staffList.push({
       userId: targetUserId,
-      fullName: userInfo?.full_name || 'Nhân viên mới',
-      email: userInfo?.email || null,
-      phone: userInfo?.phone || null,
+      fullName: staffName,
+      email: validatedContact.email !== undefined ? validatedContact.email : (userInfo?.email || null),
+      phone: validatedContact.phone !== undefined ? validatedContact.phone : (userInfo?.phone || null),
       role: targetRole,
       assignedLocations: matchedLocations,
       isActive: true,
     });
   }
 
+  if (validatedContact.fullName || validatedContact.email || validatedContact.phone) {
+    const targetStaff = staffList.find((s) => s.userId === targetUserId);
+    if (targetStaff) {
+      await syncAuthUserAccount({
+        existingUserId: targetUserId,
+        email: targetStaff.email,
+        phone: targetStaff.phone,
+        fullName: targetStaff.fullName,
+      });
+    }
+  }
+
+  await recordRbacAuditLog({
+    actor,
+    action: 'UPDATE_STAFF',
+    targetType: 'STAFF',
+    targetId: targetUserId,
+    targetName: staffName,
+    summary: `Cập nhật quyền (${targetRole}) & ${matchedLocations.length} điểm bán cho ${staffName}`,
+    metadata: {
+      role: targetRole,
+      locationCodes: matchedLocations.map((l) => l.locationCode),
+    },
+    stateOverride: state,
+  });
+
   await savePersistedRbacState(state);
 }
 
 /**
- * Create a new staff member (or promote/assign an existing user) with initial role & locations.
+ * Create a new staff member (or promote/assign an existing user) with initial role, locations, and optional auth password.
  */
 export async function createStaffMember(
   actor: UserRbacProfile,
@@ -718,6 +1447,7 @@ export async function createStaffMember(
   }
 
   validateStaffCreateInput(input);
+  const validatedPassword = validateStaffPassword(input.initialPassword, false);
 
   const cleanPhone = normalizePhone(input.phone) || '';
   const cleanEmail = (input.email || '').trim().toLowerCase();
@@ -770,7 +1500,22 @@ export async function createStaffMember(
     }
   }
 
-  const finalUserId = resolvedUserId || crypto.randomUUID();
+  let authSyncResult: { authUserId: string | null; provisioned: boolean } = {
+    authUserId: resolvedUserId,
+    provisioned: false,
+  };
+
+  if (validatedPassword) {
+    authSyncResult = await syncAuthUserAccount({
+      existingUserId: resolvedUserId,
+      email: cleanEmail || existingEmail,
+      phone: cleanPhone || existingPhone,
+      fullName: input.fullName.trim(),
+      password: validatedPassword,
+    });
+  }
+
+  const finalUserId = resolvedUserId || authSyncResult.authUserId || crypto.randomUUID();
 
   const matchedLocations = state.locations
     .filter((l) => input.locationIds.includes(l.id))
@@ -801,14 +1546,16 @@ export async function createStaffMember(
       };
       if (cleanPhone && !existingPhone) updatePayload.phone = cleanPhone;
       if (cleanEmail && !existingEmail) updatePayload.email = cleanEmail;
+      if (authSyncResult.authUserId) updatePayload.google_id = authSyncResult.authUserId;
 
       await adminClient
         .from('users')
         .update(updatePayload)
         .eq('id', resolvedUserId);
     } else {
-      await adminClient.from('users').insert({
+      await adminClient.from('users').upsert({
         id: finalUserId,
+        google_id: authSyncResult.authUserId || finalUserId,
         full_name: newStaff.fullName,
         email: cleanEmail || (cleanPhone ? `${cleanPhone}@coffeehouse.vn` : null),
         phone: cleanPhone || null,
@@ -859,8 +1606,67 @@ export async function createStaffMember(
     staffList.push(newStaff);
   }
 
+  await recordRbacAuditLog({
+    actor,
+    action: 'CREATE_STAFF',
+    targetType: 'STAFF',
+    targetId: newStaff.userId,
+    targetName: newStaff.fullName,
+    summary: `Thêm nhân viên mới ${newStaff.fullName} (${newStaff.role}) tại ${matchedLocations.length} điểm bán${authSyncResult.provisioned ? ' (đã cấp tài khoản đăng nhập)' : ''}`,
+    metadata: {
+      role: newStaff.role,
+      locationCodes: matchedLocations.map((l) => l.locationCode),
+      authProvisioned: authSyncResult.provisioned,
+    },
+    stateOverride: state,
+  });
+
   await savePersistedRbacState(state);
   return newStaff;
+}
+
+/**
+ * Reset or set login password for a staff member in Supabase Auth.
+ */
+export async function resetStaffPassword(
+  actor: UserRbacProfile,
+  targetUserId: string,
+  newPassword: string
+): Promise<{ fullName: string; provisioned: boolean }> {
+  const validPassword = validateStaffPassword(newPassword, true);
+  const state = await loadPersistedRbacState();
+  const { staff } = await resolveTargetStaff(state, actor.businessId, targetUserId);
+
+  if (!canResetStaffPassword(actor.role, staff.role)) {
+    throw new Error(
+      `FORBIDDEN_CANNOT_RESET_PASSWORD: Vai trò của bạn (${actor.role}) không được phép đặt lại mật khẩu cho nhân viên (${staff.role}).`
+    );
+  }
+
+  const syncRes = await syncAuthUserAccount({
+    existingUserId: staff.userId,
+    email: staff.email,
+    phone: staff.phone,
+    fullName: staff.fullName,
+    password: validPassword,
+  });
+
+  await recordRbacAuditLog({
+    actor,
+    action: 'RESET_STAFF_PASSWORD',
+    targetType: 'STAFF',
+    targetId: staff.userId,
+    targetName: staff.fullName,
+    summary: `Đặt lại mật khẩu đăng nhập cho nhân viên ${staff.fullName} (${staff.role})`,
+    metadata: {
+      role: staff.role,
+      authProvisioned: syncRes.provisioned,
+    },
+    stateOverride: state,
+  });
+
+  await savePersistedRbacState(state);
+  return { fullName: staff.fullName, provisioned: syncRes.provisioned };
 }
 
 /**
@@ -872,11 +1678,7 @@ export async function toggleStaffStatus(
   isActive: boolean
 ): Promise<void> {
   const state = await loadPersistedRbacState();
-  const staffList = getBusinessStaff(state, actor.businessId);
-  const staff = staffList.find((s) => s.userId === targetUserId);
-  if (!staff) {
-    throw new Error('Nhân viên không tồn tại.');
-  }
+  const { staff } = await resolveTargetStaff(state, actor.businessId, targetUserId);
 
   if (!canRevokeStaff(actor.role, staff.role)) {
     throw new Error('Bạn không có quyền thay đổi trạng thái của nhân viên này.');
@@ -894,6 +1696,21 @@ export async function toggleStaffStatus(
   }
 
   staff.isActive = isActive;
+
+  await recordRbacAuditLog({
+    actor,
+    action: 'TOGGLE_STAFF_STATUS',
+    targetType: 'STAFF',
+    targetId: staff.userId,
+    targetName: staff.fullName,
+    summary: `${isActive ? 'Kích hoạt lại' : 'Tạm khóa'} tài khoản nhân viên ${staff.fullName} (${staff.role})`,
+    metadata: {
+      isActive,
+      role: staff.role,
+    },
+    stateOverride: state,
+  });
+
   await savePersistedRbacState(state);
 }
 
@@ -906,12 +1723,8 @@ export async function revokeStaffMember(
 ): Promise<void> {
   const state = await loadPersistedRbacState();
   const staffList = getBusinessStaff(state, actor.businessId);
-  const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
-  if (staffIdx === -1) {
-    throw new Error('Nhân viên không tồn tại.');
-  }
+  const { staff, stateIdx } = await resolveTargetStaff(state, actor.businessId, targetUserId);
 
-  const staff = staffList[staffIdx];
   if (!canRevokeStaff(actor.role, staff.role)) {
     throw new Error('Bạn không có quyền xóa nhân viên này.');
   }
@@ -940,6 +1753,20 @@ export async function revokeStaffMember(
     console.warn('DB revokeStaffMember fallback:', err);
   }
 
-  staffList.splice(staffIdx, 1);
+  staffList.splice(stateIdx, 1);
+
+  await recordRbacAuditLog({
+    actor,
+    action: 'REVOKE_STAFF',
+    targetType: 'STAFF',
+    targetId: staff.userId,
+    targetName: staff.fullName,
+    summary: `Hủy quyền và xóa nhân viên ${staff.fullName} (${staff.role}) khỏi hệ thống`,
+    metadata: {
+      role: staff.role,
+    },
+    stateOverride: state,
+  });
+
   await savePersistedRbacState(state);
 }

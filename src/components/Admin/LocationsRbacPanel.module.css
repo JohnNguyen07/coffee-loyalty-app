@@ -385,8 +385,10 @@
 .modalBox {
   background: #ffffff;
   border-radius: 14px;
-  max-width: 540px;
+  max-width: 600px;
   width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
   padding: 24px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
   display: flex;
@@ -494,4 +496,171 @@
   border: 1px solid #fef3c7;
   color: #92400e;
 }
+
+/* ── Extended Module D UI Helpers ── */
+.formRow2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.formTextarea {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 70px;
+  transition: border-color 0.15s ease;
+}
+
+.formTextarea:focus {
+  border-color: var(--sb-green, #00754a);
+}
+
+.infoBtn {
+  padding: 4px 10px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.infoBtn:hover {
+  background: #bae6fd;
+}
+
+.webBadgeOn {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 9999px;
+  font-size: 0.725rem;
+  font-weight: 600;
+}
+
+.webBadgeOff {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  font-size: 0.725rem;
+  font-weight: 600;
+}
+
+.staffChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.staffChip {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #f1f5f9;
+  color: #334155;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.passwordInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.passwordInputRow .formInput {
+  flex: 1;
+}
+
+.miniActionBtn {
+  padding: 8px 10px;
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.miniActionBtn:hover {
+  background: #f1f5f9;
+}
+
+.sectionHeading {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e3932;
+  margin: 0 0 10px 0;
+}
+
+.sectionDesc {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0 0 14px 0;
+}
+
+.matrixPermYes {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.matrixPermPartial {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.matrixPermNo {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.auditActionBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 

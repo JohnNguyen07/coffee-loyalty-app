@@ -20,24 +20,29 @@ export default function AdminHeader({
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [activeLocation, setActiveLocation] = useState<LocationItem | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
 
     const loadProfile = async () => {
       try {
-        const res = await fetch('/api/rbac/profile');
+        const res = await fetch('/api/rbac/profile', { cache: 'no-store' });
         const data = await res.json();
         if (active && data.success && data.profile) {
           setProfile(data.profile);
           const locs: LocationItem[] = data.locations || [];
           setLocations(locs);
 
-          // Find active location based on assignedLocationIds[0] or first location
-          const activeId = data.profile.assignedLocationIds?.[0] || locs[0]?.id;
-          const current = locs.find((l) => l.id === activeId) || locs[0] || null;
+          // Find active location based on server activeLocation or assignedLocationIds[0]
+          const activeId = data.activeLocationId || data.profile.assignedLocationIds?.[0] || locs[0]?.id;
+          const current = data.activeLocation || locs.find((l) => l.id === activeId) || locs[0] || null;
           setActiveLocation(current);
+          if (current?.id && typeof window !== 'undefined') {
+            localStorage.setItem('ulab_active_location_id', current.id);
+          }
         }
       } catch (err) {
         console.warn('AdminHeader fetch profile fallback:', err);
@@ -57,11 +62,14 @@ export default function AdminHeader({
     };
   }, []);
 
-  // Close dropdown on click outside
+  // Close dropdowns on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -71,6 +79,7 @@ export default function AdminHeader({
   // Handle Switch Working Location
   const handleSelectLocation = async (loc: LocationItem) => {
     setDropdownOpen(false);
+    setProfileOpen(false);
     if (activeLocation?.id === loc.id) return;
 
     try {
@@ -82,6 +91,9 @@ export default function AdminHeader({
       const data = await res.json();
       if (data.success) {
         setActiveLocation(loc);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ulab_active_location_id', loc.id);
+        }
         window.dispatchEvent(new CustomEvent('ulab:location-changed', { detail: { locationId: loc.id } }));
       }
     } catch (err) {
@@ -247,13 +259,63 @@ export default function AdminHeader({
         </div>
 
         {/* User Profile & Logout */}
-        <div className={styles.accountWrap}>
-          <div className={styles.userMeta}>
-            <span className={styles.userName}>{profile?.fullName || 'Quản trị viên'}</span>
-            <span className={`${styles.roleTag} ${getRoleClass(profile?.role)}`}>
-              {profile?.role || 'ADMIN'}
-            </span>
-          </div>
+        <div className={styles.accountWrap} ref={profileRef}>
+          <button
+            type="button"
+            className={styles.profileBtn}
+            onClick={() => setProfileOpen((prev) => !prev)}
+            title="Xem hồ sơ & quyền hạn phiên đăng nhập"
+          >
+            <div className={styles.userMeta}>
+              <span className={styles.userName}>{profile?.fullName || 'Quản trị viên'}</span>
+              <span className={`${styles.roleTag} ${getRoleClass(profile?.role)}`}>
+                {profile?.role || 'ADMIN'}
+              </span>
+            </div>
+          </button>
+
+          {profileOpen && (
+            <div className={styles.profileDropdown}>
+              <div className={styles.profileDropHeader}>
+                <div className={styles.profileDropName}>{profile?.fullName || 'Quản trị viên'}</div>
+                <div className={styles.profileDropContact}>
+                  {profile?.phone || profile?.email || 'Tài khoản hệ thống'}
+                </div>
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span className={`${styles.roleTag} ${getRoleClass(profile?.role)}`}>
+                    {profile?.role || 'ADMIN'}
+                  </span>
+                  {activeLocation && (
+                    <span style={{ fontSize: '0.725rem', color: '#00754a', fontWeight: 600 }}>
+                      ● {activeLocation.code} ({activeLocation.openingHours || '06:30 - 22:00'})
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.profileDropSectionLabel}>
+                Chi nhánh được cấp quyền ({locations.length})
+              </div>
+              <div className={styles.profileLocList}>
+                {locations.map((loc) => {
+                  const isActive = activeLocation?.id === loc.id;
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      className={`${styles.locationOption} ${isActive ? styles.locationOptionActive : ''}`}
+                      onClick={() => handleSelectLocation(loc)}
+                    >
+                      <span>{loc.name}</span>
+                      {isActive && (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534' }}>✓</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <button
             type="button"

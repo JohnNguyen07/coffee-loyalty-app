@@ -8,7 +8,7 @@ import {
   validateServerLocationAccess,
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
-import { findStaffMemberAsync } from './repository';
+import { findStaffMemberAsync, listAllLocationIdsForBusiness } from './repository';
 
 export const DEFAULT_LOCATIONS_SEED_IDS = [
   DEFAULT_LOCATION_ID,
@@ -181,21 +181,8 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
 
   // If Owner or Admin, they automatically have access to all locations
   if (role === 'OWNER' || role === 'ADMIN') {
-    try {
-      const { data: allBizLocations, error: locErr } = await adminClient
-        .from('locations')
-        .select('id')
-        .eq('business_id', businessId)
-        .eq('is_active', true);
-
-      if (!locErr && allBizLocations && allBizLocations.length > 0) {
-        assignedLocationIds = allBizLocations.map((l: { id: string }) => l.id);
-      } else {
-        assignedLocationIds = DEFAULT_LOCATIONS_SEED_IDS;
-      }
-    } catch {
-      assignedLocationIds = DEFAULT_LOCATIONS_SEED_IDS;
-    }
+    const bizLocationIds = await listAllLocationIdsForBusiness(businessId).catch(() => []);
+    assignedLocationIds = bizLocationIds.length > 0 ? bizLocationIds : DEFAULT_LOCATIONS_SEED_IDS;
   } else if (assignedLocationIds.length === 0) {
     assignedLocationIds = [DEFAULT_LOCATION_ID];
   }

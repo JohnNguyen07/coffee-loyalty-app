@@ -6,6 +6,7 @@ import {
   createStaffMember,
   toggleStaffStatus,
   revokeStaffMember,
+  resetStaffPassword,
 } from '@/lib/rbac/repository';
 import { type MvpRole } from '@/lib/rbac/domain';
 
@@ -41,12 +42,29 @@ export async function POST(request: NextRequest) {
         email: body.email,
         phone: body.phone,
         locationIds: Array.isArray(body.locationIds) ? body.locationIds : [],
+        initialPassword: body.initialPassword,
       });
 
       return NextResponse.json({
         success: true,
         staff: created,
         message: `Đã thêm nhân viên mới thành công: ${created.fullName} (${created.role})`,
+      });
+    }
+
+    if (action === 'reset_password') {
+      const { targetUserId, newPassword } = body;
+      if (!targetUserId || !newPassword) {
+        return NextResponse.json(
+          { error: 'Vui lòng cung cấp nhân viên và mật khẩu mới.' },
+          { status: 400 }
+        );
+      }
+      const res = await resetStaffPassword(user, targetUserId, String(newPassword));
+      return NextResponse.json({
+        success: true,
+        provisioned: res.provisioned,
+        message: `Đã đặt lại mật khẩu đăng nhập cho nhân viên ${res.fullName}.`,
       });
     }
 
@@ -68,8 +86,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Default: update role & locations
-    const { targetUserId, targetRole, locationIds } = body;
+    // Default: update role, locations, and optional contact info
+    const { targetUserId, targetRole, locationIds, fullName, email, phone } = body;
     if (!targetUserId || !targetRole) {
       return NextResponse.json(
         { error: 'Vui lòng cung cấp targetUserId và targetRole hợp lệ.' },
@@ -81,12 +99,15 @@ export async function POST(request: NextRequest) {
       user,
       targetUserId,
       targetRole as MvpRole,
-      Array.isArray(locationIds) ? locationIds : []
+      Array.isArray(locationIds) ? locationIds : [],
+      fullName !== undefined || email !== undefined || phone !== undefined
+        ? { fullName, email, phone }
+        : undefined
     );
 
     return NextResponse.json({
       success: true,
-      message: `Đã phân quyền thành công vai trò ${targetRole} cho nhân viên.`,
+      message: `Đã cập nhật thông tin & phân quyền (${targetRole}) cho nhân viên.`,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Lỗi xử lý nghiệp vụ nhân sự';

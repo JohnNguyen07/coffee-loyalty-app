@@ -17,6 +17,14 @@ export async function PUT(
       name: body.name,
       address: body.address,
       phone: body.phone,
+      openingHours: body.openingHours,
+      managerName: body.managerName,
+      defaultOpeningCash:
+        body.defaultOpeningCash !== undefined && body.defaultOpeningCash !== ''
+          ? Number(body.defaultOpeningCash)
+          : undefined,
+      acceptWebOrders: body.acceptWebOrders,
+      receiptFooter: body.receiptFooter,
       isActive: body.isActive,
     });
 

@@ -19,6 +19,14 @@ import {
   validateStaffCreateInput,
   canToggleStaffStatus,
   canRevokeStaff,
+  validateLocationOperationalFields,
+  validateStaffPassword,
+  validateStaffUpdateInput,
+  canResetStaffPassword,
+  canManageBusinessProfile,
+  validateUpdateBusinessProfile,
+  getRolePermissionMatrix,
+  createRbacAuditEntry,
 } from '../domain';
 
 const BIZ_A = '00000000-0000-0000-0000-000000000001'; // Ủ LAB
@@ -356,5 +364,150 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     // Cashier không có thẩm quyền khóa hoặc thu hồi ai
     assert.strictEqual(canToggleStaffStatus('CASHIER', 'CASHIER'), false);
     assert.strictEqual(canRevokeStaff('CASHIER', 'INVENTORY_STAFF'), false);
+  });
+
+  // Test 17: Cấu hình vận hành điểm bán (validateLocationOperationalFields)
+  it('17. Kiểm tra hợp lệ cấu hình vận hành điểm bán (giờ mở cửa, tiền đầu ca VND, đơn web)', () => {
+    const valid = validateLocationOperationalFields({
+      openingHours: ' 07:00 - 22:00 ',
+      managerName: ' Nguyễn Văn Quản Lý ',
+      defaultOpeningCash: 1500000.4,
+      acceptWebOrders: false,
+      receiptFooter: ' Cảm ơn quý khách ',
+    });
+    assert.strictEqual(valid.openingHours, '07:00 - 22:00');
+    assert.strictEqual(valid.managerName, 'Nguyễn Văn Quản Lý');
+    assert.strictEqual(valid.defaultOpeningCash, 1500000);
+    assert.strictEqual(valid.acceptWebOrders, false);
+    assert.strictEqual(valid.receiptFooter, 'Cảm ơn quý khách');
+
+    assert.throws(
+      () => validateLocationOperationalFields({ openingHours: 'a'.repeat(101) }),
+      /Khung giờ mở cửa không được vượt quá 100 ký tự/,
+    );
+    assert.throws(
+      () => validateLocationOperationalFields({ defaultOpeningCash: -1000 }),
+      /Tiền đầu ca mặc định phải là số nguyên không âm/,
+    );
+    assert.throws(
+      () => validateLocationOperationalFields({ defaultOpeningCash: Number.NaN }),
+      /Tiền đầu ca mặc định phải là số nguyên không âm/,
+    );
+  });
+
+  // Test 18: Mật khẩu nhân sự & cập nhật thông tin liên hệ (validateStaffPassword & validateStaffUpdateInput)
+  it('18. Kiểm tra mật khẩu nhân sự (>= 6 ký tự) và cập nhật thông tin liên hệ nhân viên', () => {
+    assert.strictEqual(validateStaffPassword(undefined, false), undefined);
+    assert.strictEqual(validateStaffPassword('', false), undefined);
+    assert.strictEqual(validateStaffPassword(' secret123 ', true), 'secret123');
+
+    assert.throws(
+      () => validateStaffPassword('', true),
+      /Mật khẩu nhân viên phải có ít nhất 6 ký tự/,
+    );
+    assert.throws(
+      () => validateStaffPassword('12345', false),
+      /Mật khẩu nhân viên phải có ít nhất 6 ký tự/,
+    );
+
+    const updated = validateStaffUpdateInput({
+      fullName: ' Trần Thu Ngân ',
+      phone: '0912345678',
+      email: 'Cashier@Coffee.VN ',
+    });
+    assert.strictEqual(updated.fullName, 'Trần Thu Ngân');
+    assert.strictEqual(updated.phone, '0912345678');
+    assert.strictEqual(updated.email, 'cashier@coffee.vn');
+
+    assert.throws(
+      () => validateStaffUpdateInput({ fullName: 'A' }),
+      /Họ và tên nhân viên/,
+    );
+    assert.throws(
+      () => validateStaffUpdateInput({ phone: '123' }),
+      /Số điện thoại/,
+    );
+    assert.throws(
+      () => validateStaffUpdateInput({ email: 'not-an-email' }),
+      /Email/,
+    );
+  });
+
+  // Test 19: Phân cấp đặt lại mật khẩu nhân sự (canResetStaffPassword)
+  it('19. Phân cấp thẩm quyền đặt lại mật khẩu nhân sự', () => {
+    assert.strictEqual(canResetStaffPassword('OWNER', 'ADMIN'), true);
+    assert.strictEqual(canResetStaffPassword('OWNER', 'CASHIER'), true);
+    assert.strictEqual(canResetStaffPassword('ADMIN', 'MANAGER'), true);
+    assert.strictEqual(canResetStaffPassword('ADMIN', 'CASHIER'), true);
+    assert.strictEqual(canResetStaffPassword('ADMIN', 'OWNER'), false);
+    assert.strictEqual(canResetStaffPassword('ADMIN', 'ADMIN'), false);
+    assert.strictEqual(canResetStaffPassword('MANAGER', 'CASHIER'), false);
+    assert.strictEqual(canResetStaffPassword('CASHIER', 'CASHIER'), false);
+  });
+
+  // Test 20: Thẩm quyền & kiểm tra dữ liệu Hồ sơ doanh nghiệp (canManageBusinessProfile & validateUpdateBusinessProfile)
+  it('20. Chỉ OWNER/ADMIN mới có quyền cập nhật Hồ sơ doanh nghiệp và phải kiểm tra đầu vào', () => {
+    assert.strictEqual(canManageBusinessProfile('OWNER'), true);
+    assert.strictEqual(canManageBusinessProfile('ADMIN'), true);
+    assert.strictEqual(canManageBusinessProfile('MANAGER'), false);
+    assert.strictEqual(canManageBusinessProfile('CASHIER'), false);
+    assert.strictEqual(canManageBusinessProfile('INVENTORY_STAFF'), false);
+
+    const profile = validateUpdateBusinessProfile({
+      name: ' ULAB Coffee Roasters ',
+      taxCode: ' 0312345678 ',
+      phone: '0947038325',
+      email: ' Hello@ULAB.vn ',
+      address: ' 123 Nguyễn Huệ, Q1 ',
+      defaultReceiptFooter: ' Hẹn gặp lại ',
+    });
+    assert.strictEqual(profile.name, 'ULAB Coffee Roasters');
+    assert.strictEqual(profile.taxCode, '0312345678');
+    assert.strictEqual(profile.phone, '0947038325');
+    assert.strictEqual(profile.email, 'hello@ulab.vn');
+    assert.strictEqual(profile.address, '123 Nguyễn Huệ, Q1');
+    assert.strictEqual(profile.defaultReceiptFooter, 'Hẹn gặp lại');
+
+    assert.throws(() => validateUpdateBusinessProfile({ name: 'A' }));
+    assert.throws(() => validateUpdateBusinessProfile({ phone: 'abc' }));
+    assert.throws(() => validateUpdateBusinessProfile({ email: 'bad-mail' }));
+  });
+
+  // Test 21: Ma trận phân quyền 5 vai trò & tạo bản ghi nhật ký RBAC (getRolePermissionMatrix & createRbacAuditEntry)
+  it('21. Ma trận phân quyền trả về đầy đủ 9 nhóm quyền cho 5 vai trò và khởi tạo Audit Log hợp lệ', () => {
+    const matrix = getRolePermissionMatrix();
+    assert.strictEqual(matrix.length, 9);
+    const roles: MvpRole[] = ['OWNER', 'ADMIN', 'MANAGER', 'CASHIER', 'INVENTORY_STAFF'];
+    for (const row of matrix) {
+      assert.ok(row.key);
+      assert.ok(row.group);
+      assert.ok(row.capability);
+      assert.ok(row.description);
+      for (const role of roles) {
+        assert.strictEqual(typeof row.permissions[role], 'string');
+        assert.ok(row.permissions[role].length > 0);
+      }
+      assert.notStrictEqual(row.permissions.OWNER, 'Không được phép');
+    }
+
+    const entry = createRbacAuditEntry({
+      businessId: 'biz-01',
+      actorUserId: 'usr-owner',
+      actorName: 'Chủ quán',
+      actorRole: 'OWNER',
+      action: 'CREATE_LOCATION',
+      targetType: 'LOCATION',
+      targetId: 'loc-02',
+      targetName: 'Chi nhánh Thủ Đức',
+      summary: 'Tạo điểm bán mới Chi nhánh Thủ Đức',
+      metadata: { code: 'TD-02' },
+    });
+    assert.ok(typeof entry.id === 'string' && entry.id.length > 0);
+    assert.strictEqual(entry.businessId, 'biz-01');
+    assert.strictEqual(entry.actorRole, 'OWNER');
+    assert.strictEqual(entry.action, 'CREATE_LOCATION');
+    assert.strictEqual(entry.targetType, 'LOCATION');
+    assert.strictEqual(entry.targetId, 'loc-02');
+    assert.ok(!Number.isNaN(Date.parse(entry.createdAt)));
   });
 });
