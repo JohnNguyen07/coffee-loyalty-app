@@ -29,98 +29,289 @@ interface LocationDbRow {
   updated_at?: string;
 }
 
-// In-memory fallback store seeded for local development and unmigrated database fallback
-const fallbackLocations: LocationItem[] = [
-  {
-    id: DEFAULT_LOCATION_ID,
-    businessId: DEFAULT_BUSINESS_ID,
-    code: 'ULAB-MAIN',
-    name: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
-    address: 'Công Trường Quốc Tế, Quận 3, TP. Hồ Chí Minh',
-    phone: '0909000001',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000012',
-    businessId: DEFAULT_BUSINESS_ID,
-    code: 'ULAB-Q1',
-    name: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
-    address: 'Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
-    phone: '0909000012',
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+interface PersistedRbacState {
+  locations: LocationItem[];
+  staffByBusiness: Record<string, StaffMemberDto[]>;
+  updatedAt: string;
+}
 
-const fallbackStaffList: StaffMemberDto[] = [
-  {
-    userId: '00000000-0000-0000-0000-000000000003',
-    fullName: 'Quản trị viên Ủ LAB',
-    email: 'admin@coffeehouse.vn',
-    phone: '0909000001',
-    role: 'OWNER',
-    assignedLocations: [
-      {
-        locationId: DEFAULT_LOCATION_ID,
-        locationCode: 'ULAB-MAIN',
-        locationName: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
-      },
-      {
-        locationId: '00000000-0000-0000-0000-000000000012',
-        locationCode: 'ULAB-Q1',
-        locationName: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
-      },
-    ],
-    isActive: true,
-  },
-  {
-    userId: '0ad4fd98-d28e-4b8c-9a44-80be3c52a12b',
-    fullName: 'Nguyễn cao Hoàng Minh',
-    email: 'nguyencaohoangminh1@gmail.com',
-    phone: '0947038325',
-    role: 'ADMIN',
-    assignedLocations: [
-      {
-        locationId: DEFAULT_LOCATION_ID,
-        locationCode: 'ULAB-MAIN',
-        locationName: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
-      },
-      {
-        locationId: '00000000-0000-0000-0000-000000000012',
-        locationCode: 'ULAB-Q1',
-        locationName: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
-      },
-    ],
-    isActive: true,
-  },
-];
+const RBAC_BUCKET = 'ulab-system';
+const RBAC_OBJECT_PATH = 'rbac-store.json';
 
-export function findStaffByPhoneOrEmail(
+function buildSeedLocations(): LocationItem[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: DEFAULT_LOCATION_ID,
+      businessId: DEFAULT_BUSINESS_ID,
+      code: 'ULAB-MAIN',
+      name: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
+      address: 'Công Trường Quốc Tế, Quận 3, TP. Hồ Chí Minh',
+      phone: '0909000001',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000012',
+      businessId: DEFAULT_BUSINESS_ID,
+      code: 'ULAB-Q1',
+      name: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
+      address: 'Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
+      phone: '0909000012',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+function buildSeedStaff(): StaffMemberDto[] {
+  return [
+    {
+      userId: '00000000-0000-0000-0000-000000000003',
+      fullName: 'Quản trị viên Ủ LAB',
+      email: 'admin@coffeehouse.vn',
+      phone: '0909000001',
+      role: 'OWNER',
+      assignedLocations: [
+        {
+          locationId: DEFAULT_LOCATION_ID,
+          locationCode: 'ULAB-MAIN',
+          locationName: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
+        },
+        {
+          locationId: '00000000-0000-0000-0000-000000000012',
+          locationCode: 'ULAB-Q1',
+          locationName: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
+        },
+      ],
+      isActive: true,
+    },
+    {
+      userId: '0ad4fd98-d28e-4b8c-9a44-80be3c52a12b',
+      fullName: 'Nguyễn cao Hoàng Minh',
+      email: 'nguyencaohoangminh1@gmail.com',
+      phone: '0947038325',
+      role: 'ADMIN',
+      assignedLocations: [
+        {
+          locationId: DEFAULT_LOCATION_ID,
+          locationCode: 'ULAB-MAIN',
+          locationName: 'Ủ LAB — Quầy Chính (Hồ Con Rùa)',
+        },
+        {
+          locationId: '00000000-0000-0000-0000-000000000012',
+          locationCode: 'ULAB-Q1',
+          locationName: 'Ủ LAB — Chi nhánh Nguyễn Huệ (Quận 1)',
+        },
+      ],
+      isActive: true,
+    },
+  ];
+}
+
+// Keep fallback seed shared across Next.js route bundles in the same process
+const globalForRbac = globalThis as typeof globalThis & {
+  __ulabRbacState?: PersistedRbacState;
+  __ulabRbacBucketReady?: boolean;
+};
+
+function getInMemoryState(): PersistedRbacState {
+  if (!globalForRbac.__ulabRbacState) {
+    globalForRbac.__ulabRbacState = {
+      locations: buildSeedLocations(),
+      staffByBusiness: {
+        [DEFAULT_BUSINESS_ID]: buildSeedStaff(),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return globalForRbac.__ulabRbacState;
+}
+
+function getSupabaseStorageConfig(): { url: string; key: string } | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return { url: url.replace(/\/+$/, ''), key };
+}
+
+async function ensureRbacBucket(url: string, key: string): Promise<void> {
+  if (globalForRbac.__ulabRbacBucketReady) return;
+  const res = await fetch(`${url}/storage/v1/bucket`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ id: RBAC_BUCKET, name: RBAC_BUCKET, public: false }),
+    cache: 'no-store',
+  });
+  // 200/201 created, or 400/409 already exists
+  if (res.ok || res.status === 409) {
+    globalForRbac.__ulabRbacBucketReady = true;
+  } else {
+    const txt = await res.text().catch(() => '');
+    if (txt.toLowerCase().includes('already exists') || txt.toLowerCase().includes('duplicate')) {
+      globalForRbac.__ulabRbacBucketReady = true;
+    }
+  }
+}
+
+async function loadPersistedRbacState(): Promise<PersistedRbacState> {
+  const cfg = getSupabaseStorageConfig();
+  if (!cfg) {
+    return getInMemoryState();
+  }
+
+  try {
+    const dlUrl = `${cfg.url}/storage/v1/object/authenticated/${RBAC_BUCKET}/${RBAC_OBJECT_PATH}?t=${Date.now()}`;
+    const res = await fetch(dlUrl, {
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Cache-Control': 'no-store',
+      },
+      cache: 'no-store',
+    });
+
+    if (res.ok) {
+      const parsed = (await res.json()) as Partial<PersistedRbacState>;
+      const normalized: PersistedRbacState = {
+        locations: Array.isArray(parsed.locations) && parsed.locations.length > 0
+          ? parsed.locations
+          : buildSeedLocations(),
+        staffByBusiness:
+          parsed.staffByBusiness && typeof parsed.staffByBusiness === 'object'
+            ? parsed.staffByBusiness
+            : { [DEFAULT_BUSINESS_ID]: buildSeedStaff() },
+        updatedAt: parsed.updatedAt || new Date().toISOString(),
+      };
+      globalForRbac.__ulabRbacState = normalized;
+      return normalized;
+    }
+
+    if (res.status === 400 || res.status === 404) {
+      // First-time bootstrap: seed Supabase Storage with initial locations & staff
+      const seed = getInMemoryState();
+      await savePersistedRbacState(seed).catch(() => undefined);
+      return seed;
+    }
+  } catch (err) {
+    console.warn('Supabase Storage loadPersistedRbacState fallback:', err);
+  }
+
+  return getInMemoryState();
+}
+
+async function savePersistedRbacState(state: PersistedRbacState): Promise<void> {
+  const nextState: PersistedRbacState = {
+    ...state,
+    updatedAt: new Date().toISOString(),
+  };
+  globalForRbac.__ulabRbacState = nextState;
+
+  const cfg = getSupabaseStorageConfig();
+  if (!cfg) return;
+
+  await ensureRbacBucket(cfg.url, cfg.key);
+
+  const uploadUrl = `${cfg.url}/storage/v1/object/${RBAC_BUCKET}/${RBAC_OBJECT_PATH}`;
+  const doUpload = () =>
+    fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json',
+        'x-upsert': 'true',
+        'cache-control': 'no-cache, max-age=0',
+      },
+      body: JSON.stringify(nextState),
+      cache: 'no-store',
+    });
+
+  let res = await doUpload();
+  if (!res.ok) {
+    globalForRbac.__ulabRbacBucketReady = false;
+    await ensureRbacBucket(cfg.url, cfg.key);
+    res = await doUpload();
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Không thể lưu dữ liệu phân quyền lên hệ thống (${res.status}): ${errBody}`);
+    }
+  }
+}
+
+function getBusinessStaff(state: PersistedRbacState, businessId: string): StaffMemberDto[] {
+  if (!state.staffByBusiness[businessId]) {
+    state.staffByBusiness[businessId] =
+      businessId === DEFAULT_BUSINESS_ID ? buildSeedStaff() : [];
+  }
+  return state.staffByBusiness[businessId];
+}
+
+function normalizePhone(phone?: string | null): string | null {
+  if (!phone) return null;
+  const clean = phone.trim().replace(/[\s\-()]/g, '');
+  return clean || null;
+}
+
+function matchStaffInList(
+  list: StaffMemberDto[],
+  userId?: string | null,
   phone?: string | null,
   email?: string | null
 ): StaffMemberDto | null {
-  const normPhone = phone ? phone.trim().replace(/[\s\-()]/g, '') : null;
+  const normPhone = normalizePhone(phone);
   const normEmail = email ? email.trim().toLowerCase() : null;
 
   return (
-    fallbackStaffList.find((s) => {
-      const sp = s.phone ? s.phone.replace(/[\s\-()]/g, '') : null;
-      const se = s.email ? s.email.toLowerCase() : null;
+    list.find((s) => {
+      if (userId && s.userId === userId) return true;
+      const sp = normalizePhone(s.phone);
+      const se = s.email ? s.email.trim().toLowerCase() : null;
       return (normPhone && sp === normPhone) || (normEmail && se === normEmail);
     }) || null
   );
 }
 
+export function findStaffByPhoneOrEmail(
+  phone?: string | null,
+  email?: string | null
+): StaffMemberDto | null {
+  const state = getInMemoryState();
+  const list = getBusinessStaff(state, DEFAULT_BUSINESS_ID);
+  return matchStaffInList(list, null, phone, email);
+}
+
 export function findStaffByUserId(userId: string): StaffMemberDto | null {
-  return fallbackStaffList.find((s) => s.userId === userId) || null;
+  const state = getInMemoryState();
+  const list = getBusinessStaff(state, DEFAULT_BUSINESS_ID);
+  return matchStaffInList(list, userId, null, null);
+}
+
+/**
+ * Persistent async lookup of a staff member by userId, phone, or email.
+ * Checks DB business_memberships first, then persistent Supabase Storage RBAC state.
+ */
+export async function findStaffMemberAsync(params: {
+  userId?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  businessId?: string;
+}): Promise<StaffMemberDto | null> {
+  const businessId = params.businessId || DEFAULT_BUSINESS_ID;
+  const state = await loadPersistedRbacState();
+  const persistedList = getBusinessStaff(state, businessId);
+  return matchStaffInList(persistedList, params.userId, params.phone, params.email);
 }
 
 /**
  * List locations accessible to the given user based on their business and role.
- * Falls back gracefully to in-memory store if tables are unmigrated in Supabase.
+ * Reads from PostgreSQL locations if migrated, otherwise persisted Supabase Storage state.
  */
 export async function listLocationsForUser(user: UserRbacProfile): Promise<LocationItem[]> {
   try {
@@ -158,8 +349,8 @@ export async function listLocationsForUser(user: UserRbacProfile): Promise<Locat
     console.warn('DB locations query fallback:', err);
   }
 
-  // Fallback to in-memory locations filtered by user permissions
-  return filterAccessibleLocations(fallbackLocations, user);
+  const state = await loadPersistedRbacState();
+  return filterAccessibleLocations(state.locations, user);
 }
 
 /**
@@ -175,14 +366,16 @@ export async function createLocation(
   }
 
   const { code, name } = validateCreateLocationInput(input);
+  const state = await loadPersistedRbacState();
 
-  // Check if code already exists in fallback store
-  const existingCode = fallbackLocations.find(
+  const existingCode = state.locations.find(
     (l) => l.businessId === user.businessId && l.code.toUpperCase() === code
   );
   if (existingCode) {
     throw new Error(`Điểm bán với mã "${code}" đã tồn tại trong doanh nghiệp.`);
   }
+
+  let createdLoc: LocationItem | null = null;
 
   try {
     const adminClient = createAdminClient();
@@ -201,7 +394,7 @@ export async function createLocation(
 
     if (!error && data) {
       const row = data as LocationDbRow;
-      const createdLoc: LocationItem = {
+      createdLoc = {
         id: row.id,
         businessId: row.business_id,
         code: row.code,
@@ -212,28 +405,28 @@ export async function createLocation(
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
-      fallbackLocations.push(createdLoc);
-      return createdLoc;
     }
   } catch (err) {
-    console.warn('DB locations insert fallback to memory:', err);
+    console.warn('DB locations insert fallback:', err);
   }
 
-  // In-memory fallback
-  const newLoc: LocationItem = {
-    id: `loc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    businessId: user.businessId,
-    code,
-    name,
-    address: input.address?.trim() || null,
-    phone: input.phone?.trim() || null,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  if (!createdLoc) {
+    createdLoc = {
+      id: crypto.randomUUID(),
+      businessId: user.businessId,
+      code,
+      name,
+      address: input.address?.trim() || null,
+      phone: input.phone?.trim() || null,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
 
-  fallbackLocations.push(newLoc);
-  return newLoc;
+  state.locations.push(createdLoc);
+  await savePersistedRbacState(state);
+  return createdLoc;
 }
 
 /**
@@ -270,6 +463,9 @@ export async function updateLocation(
     updates.is_active = Boolean(input.isActive);
   }
 
+  const state = await loadPersistedRbacState();
+  let updatedFromDb: LocationItem | null = null;
+
   try {
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
@@ -282,7 +478,7 @@ export async function updateLocation(
 
     if (!error && data) {
       const row = data as LocationDbRow;
-      const updatedItem: LocationItem = {
+      updatedFromDb = {
         id: row.id,
         businessId: row.business_id,
         code: row.code,
@@ -293,22 +489,24 @@ export async function updateLocation(
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
-
-      const idx = fallbackLocations.findIndex((l) => l.id === locationId);
-      if (idx !== -1) fallbackLocations[idx] = updatedItem;
-      return updatedItem;
     }
   } catch (err) {
-    console.warn('DB locations update fallback to memory:', err);
+    console.warn('DB locations update fallback:', err);
   }
 
-  // In-memory fallback
-  const idx = fallbackLocations.findIndex((l) => l.id === locationId);
+  const idx = state.locations.findIndex((l) => l.id === locationId);
+  if (updatedFromDb) {
+    if (idx !== -1) state.locations[idx] = updatedFromDb;
+    else state.locations.push(updatedFromDb);
+    await savePersistedRbacState(state);
+    return updatedFromDb;
+  }
+
   if (idx === -1) {
     throw new Error('Điểm bán không tồn tại.');
   }
 
-  const existing = fallbackLocations[idx];
+  const existing = state.locations[idx];
   if (existing.businessId !== user.businessId) {
     throw new Error('FORBIDDEN_CROSS_BUSINESS: Không thể chỉnh sửa điểm bán của doanh nghiệp khác.');
   }
@@ -322,7 +520,8 @@ export async function updateLocation(
     updatedAt: new Date().toISOString(),
   };
 
-  fallbackLocations[idx] = updatedItem;
+  state.locations[idx] = updatedItem;
+  await savePersistedRbacState(state);
   return updatedItem;
 }
 
@@ -338,7 +537,6 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
   try {
     const adminClient = createAdminClient();
 
-    // 1. Get all active locations in this business
     const { data: locRows, error: locErr } = await adminClient
       .from('locations')
       .select('id, code, name')
@@ -350,14 +548,12 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
         locMap.set(l.id, { code: l.code, name: l.name });
       });
 
-      // 2. Get memberships in this business
       const { data: memberships, error: memErr } = await adminClient
         .from('business_memberships')
         .select('user_id, role, is_active')
         .eq('business_id', user.businessId);
 
       if (!memErr && memberships && memberships.length > 0) {
-        // Return DB members
         const { data: assignRows } = await adminClient
           .from('user_location_assignments')
           .select('user_id, location_id, is_active')
@@ -406,8 +602,8 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
     console.warn('DB listStaffMembers fallback:', err);
   }
 
-  // Return fallback staff list
-  return fallbackStaffList;
+  const state = await loadPersistedRbacState();
+  return getBusinessStaff(state, user.businessId);
 }
 
 /**
@@ -429,11 +625,12 @@ export async function assignStaffRoleAndLocations(
     throw new Error('FORBIDDEN_CANNOT_ASSIGN_LOCATIONS: Bạn không có quyền phân công điểm bán.');
   }
 
-  try {
-    const adminClient = createAdminClient();
+  const state = await loadPersistedRbacState();
+  const staffList = getBusinessStaff(state, actor.businessId);
+  const adminClient = createAdminClient();
 
-    // 1. Upsert business_memberships
-    await adminClient
+  try {
+    const { error: upsertErr } = await adminClient
       .from('business_memberships')
       .upsert(
         {
@@ -446,30 +643,35 @@ export async function assignStaffRoleAndLocations(
         { onConflict: 'business_id,user_id' }
       );
 
-    // 2. Update user_location_assignments
-    await adminClient
-      .from('user_location_assignments')
-      .delete()
-      .eq('business_id', actor.businessId)
-      .eq('user_id', targetUserId);
+    if (!upsertErr) {
+      await adminClient
+        .from('user_location_assignments')
+        .delete()
+        .eq('business_id', actor.businessId)
+        .eq('user_id', targetUserId);
 
-    if (locationIds.length > 0) {
-      const newAssignments = locationIds.map((locId) => ({
-        business_id: actor.businessId,
-        user_id: targetUserId,
-        location_id: locId,
-        is_active: true,
-      }));
+      if (locationIds.length > 0) {
+        const newAssignments = locationIds.map((locId) => ({
+          business_id: actor.businessId,
+          user_id: targetUserId,
+          location_id: locId,
+          is_active: true,
+        }));
 
-      await adminClient.from('user_location_assignments').insert(newAssignments);
+        await adminClient.from('user_location_assignments').insert(newAssignments);
+      }
     }
+
+    const isElevated = targetRole === 'OWNER' || targetRole === 'ADMIN';
+    await adminClient
+      .from('users')
+      .update({ role: isElevated ? 'ADMIN' : 'USER' })
+      .eq('id', targetUserId);
   } catch (err) {
     console.warn('DB assignStaffRoleAndLocations fallback:', err);
   }
 
-  // Update in-memory fallback staff
-  const staffIdx = fallbackStaffList.findIndex((s) => s.userId === targetUserId);
-  const matchedLocations = fallbackLocations
+  const matchedLocations = state.locations
     .filter((l) => locationIds.includes(l.id))
     .map((l) => ({
       locationId: l.id,
@@ -477,22 +679,33 @@ export async function assignStaffRoleAndLocations(
       locationName: l.name,
     }));
 
+  const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
   if (staffIdx !== -1) {
-    fallbackStaffList[staffIdx].role = targetRole;
-    fallbackStaffList[staffIdx].assignedLocations = matchedLocations;
+    staffList[staffIdx].role = targetRole;
+    staffList[staffIdx].assignedLocations = matchedLocations;
   } else {
-    fallbackStaffList.push({
+    const { data: userInfo } = await adminClient
+      .from('users')
+      .select('full_name, email, phone')
+      .eq('id', targetUserId)
+      .maybeSingle();
+
+    staffList.push({
       userId: targetUserId,
-      fullName: 'Nhân viên mới',
+      fullName: userInfo?.full_name || 'Nhân viên mới',
+      email: userInfo?.email || null,
+      phone: userInfo?.phone || null,
       role: targetRole,
       assignedLocations: matchedLocations,
       isActive: true,
     });
   }
+
+  await savePersistedRbacState(state);
 }
 
 /**
- * Create a new staff member and assign initial role and locations.
+ * Create a new staff member (or promote/assign an existing user) with initial role & locations.
  */
 export async function createStaffMember(
   actor: UserRbacProfile,
@@ -506,37 +719,60 @@ export async function createStaffMember(
 
   validateStaffCreateInput(input);
 
-  const cleanPhone = (input.phone || '').trim().replace(/[\s\-()]/g, '');
+  const cleanPhone = normalizePhone(input.phone) || '';
   const cleanEmail = (input.email || '').trim().toLowerCase();
   const adminClient = createAdminClient();
+  const state = await loadPersistedRbacState();
+  const staffList = getBusinessStaff(state, actor.businessId);
 
   let resolvedUserId: string | null = null;
+  let existingEmail: string | null = null;
+  let existingPhone: string | null = null;
 
-  // Check if user already exists in users table by phone or email
   try {
     if (cleanPhone) {
-      const { data: byPhone } = await adminClient
+      const { data: byPhoneRows } = await adminClient
         .from('users')
-        .select('id, role')
+        .select('id, role, email, phone')
         .eq('phone', cleanPhone)
-        .maybeSingle();
-      if (byPhone?.id) resolvedUserId = byPhone.id;
+        .limit(1);
+      const byPhone = byPhoneRows?.[0];
+      if (byPhone?.id) {
+        resolvedUserId = byPhone.id;
+        existingEmail = byPhone.email || null;
+        existingPhone = byPhone.phone || null;
+      }
     }
     if (!resolvedUserId && cleanEmail) {
-      const { data: byEmail } = await adminClient
+      const { data: byEmailRows } = await adminClient
         .from('users')
-        .select('id, role')
+        .select('id, role, email, phone')
         .eq('email', cleanEmail)
-        .maybeSingle();
-      if (byEmail?.id) resolvedUserId = byEmail.id;
+        .limit(1);
+      const byEmail = byEmailRows?.[0];
+      if (byEmail?.id) {
+        resolvedUserId = byEmail.id;
+        existingEmail = byEmail.email || null;
+        existingPhone = byEmail.phone || null;
+      }
     }
   } catch (err) {
     console.warn('Check existing user for staff member fallback:', err);
   }
 
+  // Also check if already in persisted staff list by phone/email
+  if (!resolvedUserId) {
+    const existingStaff = matchStaffInList(staffList, null, cleanPhone, cleanEmail);
+    if (existingStaff) {
+      resolvedUserId = existingStaff.userId;
+      existingEmail = existingStaff.email || null;
+      existingPhone = existingStaff.phone || null;
+    }
+  }
+
   const finalUserId = resolvedUserId || crypto.randomUUID();
 
-  const matchedLocations = fallbackLocations
+  const matchedLocations = state.locations
     .filter((l) => input.locationIds.includes(l.id))
     .map((l) => ({
       locationId: l.id,
@@ -547,8 +783,8 @@ export async function createStaffMember(
   const newStaff: StaffMemberDto = {
     userId: finalUserId,
     fullName: input.fullName.trim(),
-    email: cleanEmail || null,
-    phone: cleanPhone || null,
+    email: cleanEmail || existingEmail || null,
+    phone: cleanPhone || existingPhone || null,
     role: input.role,
     assignedLocations: matchedLocations,
     isActive: true,
@@ -558,16 +794,19 @@ export async function createStaffMember(
     const isElevatedRole = input.role === 'OWNER' || input.role === 'ADMIN';
 
     if (resolvedUserId) {
-      // User exists, update role to ADMIN if elevated and sync name
+      const updatePayload: Record<string, unknown> = {
+        full_name: newStaff.fullName,
+        role: isElevatedRole ? 'ADMIN' : 'USER',
+        updated_at: new Date().toISOString(),
+      };
+      if (cleanPhone && !existingPhone) updatePayload.phone = cleanPhone;
+      if (cleanEmail && !existingEmail) updatePayload.email = cleanEmail;
+
       await adminClient
         .from('users')
-        .update({
-          full_name: newStaff.fullName,
-          role: isElevatedRole ? 'ADMIN' : 'USER',
-        })
+        .update(updatePayload)
         .eq('id', resolvedUserId);
     } else {
-      // Insert new user record
       await adminClient.from('users').insert({
         id: finalUserId,
         full_name: newStaff.fullName,
@@ -578,41 +817,49 @@ export async function createStaffMember(
       });
     }
 
-    // Try creating membership and assignments if tables exist
-    await adminClient.from('business_memberships').upsert({
-      business_id: actor.businessId,
-      user_id: finalUserId,
-      role: input.role,
-      is_active: true,
-    });
+    const { error: bmErr } = await adminClient.from('business_memberships').upsert(
+      {
+        business_id: actor.businessId,
+        user_id: finalUserId,
+        role: input.role,
+        is_active: true,
+      },
+      { onConflict: 'business_id,user_id' }
+    );
 
-    if (input.locationIds.length > 0) {
+    if (!bmErr && input.locationIds.length > 0) {
+      await adminClient
+        .from('user_location_assignments')
+        .delete()
+        .eq('business_id', actor.businessId)
+        .eq('user_id', finalUserId);
+
       const assignments = input.locationIds.map((locId) => ({
         business_id: actor.businessId,
         user_id: finalUserId,
         location_id: locId,
         is_active: true,
       }));
-      await adminClient.from('user_location_assignments').upsert(assignments);
+      await adminClient.from('user_location_assignments').insert(assignments);
     }
   } catch (err) {
-    console.warn('DB createStaffMember sync fallback to memory:', err);
+    console.warn('DB createStaffMember sync fallback:', err);
   }
 
-  // Update or insert into fallbackStaffList
-  const existingIdx = fallbackStaffList.findIndex(
+  const existingIdx = staffList.findIndex(
     (s) =>
       s.userId === finalUserId ||
-      (cleanPhone && s.phone?.replace(/[\s\-()]/g, '') === cleanPhone) ||
+      (cleanPhone && normalizePhone(s.phone) === cleanPhone) ||
       (cleanEmail && s.email?.toLowerCase() === cleanEmail)
   );
 
   if (existingIdx !== -1) {
-    fallbackStaffList[existingIdx] = newStaff;
+    staffList[existingIdx] = newStaff;
   } else {
-    fallbackStaffList.push(newStaff);
+    staffList.push(newStaff);
   }
 
+  await savePersistedRbacState(state);
   return newStaff;
 }
 
@@ -624,7 +871,9 @@ export async function toggleStaffStatus(
   targetUserId: string,
   isActive: boolean
 ): Promise<void> {
-  const staff = fallbackStaffList.find((s) => s.userId === targetUserId);
+  const state = await loadPersistedRbacState();
+  const staffList = getBusinessStaff(state, actor.businessId);
+  const staff = staffList.find((s) => s.userId === targetUserId);
   if (!staff) {
     throw new Error('Nhân viên không tồn tại.');
   }
@@ -645,6 +894,7 @@ export async function toggleStaffStatus(
   }
 
   staff.isActive = isActive;
+  await savePersistedRbacState(state);
 }
 
 /**
@@ -654,12 +904,14 @@ export async function revokeStaffMember(
   actor: UserRbacProfile,
   targetUserId: string
 ): Promise<void> {
-  const staffIdx = fallbackStaffList.findIndex((s) => s.userId === targetUserId);
+  const state = await loadPersistedRbacState();
+  const staffList = getBusinessStaff(state, actor.businessId);
+  const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
   if (staffIdx === -1) {
     throw new Error('Nhân viên không tồn tại.');
   }
 
-  const staff = fallbackStaffList[staffIdx];
+  const staff = staffList[staffIdx];
   if (!canRevokeStaff(actor.role, staff.role)) {
     throw new Error('Bạn không có quyền xóa nhân viên này.');
   }
@@ -677,9 +929,17 @@ export async function revokeStaffMember(
       .delete()
       .eq('business_id', actor.businessId)
       .eq('user_id', targetUserId);
+
+    if (staff.email?.toLowerCase() !== 'admin@coffeehouse.vn') {
+      await adminClient
+        .from('users')
+        .update({ role: 'USER' })
+        .eq('id', targetUserId);
+    }
   } catch (err) {
     console.warn('DB revokeStaffMember fallback:', err);
   }
 
-  fallbackStaffList.splice(staffIdx, 1);
+  staffList.splice(staffIdx, 1);
+  await savePersistedRbacState(state);
 }

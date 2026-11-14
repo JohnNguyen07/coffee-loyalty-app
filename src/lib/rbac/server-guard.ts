@@ -8,7 +8,7 @@ import {
   validateServerLocationAccess,
 } from './domain';
 import { DEFAULT_BUSINESS_ID, DEFAULT_LOCATION_ID } from '@/lib/pos/domain';
-import { findStaffByUserId, findStaffByPhoneOrEmail } from './repository';
+import { findStaffMemberAsync } from './repository';
 
 export const DEFAULT_LOCATIONS_SEED_IDS = [
   DEFAULT_LOCATION_ID,
@@ -118,20 +118,27 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     console.warn('users table fetch fallback:', err);
   }
 
-  // 2b. Check in-memory / persistent staff registry by user ID, phone, or email
-  const staffMember =
-    findStaffByUserId(resolvedUserId) ||
-    findStaffByPhoneOrEmail(resolvedPhone, resolvedEmail);
+  // 2b. Check persistent RBAC staff registry (Supabase Storage / DB cache) by user ID, phone, or email
+  const preliminaryBizId = membershipBusinessId || dbBusinessId || DEFAULT_BUSINESS_ID;
+  const staffMember = await findStaffMemberAsync({
+    userId: resolvedUserId,
+    phone: resolvedPhone,
+    email: resolvedEmail,
+    businessId: preliminaryBizId,
+  });
 
-  if (staffMember) {
-    if (staffMember.role === 'OWNER' || staffMember.role === 'ADMIN') {
-      fallbackIsAdmin = true;
-    }
+  // If the staff account was explicitly locked in Settings, deny RBAC access
+  if (staffMember && !staffMember.isActive) {
+    return null;
+  }
+
+  if (staffMember && (staffMember.role === 'OWNER' || staffMember.role === 'ADMIN')) {
+    fallbackIsAdmin = true;
   }
 
   // 3. Determine business_id and role
-  const businessId = membershipBusinessId || dbBusinessId || DEFAULT_BUSINESS_ID;
-  let role: MvpRole = 'ADMIN';
+  const businessId = preliminaryBizId;
+  let role: MvpRole;
 
   if (membershipRole) {
     role = membershipRole;
@@ -146,10 +153,11 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
   } else if (dbStaffRole === 'CASHIER') {
     role = 'CASHIER';
   } else {
-    role = fallbackIsAdmin ? 'ADMIN' : 'CASHIER';
+    // Authenticated regular customer without any staff role assignment
+    return null;
   }
 
-  // 4. Fetch assigned locations from user_location_assignments
+  // 4. Fetch assigned locations from user_location_assignments or persistent RBAC store
   let assignedLocationIds: string[] = [];
 
   try {
@@ -165,6 +173,10 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
     }
   } catch (err) {
     console.warn('user_location_assignments fetch fallback:', err);
+  }
+
+  if (assignedLocationIds.length === 0 && staffMember?.assignedLocations?.length) {
+    assignedLocationIds = staffMember.assignedLocations.map((l) => l.locationId);
   }
 
   // If Owner or Admin, they automatically have access to all locations

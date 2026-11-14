@@ -300,12 +300,30 @@ export default function ProductsPanel() {
               return (
                 <tr key={item.id} className={`${styles.tableRow} ${isOut ? styles.tableRowOut : ''}`}>
                   <td>
-                    <div className={styles.itemName}>{item.name}</div>
-                    {(item.description || item.shelfLife) && (
-                      <div className={styles.itemSub}>
-                        {item.description || item.shelfLife}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 8,
+                            objectFit: 'cover',
+                            flexShrink: 0,
+                            border: '1px solid rgba(0,0,0,0.08)',
+                          }}
+                        />
+                      )}
+                      <div>
+                        <div className={styles.itemName}>{item.name}</div>
+                        {(item.description || item.shelfLife) && (
+                          <div className={styles.itemSub}>
+                            {item.description || item.shelfLife}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </td>
                   <td>
                     <span className={styles.badge}>

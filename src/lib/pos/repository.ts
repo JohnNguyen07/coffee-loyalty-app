@@ -291,6 +291,7 @@ export async function getPosMenuCatalog() {
               description: staticMatch?.description || item.description || undefined,
               category: cat.name,
               categorySlug: cat.slug,
+              imageUrl: staticMatch?.imageUrl,
               isSignature: Boolean(item.is_signature ?? staticMatch?.isSignature),
               badgeLabel: staticMatch?.badgeLabel,
               hasMilkChoice: staticMatch?.hasMilkChoice,

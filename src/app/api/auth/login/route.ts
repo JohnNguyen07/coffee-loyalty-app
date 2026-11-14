@@ -126,26 +126,28 @@ export async function POST(request: NextRequest) {
 
     const isAdminEmail = targetEmail.toLowerCase() === 'admin@coffeehouse.vn';
 
-    const { findStaffByPhoneOrEmail, findStaffByUserId } = await import('@/lib/rbac/repository');
-    const matchedStaff =
-      (profile ? findStaffByUserId(profile.id) : null) ||
-      findStaffByPhoneOrEmail(cleanAccount, targetEmail) ||
-      (profile?.phone ? findStaffByPhoneOrEmail(profile.phone, null) : null);
+    const { findStaffMemberAsync } = await import('@/lib/rbac/repository');
+    const matchedStaff = await findStaffMemberAsync({
+      userId: profile ? profile.id : authData.user.id,
+      phone: profile?.phone || cleanAccount,
+      email: profile?.email || targetEmail,
+    });
+    const activeMatchedStaff = matchedStaff && matchedStaff.isActive ? matchedStaff : null;
 
     const isStaffElevated =
       isAdminEmail ||
       profile?.role === 'ADMIN' ||
-      matchedStaff?.role === 'OWNER' ||
-      matchedStaff?.role === 'ADMIN';
+      activeMatchedStaff?.role === 'OWNER' ||
+      activeMatchedStaff?.role === 'ADMIN';
 
     const effectiveRole = isStaffElevated
       ? 'ADMIN'
-      : (matchedStaff?.role || profile?.role || 'USER');
+      : (activeMatchedStaff?.role || profile?.role || 'USER');
 
     const fullUser = profile ? {
       ...profile,
       role: effectiveRole,
-      staff_role: matchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
+      staff_role: activeMatchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
       next_tier: nextTier || null,
       recent_transactions: recentTransactions || [],
     } : {
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
       full_name: authData.user.user_metadata?.full_name || (isStaffElevated ? 'Quản trị viên' : 'Khách hàng'),
       phone: authData.user.user_metadata?.phone || cleanAccount,
       role: effectiveRole,
-      staff_role: matchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
+      staff_role: activeMatchedStaff?.role || (effectiveRole === 'ADMIN' ? 'ADMIN' : undefined),
       point_balance: 10000,
       total_spending: 0,
       tier: { code: 'MEMBER', name: 'Member', cashback_rate: 3 },

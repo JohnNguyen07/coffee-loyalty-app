@@ -1092,7 +1092,23 @@ export default function POSPanel() {
                                 className={`${styles.posDrinkCard} ${isOut ? styles.posDrinkCardOut : ''}`}
                               >
                                 <div className={styles.posDrinkTop}>
-                                  <span className={styles.posDrinkName}>{item.name}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {item.imageUrl && (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        style={{
+                                          width: 36,
+                                          height: 36,
+                                          borderRadius: 8,
+                                          objectFit: 'cover',
+                                          flexShrink: 0,
+                                          border: '1px solid rgba(0,0,0,0.06)',
+                                        }}
+                                      />
+                                    )}
+                                    <span className={styles.posDrinkName}>{item.name}</span>
+                                  </div>
                                   {item.isSignature && (
                                     <span className={styles.sigTag}>
                                       ★ {item.badgeLabel || 'Signature'}

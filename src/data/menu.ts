@@ -47,6 +47,7 @@ export interface MenuItem {
   category: string;
   categorySlug: string;
   sizes: MenuItemSize[];
+  imageUrl?: string;
   isSignature?: boolean;
   badgeLabel?: string; // 'Signature' | 'Special'
   hasMilkChoice?: boolean; // Free switch between Sữa thanh trùng & Sữa Oat
@@ -76,6 +77,7 @@ export const menuData: MenuCategory[] = [
         description: 'Cà phê ủ lạnh 18h',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/original-cold-brew.png',
         tag: '18h Steeped',
         sizes: [
           { label: 'M', price: 30000 },
@@ -88,6 +90,7 @@ export const menuData: MenuCategory[] = [
         description: 'Hương cam vàng kết hợp sả thanh nhẹ',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-cam-sa.png',
         tag: 'Signature',
         isSignature: true,
         badgeLabel: 'Signature',
@@ -102,6 +105,7 @@ export const menuData: MenuCategory[] = [
         description: 'Vị ngọt thanh từ dâu tằm tự nhiên',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-dau-tam.png',
         tag: 'Dâu Tằm',
         sizes: [
           { label: 'M', price: 35000 },
@@ -114,6 +118,7 @@ export const menuData: MenuCategory[] = [
         description: 'Hòa quyện dâu tây chua ngọt thanh mát',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-strawberry.png',
         tag: 'Strawberry',
         sizes: [
           { label: 'M', price: 35000 },
@@ -126,6 +131,7 @@ export const menuData: MenuCategory[] = [
         description: 'Hương bưởi hồng tươi mới, sảng khoái',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-buoi-hong.png',
         tag: 'Bưởi Hồng',
         sizes: [
           { label: 'M', price: 35000 },
@@ -138,6 +144,7 @@ export const menuData: MenuCategory[] = [
         description: 'Hương vải thiều ngọt thanh, thơm mát',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-vai.png',
         tag: 'Vải Thiều',
         sizes: [
           { label: 'M', price: 35000 },
@@ -150,6 +157,7 @@ export const menuData: MenuCategory[] = [
         description: 'Cà phê ủ lạnh dùng với syrup chanh vàng',
         category: 'Cold Brew',
         categorySlug: 'cold-brew',
+        imageUrl: '/menu/cold-brew-chanh-vang.png',
         tag: 'Refreshing',
         sizes: [
           { label: 'M', price: 30000 },
@@ -182,6 +190,7 @@ export const menuData: MenuCategory[] = [
         description: '5g matcha · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
+        imageUrl: '/menu/matcha-latte.png',
         tag: 'Fuji MK4',
         hasMilkChoice: true,
         sizes: [
@@ -194,6 +203,7 @@ export const menuData: MenuCategory[] = [
         description: '5g matcha · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
+        imageUrl: '/menu/matcha-kem-beo.png',
         tag: 'Signature',
         isSignature: true,
         badgeLabel: 'Signature',
@@ -208,6 +218,7 @@ export const menuData: MenuCategory[] = [
         description: '5g matcha · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
+        imageUrl: '/menu/strawberry-matcha.png',
         tag: 'Dâu Tươi',
         hasMilkChoice: true,
         sizes: [
@@ -232,6 +243,7 @@ export const menuData: MenuCategory[] = [
         description: '7g matcha đánh lạnh · Sữa thanh trùng / Sữa Oat',
         category: 'Matcha',
         categorySlug: 'matcha',
+        imageUrl: '/menu/matcha-cold-whisk.png',
         tag: 'Special',
         isSignature: true,
         badgeLabel: 'Special',
@@ -254,6 +266,7 @@ export const menuData: MenuCategory[] = [
         description: 'Bottled Craft · Cà phê ủ lạnh chanh vàng đóng chai',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
+        imageUrl: '/menu/cold-brew-chanh-vang-chai.png',
         tag: 'Bottled Craft',
         sizes: [
           { label: 'Chai', price: 75000 },
@@ -265,6 +278,7 @@ export const menuData: MenuCategory[] = [
         description: 'Zero Sugar · Cà phê ủ lạnh nguyên bản đóng chai',
         category: 'Cold Brew Chai',
         categorySlug: 'cold-brew-chai',
+        imageUrl: '/menu/pure-black-cold-brew.png',
         tag: 'Zero Sugar',
         sizes: [
           { label: 'Chai', price: 70000 },

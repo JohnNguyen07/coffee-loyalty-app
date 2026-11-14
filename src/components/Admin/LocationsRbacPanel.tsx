@@ -82,7 +82,7 @@ export default function LocationsRbacPanel() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/rbac/profile');
+      const res = await fetch('/api/rbac/profile', { cache: 'no-store' });
       const data = await res.json();
 
       if (data.success && data.profile) {
@@ -94,10 +94,12 @@ export default function LocationsRbacPanel() {
         // If Owner or Admin, load staff list
         if (data.profile.role === 'OWNER' || data.profile.role === 'ADMIN') {
           try {
-            const staffRes = await fetch('/api/rbac/staff');
+            const staffRes = await fetch('/api/rbac/staff', { cache: 'no-store' });
             const staffData = await staffRes.json();
-            if (staffData.success && staffData.staff) {
+            if (staffRes.ok && staffData.success && staffData.staff) {
               setStaffList(staffData.staff);
+            } else if (staffData.error) {
+              setStatusMessage({ type: 'error', text: staffData.error });
             }
           } catch {
             // keep existing staff list if any

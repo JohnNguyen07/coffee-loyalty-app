@@ -469,3 +469,105 @@
 .ttBtn svg {
   color: #111111;
 }
+
+.grabBtn {
+  border-color: rgba(0, 177, 79, 0.38);
+  background: rgba(0, 177, 79, 0.08);
+  color: #007A37;
+}
+
+.grabBtn svg {
+  color: #00B14F;
+}
+
+.grabBtn:hover {
+  background: #00873D;
+  border-color: #00873D;
+  color: #FFFFFF;
+}
+
+.grabBtn:hover svg {
+  color: #FFFFFF;
+}
+
+@media (max-width: 1024px) {
+  .fbBtn:not(.grabBtn) {
+    width: 36px;
+    padding: 0;
+  }
+  .fbBtn:not(.grabBtn) .fbBtnLabel {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .inner {
+    height: 64px;
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .leftCluster {
+    min-width: 0;
+  }
+  .actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .fbBtn:not(.grabBtn) {
+    display: none;
+  }
+  .grabBtn {
+    width: auto;
+    height: 34px;
+    padding: 0 10px;
+    flex-shrink: 0;
+  }
+  .grabBtn .fbBtnLabel {
+    display: inline;
+    font-size: 0.75rem;
+  }
+  .tierChip {
+    padding: 5px 10px;
+    min-height: 34px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .tierChipText {
+    font-size: 0.75rem;
+    gap: 4px;
+  }
+  .cartBtn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 429px) {
+  .inner {
+    padding: 0 10px;
+    gap: 6px;
+  }
+  .actions {
+    gap: 5px;
+  }
+  .grabBtn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+  }
+  .grabBtn .fbBtnLabel {
+    display: none;
+  }
+  .tierChip {
+    padding: 4px 9px;
+    min-height: 32px;
+  }
+  .tierChip:not(.tierChipMember) .tierChipIcon {
+    display: none;
+  }
+  .cartBtn {
+    width: 34px;
+    height: 34px;
+  }
+}

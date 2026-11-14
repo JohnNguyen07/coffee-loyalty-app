@@ -28,6 +28,8 @@ const STORE_DIRECTIONS_URL =
   'https://www.google.com/maps/dir/?api=1&destination=10.7963201,106.710408';
 const STORE_EMBED_MAP_URL =
   'https://maps.google.com/maps?q=10.7963201,106.710408&hl=vi&z=19&output=embed';
+const STORE_GRABFOOD_URL =
+  process.env.NEXT_PUBLIC_GRABFOOD_URL || 'https://r.grab.com/o/Z66SKXzl';
 
 export default function Home() {
   const router = useRouter();
@@ -394,6 +396,19 @@ export default function Home() {
                 >
                   Xem trên bản đồ lớn
                 </a>
+                <a
+                  href={STORE_GRABFOOD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.locationGrabBtn}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                    <path d="M7 2v20" />
+                    <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                  </svg>
+                  <span>Đặt trên GrabFood</span>
+                </a>
               </div>
             </div>
 
@@ -517,6 +532,20 @@ export default function Home() {
                     <path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.513 3.738 7.202V22l3.376-1.853c.913.253 1.884.39 2.886.39 5.523 0 10-4.145 10-9.279C22 6.145 17.523 2 12 2zm1.066 12.477l-2.545-2.715-4.968 2.715 5.464-5.803 2.607 2.715 4.906-2.715-5.464 5.803z" />
                   </svg>
                   <span>Nhắn tin đặt hàng</span>
+                </a>
+
+                <a
+                  href={STORE_GRABFOOD_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.footerGrabBtn}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                    <path d="M7 2v20" />
+                    <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                  </svg>
+                  <span>Đặt GrabFood</span>
                 </a>
               </div>
             </div>

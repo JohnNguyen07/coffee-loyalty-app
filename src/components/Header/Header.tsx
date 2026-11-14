@@ -46,6 +46,9 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
   const tiktokUrl =
     process.env.NEXT_PUBLIC_TIKTOK_URL ||
     'https://www.tiktok.com/@ulabcoffee0';
+  const grabfoodUrl =
+    process.env.NEXT_PUBLIC_GRABFOOD_URL ||
+    'https://r.grab.com/o/Z66SKXzl';
 
   return (
     <header className={styles.headerWrapper}>
@@ -164,6 +167,22 @@ export default function Header({ onCartClick, onProfileClick }: HeaderProps) {
                 <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" />
               </svg>
               <span className={styles.fbBtnLabel}>TikTok</span>
+            </a>
+
+            <a
+              href={grabfoodUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${styles.fbBtn} ${styles.grabBtn}`}
+              aria-label="Đặt Ủ LAB trên GrabFood"
+              title="Đặt Ủ LAB trên GrabFood"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                <path d="M7 2v20" />
+                <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+              </svg>
+              <span className={styles.fbBtnLabel}>GrabFood</span>
             </a>
 
             {/* User Profile / Rewards Tier Pill */}

@@ -76,14 +76,25 @@ export default function MenuCard({ item, index }: MenuCardProps) {
       id={`menu-card-${item.id}`}
     >
       {/* Studio Product Photography / Illustration Area */}
-      <div className={styles.imageArea}>
-        <div className={styles.illustrationWrap}>
-          <DrinkIllustration
-            itemId={item.id}
-            categorySlug={item.categorySlug}
-            className={styles.drinkSvg}
-          />
-        </div>
+      <div className={`${styles.imageArea} ${item.imageUrl ? styles.imageAreaPhoto : ''}`}>
+        {item.imageUrl ? (
+          <div className={styles.photoWrap}>
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className={styles.productPhoto}
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          <div className={styles.illustrationWrap}>
+            <DrinkIllustration
+              itemId={item.id}
+              categorySlug={item.categorySlug}
+              className={styles.drinkSvg}
+            />
+          </div>
+        )}
 
         {/* Top Badges */}
         <div className={styles.topBadges}>

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { findStaffMemberAsync } from '@/lib/rbac/repository';
 
 // GET /api/user/profile — Get current user profile with tier and transactions info
 export async function GET() {
@@ -62,9 +63,23 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(10);
 
+  // Resolve active RBAC staff role so Header & Admin UI stay in sync
+  const staffMember = await findStaffMemberAsync({
+    userId: profile.id,
+    phone: profile.phone,
+    email: profile.email,
+  });
+  const activeStaffRole =
+    staffMember && staffMember.isActive
+      ? staffMember.role
+      : profile.role === 'ADMIN'
+        ? 'ADMIN'
+        : undefined;
+
   return NextResponse.json({
     user: {
       ...profile,
+      staff_role: activeStaffRole,
       next_tier: nextTier || null,
       recent_transactions: recentTransactions || [],
     },

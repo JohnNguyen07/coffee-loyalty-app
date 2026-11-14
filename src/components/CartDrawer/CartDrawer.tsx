@@ -452,9 +452,22 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       className={styles.cartItem}
                     >
                       <div className={styles.itemThumb}>
-                        <span className={styles.itemCatBadge}>
-                          {ci.menuItem.categorySlug === 'matcha' ? 'MATCHA' : 'BREW'}
-                        </span>
+                        {ci.menuItem.imageUrl ? (
+                          <img
+                            src={ci.menuItem.imageUrl}
+                            alt={ci.menuItem.name}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              borderRadius: 'inherit',
+                            }}
+                          />
+                        ) : (
+                          <span className={styles.itemCatBadge}>
+                            {ci.menuItem.categorySlug === 'matcha' ? 'MATCHA' : 'BREW'}
+                          </span>
+                        )}
                       </div>
 
                       <div className={styles.itemDetails}>
