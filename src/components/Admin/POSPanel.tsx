@@ -6,16 +6,19 @@ import styles from './POSPanel.module.css';
 import {
   menuData as fallbackMenuData,
   formatVND,
+  isMatchaItem,
   type MenuCategory,
   type MenuItem,
 } from '@/data/menu';
 import {
   ADDON_OPTIONS,
   ICE_OPTIONS,
+  POS_STANDALONE_TOPPINGS,
   SWEETNESS_OPTIONS,
   CASHIER_MAX_DISCOUNT_AMOUNT,
   CASHIER_MAX_DISCOUNT_PERCENT,
   calculatePosOrderTotals,
+  extractAddonsFromProductName,
   formatItemOptionsSummary,
   validateHoldCartInput,
   validateShippingFeeInput,
@@ -100,6 +103,7 @@ export default function POSPanel() {
 
   // ── POS Cart & Customization State ──
   const [cartLines, setCartLines] = useState<PosCartLine[]>([]);
+  const [cardDraftAddons, setCardDraftAddons] = useState<Record<string, string[]>>({});
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<OrderType>('TAKEAWAY');
   const [orderNote, setOrderNote] = useState<string>('');
@@ -285,22 +289,57 @@ export default function POSPanel() {
         const flat = categories.flatMap((c) => c.items);
         const lines: PosCartLine[] = order.items.map(
           (
-            it: { item_name: string; size_label: string; unit_price: number; quantity: number },
+            it: {
+              item_name: string;
+              size_label: string;
+              unit_price: number;
+              quantity: number;
+              addons?: string[];
+            },
             idx: number
           ) => {
-            const matched = flat.find(
-              (m) => m.name.toLowerCase() === String(it.item_name || '').split(' [')[0].trim().toLowerCase()
+            const rawItemName = String(it.item_name || 'Món nước');
+            const cleanItemName = rawItemName.split(' [')[0].trim();
+            const parsedNameAddons = extractAddonsFromProductName(rawItemName);
+            const mergedAddons = Array.from(
+              new Set([...(Array.isArray(it.addons) ? it.addons : []), ...parsedNameAddons])
             );
+            const sizeLabel = it.size_label || 'M';
+            const matched =
+              flat.find(
+                (m) =>
+                  m.name.toLowerCase() === cleanItemName.toLowerCase() &&
+                  m.sizes.some((s) => s.label === sizeLabel)
+              ) ||
+              flat.find((m) => m.name.toLowerCase() === cleanItemName.toLowerCase()) ||
+              POS_STANDALONE_TOPPINGS.find((t) => t.name.toLowerCase() === cleanItemName.toLowerCase());
+            const matchedSize = matched?.sizes.find((s) => s.label === sizeLabel);
+            const addonSum = mergedAddons.reduce((sum, id) => {
+              const found = ADDON_OPTIONS.find((a) => a.id === id);
+              return sum + (found ? found.price : 0);
+            }, 0);
+            const resolvedBasePrice =
+              matchedSize?.price ?? Math.max(0, (Number(it.unit_price) || 0) - addonSum);
+            const isBottledLine = sizeLabel === 'Chai';
+            const isToppingLine = sizeLabel === 'Phần' || matched?.categorySlug === 'topping';
             return {
               lineId: `line-import-${Date.now()}-${idx}`,
               itemId: matched?.id || `import-${idx}`,
-              productName: it.item_name,
-              sizeLabel: it.size_label || 'M',
-              basePrice: it.unit_price,
+              productName: matched?.name || cleanItemName || rawItemName,
+              sizeLabel,
+              basePrice: resolvedBasePrice,
               quantity: it.quantity,
-              sweetness: '100% đường',
-              ice: '100% đá',
-              addons: [],
+              sweetness: isBottledLine
+                ? 'Nguyên bản (Chai)'
+                : isToppingLine
+                  ? 'Mặc định (Topping)'
+                  : '100% đường',
+              ice: isBottledLine
+                ? 'Ướp lạnh (Chai)'
+                : isToppingLine
+                  ? 'Không áp dụng'
+                  : '100% đá',
+              addons: mergedAddons,
               itemNote: '',
             };
           }
@@ -445,26 +484,65 @@ export default function POSPanel() {
 
   const { totals } = calculation;
 
-  // Add item + size to cart
+  const toggleCardDraftAddon = (itemId: string, addonId: string) => {
+    setCardDraftAddons((prev) => {
+      const current = prev[itemId] || [];
+      const next = current.includes(addonId)
+        ? current.filter((id) => id !== addonId)
+        : [...current, addonId];
+      return { ...prev, [itemId]: next };
+    });
+  };
+
+  const toggleCardDraftMilk = (itemId: string, milkId: 'sua-thanh-trung' | 'sua-oat') => {
+    setCardDraftAddons((prev) => {
+      const current = prev[itemId] || [];
+      const withoutMilk = current.filter((id) => id !== 'sua-oat' && id !== 'sua-thanh-trung');
+      if (milkId === 'sua-oat') {
+        const next = current.includes('sua-oat') ? withoutMilk : [...withoutMilk, 'sua-oat'];
+        return { ...prev, [itemId]: next };
+      }
+      return { ...prev, [itemId]: withoutMilk };
+    });
+  };
+
+  // Add item + size (plus card draft topping/milk choices) to cart
   const handleAddDrinkToCart = (item: MenuItem, sizeLabel: string, price: number) => {
     if (item.isAvailable === false) {
       setCheckoutError(`Món "${item.name}" hiện đang tạm hết hàng tại quầy.`);
       return;
     }
     setCheckoutError(null);
-    const isBottled = sizeLabel === 'Chai';
-    const defaultSweetness = isBottled ? 'Nguyên bản (Chai)' : '100% đường';
-    const defaultIce = isBottled ? 'Ướp lạnh (Chai)' : '100% đá';
+    const isBottled = sizeLabel === 'Chai' || item.categorySlug === 'cold-brew-chai';
+    const isStandaloneTopping = item.categorySlug === 'topping' || item.id.startsWith('addon-');
+    const defaultSweetness = isBottled
+      ? 'Nguyên bản (Chai)'
+      : isStandaloneTopping
+        ? 'Mặc định (Topping)'
+        : '100% đường';
+    const defaultIce = isBottled
+      ? 'Ướp lạnh (Chai)'
+      : isStandaloneTopping
+        ? 'Không áp dụng'
+        : '100% đá';
+
+    const draftAddons =
+      isBottled || isStandaloneTopping
+        ? []
+        : [...(cardDraftAddons[item.id] || [])].filter((id) =>
+            id === '1g-matcha-fuji' ? isMatchaItem(item) : true
+          );
+    const draftAddonsKey = [...draftAddons].sort().join(',');
 
     setCartLines((prev) => {
-      // Find matching line with identical size and default options
+      // Find matching line with identical size, default sweetness/ice, and identical selected addons
       const existingIndex = prev.findIndex(
         (l) =>
           l.itemId === item.id &&
           l.sizeLabel === sizeLabel &&
           l.sweetness === defaultSweetness &&
           l.ice === defaultIce &&
-          l.addons.length === 0 &&
+          [...l.addons].sort().join(',') === draftAddonsKey &&
           l.itemNote === ''
       );
 
@@ -486,11 +564,67 @@ export default function POSPanel() {
         quantity: 1,
         sweetness: defaultSweetness,
         ice: defaultIce,
-        addons: [],
+        addons: draftAddons,
         itemNote: '',
       };
       return [...prev, newLine];
     });
+
+    if (draftAddons.length > 0) {
+      setCardDraftAddons((prev) => {
+        if (!prev[item.id]?.length) return prev;
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    }
+  };
+
+  // Add standalone topping portion (+5.000đ) directly to cart for revenue tracking
+  const handleAddStandaloneTopping = (topping: MenuItem) => {
+    const baseSize = topping.sizes[0] || { label: 'Phần', price: 5000 };
+    handleAddDrinkToCart(topping, baseSize.label, baseSize.price);
+  };
+
+  // Attach topping to latest eligible cup in cart, or add as standalone portion if cart has no cup or already selected
+  const handleQuickAttachOrAddTopping = (toppingId: 'kem-beo' | '1g-matcha-fuji') => {
+    setCheckoutError(null);
+    const eligibleIdx = [...cartLines]
+      .reverse()
+      .findIndex((l) => {
+        const isCup =
+          l.sizeLabel !== 'Chai' &&
+          l.sizeLabel !== 'Phần' &&
+          !l.itemId.startsWith('addon-') &&
+          !l.addons.includes(toppingId);
+        if (!isCup) return false;
+        if (toppingId === '1g-matcha-fuji') {
+          const catItem = flatCatalog.find((m) => m.id === l.itemId);
+          return isMatchaItem({
+            categorySlug: catItem?.categorySlug,
+            category: catItem?.category,
+            name: l.productName,
+          });
+        }
+        return true;
+      });
+
+    if (eligibleIdx !== -1) {
+      const targetIndex = cartLines.length - 1 - eligibleIdx;
+      const targetLine = cartLines[targetIndex];
+      setCartLines((prev) =>
+        prev.map((l, idx) =>
+          idx === targetIndex ? { ...l, addons: [...l.addons, toppingId] } : l
+        )
+      );
+      void targetLine;
+      return;
+    }
+
+    const standaloneId = toppingId === 'kem-beo' ? 'addon-kem-beo' : 'addon-1g-matcha-fuji';
+    const standalone =
+      POS_STANDALONE_TOPPINGS.find((t) => t.id === standaloneId) || POS_STANDALONE_TOPPINGS[0];
+    handleAddStandaloneTopping(standalone);
   };
 
   const handleUpdateQuantity = (lineId: string, delta: number) => {
@@ -582,9 +716,21 @@ export default function POSPanel() {
       prev.map((l) => {
         if (l.lineId !== lineId) return l;
         const exists = l.addons.includes(addonId);
+        let nextAddons: string[];
+        if (exists) {
+          nextAddons = l.addons.filter((id) => id !== addonId);
+        } else {
+          const withoutExclusiveMilk =
+            addonId === 'sua-oat'
+              ? l.addons.filter((id) => id !== 'sua-thanh-trung')
+              : addonId === 'sua-thanh-trung'
+                ? l.addons.filter((id) => id !== 'sua-oat')
+                : l.addons;
+          nextAddons = [...withoutExclusiveMilk, addonId];
+        }
         return {
           ...l,
-          addons: exists ? l.addons.filter((id) => id !== addonId) : [...l.addons, addonId],
+          addons: nextAddons,
         };
       })
     );
@@ -1279,6 +1425,50 @@ export default function POSPanel() {
                   </div>
                 )}
 
+                {/* Official Menu Add-ons & Topping Quick Strip (Synced with Storefront Menu) */}
+                <div className={styles.toppingQuickStrip}>
+                  <div className={styles.toppingStripHeader}>
+                    <span className={styles.toppingStripTitle}>
+                      🧩 LỰA CHỌN THÊM / TOPPING (+5.000đ)
+                    </span>
+                    <span className={styles.toppingStripSub}>
+                      Gắn nhanh vào ly trong giỏ hoặc thêm phần lẻ ghi doanh thu
+                    </span>
+                  </div>
+                  <div className={styles.toppingActionGrid}>
+                    <button
+                      type="button"
+                      className={styles.toppingQuickBtn}
+                      onClick={() => handleQuickAttachOrAddTopping('kem-beo')}
+                      title="Cộng Kem Béo (+5.000đ) vào ly gần nhất trong giỏ hoặc thêm phần lẻ"
+                    >
+                      <span>+ Kem Béo vào ly</span>
+                      <strong>+5.000đ</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.toppingQuickBtn}
+                      onClick={() => handleQuickAttachOrAddTopping('1g-matcha-fuji')}
+                      title="Cộng 1g Matcha Fuji (+5.000đ) vào ly Matcha gần nhất hoặc thêm phần lẻ"
+                    >
+                      <span>+ 1g Matcha Fuji vào ly</span>
+                      <strong>+5.000đ</strong>
+                    </button>
+                    {POS_STANDALONE_TOPPINGS.map((topping) => (
+                      <button
+                        key={topping.id}
+                        type="button"
+                        className={styles.toppingStandaloneBtn}
+                        onClick={() => handleAddStandaloneTopping(topping)}
+                        title={`Thêm 1 phần ${topping.name} độc lập tính doanh thu`}
+                      >
+                        <span>+ Phần {topping.name.replace('Topping ', '')} lẻ</span>
+                        <strong>+5.000đ</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {loadingMenu ? (
                   <div className={styles.stateBox}>Đang tải danh mục thực đơn POS...</div>
                 ) : displayedCategories.length === 0 ? (
@@ -1297,6 +1487,17 @@ export default function POSPanel() {
                         <div className={styles.menuDrinkGrid}>
                           {cat.items.map((item) => {
                             const isOut = item.isAvailable === false;
+                            const isBottledItem =
+                              item.categorySlug === 'cold-brew-chai' ||
+                              item.sizes.every((s) => s.label === 'Chai');
+                            const itemIsMatcha = isMatchaItem(item);
+                            const draftAddons = isBottledItem
+                              ? []
+                              : cardDraftAddons[item.id] || [];
+                            const draftAddonExtra = draftAddons.reduce((sum, id) => {
+                              const found = ADDON_OPTIONS.find((a) => a.id === id);
+                              return sum + (found ? found.price : 0);
+                            }, 0);
                             return (
                               <div
                                 key={item.id}
@@ -1335,27 +1536,100 @@ export default function POSPanel() {
                                     {item.description || item.shelfLife}
                                   </span>
                                 )}
-                                <div className={styles.posDrinkSizes}>
-                                  {item.sizes.map((sz) => (
+                                {!isBottledItem && (
+                                  <div className={styles.cardQuickOptions}>
+                                    {item.hasMilkChoice && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          disabled={isOut}
+                                          className={`${styles.cardOptChip} ${
+                                            !draftAddons.includes('sua-oat')
+                                              ? styles.cardOptChipMilkActive
+                                              : ''
+                                          }`}
+                                          onClick={() =>
+                                            toggleCardDraftMilk(item.id, 'sua-thanh-trung')
+                                          }
+                                        >
+                                          Sữa thanh trùng
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={isOut}
+                                          className={`${styles.cardOptChip} ${
+                                            draftAddons.includes('sua-oat')
+                                              ? styles.cardOptChipMilkActive
+                                              : ''
+                                          }`}
+                                          onClick={() => toggleCardDraftMilk(item.id, 'sua-oat')}
+                                        >
+                                          {draftAddons.includes('sua-oat')
+                                            ? '✓ Sữa Oat (0đ)'
+                                            : 'Đổi Sữa Oat (0đ)'}
+                                        </button>
+                                      </>
+                                    )}
                                     <button
-                                      key={sz.label}
                                       type="button"
                                       disabled={isOut}
-                                      className={`${styles.posSizeBtn} ${isOut ? styles.posSizeBtnDisabled : ''}`}
-                                      onClick={() => {
-                                        if (isOut) return;
-                                        handleAddDrinkToCart(item, sz.label, sz.price);
-                                      }}
-                                      aria-label={`Thêm ${item.name} size ${sz.label} giá ${formatVND(sz.price)}`}
+                                      className={`${styles.cardOptChip} ${
+                                        draftAddons.includes('kem-beo')
+                                          ? styles.cardOptChipActive
+                                          : ''
+                                      }`}
+                                      onClick={() => toggleCardDraftAddon(item.id, 'kem-beo')}
                                     >
-                                      <span className={styles.posSizeLabel}>
-                                        {sz.label === 'Chai' ? 'Chai' : `Size ${sz.label}`}
-                                      </span>
-                                      <span className={styles.posSizePrice}>
-                                        {isOut ? 'Tạm hết' : `+${formatVND(sz.price)}`}
-                                      </span>
+                                      {draftAddons.includes('kem-beo')
+                                        ? '✓ +Kem Béo (+5k)'
+                                        : '+ Kem Béo (+5k)'}
                                     </button>
-                                  ))}
+                                    {itemIsMatcha && (
+                                      <button
+                                        type="button"
+                                        disabled={isOut}
+                                        className={`${styles.cardOptChip} ${
+                                          draftAddons.includes('1g-matcha-fuji')
+                                            ? styles.cardOptChipActive
+                                            : ''
+                                        }`}
+                                        onClick={() =>
+                                          toggleCardDraftAddon(item.id, '1g-matcha-fuji')
+                                        }
+                                      >
+                                        {draftAddons.includes('1g-matcha-fuji')
+                                          ? '✓ +1g Matcha (+5k)'
+                                          : '+ 1g Matcha Fuji (+5k)'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                <div className={styles.posDrinkSizes}>
+                                  {item.sizes.map((sz) => {
+                                    const btnPrice = sz.price + draftAddonExtra;
+                                    return (
+                                      <button
+                                        key={sz.label}
+                                        type="button"
+                                        disabled={isOut}
+                                        className={`${styles.posSizeBtn} ${isOut ? styles.posSizeBtnDisabled : ''}`}
+                                        onClick={() => {
+                                          if (isOut) return;
+                                          handleAddDrinkToCart(item, sz.label, sz.price);
+                                        }}
+                                        aria-label={`Thêm ${item.name} size ${sz.label} giá ${formatVND(btnPrice)}`}
+                                      >
+                                        <span className={styles.posSizeLabel}>
+                                          {sz.label === 'Chai' ? 'Chai' : `Size ${sz.label}`}
+                                        </span>
+                                        <span className={styles.posSizePrice}>
+                                          {isOut
+                                            ? 'Tạm hết'
+                                            : `+${formatVND(btnPrice)}`}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
@@ -1467,7 +1741,14 @@ export default function POSPanel() {
                         : line.basePrice * line.quantity;
                       const isEditing = editingLineId === line.lineId;
                       const isBottled = line.sizeLabel === 'Chai';
+                      const isStandaloneTopping =
+                        line.itemId.startsWith('addon-') || line.sizeLabel === 'Phần';
                       const catalogItem = flatCatalog.find((m) => m.id === line.itemId);
+                      const lineIsMatcha = isMatchaItem({
+                        categorySlug: catalogItem?.categorySlug,
+                        category: catalogItem?.category,
+                        name: line.productName,
+                      });
 
                       const summaryText = formatItemOptionsSummary(
                         normalized?.options,
@@ -1481,11 +1762,17 @@ export default function POSPanel() {
                               <div className={styles.cartLineTitleRow}>
                                 <span className={styles.cartLineName}>{line.productName}</span>
                                 <span className={styles.cartLineSizeBadge}>
-                                  {line.sizeLabel === 'Chai' ? 'Chai' : `Size ${line.sizeLabel}`}
+                                  {line.sizeLabel === 'Chai'
+                                    ? 'Chai'
+                                    : line.sizeLabel === 'Phần'
+                                      ? 'Phần thêm'
+                                      : `Size ${line.sizeLabel}`}
                                 </span>
                               </div>
                               <div className={styles.cartLineOptSummary}>
-                                {summaryText || '100% đường · 100% đá'}
+                                {isStandaloneTopping
+                                  ? summaryText || 'Topping thêm (+5.000đ/phần)'
+                                  : summaryText || '100% đường · 100% đá'}
                               </div>
                             </div>
 
@@ -1514,6 +1801,58 @@ export default function POSPanel() {
                               </span>
                             </div>
                           </div>
+
+                          {/* 1-Tap Direct Topping & Milk Toggles (Synced with Menu CartDrawer) */}
+                          {!isBottled && !isStandaloneTopping && (
+                            <div className={styles.cartInlineAddons}>
+                              <span className={styles.cartInlineAddonsLabel}>Thêm (+5k):</span>
+                              {catalogItem?.hasMilkChoice && (
+                                <button
+                                  type="button"
+                                  className={`${styles.cartInlineChip} ${
+                                    line.addons.includes('sua-oat')
+                                      ? styles.cartInlineChipActive
+                                      : ''
+                                  }`}
+                                  onClick={() => handleToggleAddon(line.lineId, 'sua-oat')}
+                                >
+                                  {line.addons.includes('sua-oat')
+                                    ? '✓ Sữa Oat (0đ)'
+                                    : '+ Sữa Oat (0đ)'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={`${styles.cartInlineChip} ${
+                                  line.addons.includes('kem-beo')
+                                    ? styles.cartInlineChipActive
+                                    : ''
+                                }`}
+                                onClick={() => handleToggleAddon(line.lineId, 'kem-beo')}
+                              >
+                                {line.addons.includes('kem-beo')
+                                  ? '✓ +Kem Béo'
+                                  : '+ Kem Béo'}
+                              </button>
+                              {lineIsMatcha && (
+                                <button
+                                  type="button"
+                                  className={`${styles.cartInlineChip} ${
+                                    line.addons.includes('1g-matcha-fuji')
+                                      ? styles.cartInlineChipActive
+                                      : ''
+                                  }`}
+                                  onClick={() =>
+                                    handleToggleAddon(line.lineId, '1g-matcha-fuji')
+                                  }
+                                >
+                                  {line.addons.includes('1g-matcha-fuji')
+                                    ? '✓ +1g Matcha Fuji'
+                                    : '+ 1g Matcha Fuji'}
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           <div className={styles.cartLineFooterActions}>
                             <button
@@ -1573,7 +1912,7 @@ export default function POSPanel() {
                                 </div>
                               )}
 
-                              {!isBottled && (
+                              {!isBottled && !isStandaloneTopping && (
                                 <>
                                   <div className={styles.optRow}>
                                     <span className={styles.optLabel}>Độ ngọt:</span>
@@ -2010,6 +2349,18 @@ export default function POSPanel() {
 
                 {/* Totals Breakdown */}
                 <div className={styles.totalsSummaryBox}>
+                  {totals.addonSubtotal > 0 && (
+                    <>
+                      <div className={styles.sumRow}>
+                        <span>Tiền món nước gốc</span>
+                        <span>{formatVND(totals.baseDrinkSubtotal)}</span>
+                      </div>
+                      <div className={styles.sumRow} style={{ color: '#006241', fontWeight: 700 }}>
+                        <span>Doanh thu Topping ({totals.addonCount} phần)</span>
+                        <span>+{formatVND(totals.addonSubtotal)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className={styles.sumRow}>
                     <span>Tạm tính ({totals.totalQuantity} món)</span>
                     <span>{formatVND(totals.subtotal)}</span>

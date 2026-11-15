@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculateRevenueSummary,
+  categorizeProductItem,
+  extractOrderItemToppingMetrics,
   calculateDenominationsTotal,
   calculateCashbookSummary,
   calculateShiftReconciliation,
@@ -462,5 +464,103 @@ describe('M02 Revenue & Cash Reconciliation Domain Logic', () => {
     });
     assert.equal(balancedClose.actualCash, 1000000);
     assert.equal(balancedClose.cashRetained, 500000);
+  });
+
+  it('tracks inline cup toppings, standalone topping sales and Topping category revenue', () => {
+    assert.equal(categorizeProductItem('Topping Kem Béo', 'Phần'), 'Topping & Lựa chọn thêm');
+    assert.equal(categorizeProductItem('Topping 1g Matcha Fuji', 'Phần'), 'Topping & Lựa chọn thêm');
+
+    const cupMetrics = extractOrderItemToppingMetrics({
+      product_name: 'Matcha Latte [Sữa Oat · +Kem Béo, +1g Matcha Fuji]',
+      size: 'M',
+      quantity: 2,
+      subtotal: 100000,
+      unit_price: 50000,
+    });
+    assert.equal(cupMetrics.isStandaloneTopping, false);
+    assert.equal(cupMetrics.toppingCount, 4);
+    assert.equal(cupMetrics.toppingRevenue, 20000);
+
+    const standaloneMetrics = extractOrderItemToppingMetrics({
+      product_name: 'Topping Kem Béo',
+      size: 'Phần',
+      quantity: 3,
+      subtotal: 15000,
+      unit_price: 5000,
+    });
+    assert.equal(standaloneMetrics.isStandaloneTopping, true);
+    assert.equal(standaloneMetrics.toppingCount, 3);
+    assert.equal(standaloneMetrics.toppingRevenue, 15000);
+
+    const orders: RawOrderForRevenue[] = [
+      {
+        id: 'rev-top-1',
+        order_code: 'POS-261115-0001',
+        status: 'CONFIRMED',
+        subtotal: 100000,
+        total_due: 100000,
+        points_used: 0,
+        discount_amount: 0,
+        payment_method: 'CASH',
+        channel: 'POS',
+        created_at: '2026-11-15T08:00:00.000Z',
+        items: [
+          {
+            product_name: 'Matcha Latte [Sữa Oat · +Kem Béo, +1g Matcha Fuji]',
+            size: 'M',
+            quantity: 2,
+            subtotal: 100000,
+            unit_price: 50000,
+          },
+        ],
+      },
+      {
+        id: 'rev-top-2',
+        order_code: 'POS-261115-0002',
+        status: 'CONFIRMED',
+        subtotal: 15000,
+        total_due: 15000,
+        points_used: 0,
+        discount_amount: 0,
+        payment_method: 'BANK_TRANSFER',
+        channel: 'POS',
+        created_at: '2026-11-15T09:00:00.000Z',
+        items: [
+          {
+            product_name: 'Topping Kem Béo',
+            size: 'Phần',
+            quantity: 3,
+            subtotal: 15000,
+            unit_price: 5000,
+          },
+        ],
+      },
+      {
+        id: 'rev-top-3',
+        order_code: 'POS-261115-0003',
+        status: 'CANCELLED',
+        subtotal: 50000,
+        total_due: 50000,
+        points_used: 0,
+        discount_amount: 0,
+        payment_method: 'CASH',
+        channel: 'POS',
+        created_at: '2026-11-15T10:00:00.000Z',
+        items: [
+          {
+            product_name: 'Cold Brew Cam Sả [+Kem Béo]',
+            size: 'L',
+            quantity: 1,
+            subtotal: 45000,
+            unit_price: 45000,
+          },
+        ],
+      },
+    ];
+
+    const summary = calculateRevenueSummary(orders);
+    assert.equal(summary.orderRevenue.addonCount, 7);
+    assert.equal(summary.orderRevenue.addonRevenue, 35000);
+    assert.equal(summary.orderRevenue.netRevenue, 115000);
   });
 });

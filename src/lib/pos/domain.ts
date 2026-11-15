@@ -48,6 +48,52 @@ export const ADDON_OPTIONS: PosAddonOption[] = [
   { id: 'sua-thanh-trung', name: 'Sữa thanh trùng', price: 0 },
 ];
 
+export const POS_STANDALONE_TOPPINGS: StaticMenuItem[] = [
+  {
+    id: 'addon-kem-beo',
+    name: 'Topping Kem Béo',
+    description: 'Lựa chọn thêm Kem Béo (+5.000đ)',
+    category: 'Topping & Lựa chọn thêm',
+    categorySlug: 'topping',
+    sizes: [{ label: 'Phần', price: 5000 }],
+    isAvailable: true,
+  },
+  {
+    id: 'addon-1g-matcha-fuji',
+    name: 'Topping 1g Matcha Fuji',
+    description: 'Lựa chọn thêm 1g Matcha Fuji (+5.000đ)',
+    category: 'Topping & Lựa chọn thêm',
+    categorySlug: 'topping',
+    sizes: [{ label: 'Phần', price: 5000 }],
+    isAvailable: true,
+  },
+];
+
+/**
+ * Extract addon IDs encoded inside a product name's bracket options (e.g. "Matcha Latte [Sữa Oat · +Kem Béo]").
+ */
+export function extractAddonsFromProductName(rawProductName?: string): string[] {
+  if (!rawProductName) return [];
+  const bracketStart = rawProductName.indexOf('[');
+  const bracketEnd = rawProductName.lastIndexOf(']');
+  if (bracketStart === -1 || bracketEnd <= bracketStart) return [];
+
+  const optText = rawProductName.slice(bracketStart + 1, bracketEnd).toLowerCase();
+  const found: string[] = [];
+  if (optText.includes('kem béo') || optText.includes('kem beo')) {
+    found.push('kem-beo');
+  }
+  if (optText.includes('1g matcha')) {
+    found.push('1g-matcha-fuji');
+  }
+  if (optText.includes('sữa oat') || optText.includes('sua oat')) {
+    found.push('sua-oat');
+  } else if (optText.includes('sữa thanh trùng') || optText.includes('sua thanh trung')) {
+    found.push('sua-thanh-trung');
+  }
+  return found;
+}
+
 export const CASHIER_MAX_DISCOUNT_PERCENT = 10;
 export const CASHIER_MAX_DISCOUNT_AMOUNT = 20000;
 
@@ -93,6 +139,9 @@ export interface PosDiscountInput {
 export interface PosOrderCalculationResult {
   items: NormalizedPosOrderItem[];
   totalQuantity: number;
+  baseDrinkSubtotal: number;
+  addonSubtotal: number;
+  addonCount: number;
   subtotal: number;
   discountAmount: number;
   discountPercent: number;
@@ -134,25 +183,33 @@ export function normalizePosItems(
 ): NormalizedPosOrderItem[] {
   if (!Array.isArray(rawItems)) return [];
 
+  const effectiveCatalog = [...catalog];
+  for (const topping of POS_STANDALONE_TOPPINGS) {
+    if (!effectiveCatalog.some((m) => m.id === topping.id)) {
+      effectiveCatalog.push(topping);
+    }
+  }
+
   return rawItems
     .filter((it) => it && (it.itemId || it.productName) && Number(it.quantity) > 0)
     .map((it) => {
       const qty = Math.max(1, Math.floor(Number(it.quantity) || 1));
-      const cleanName = (it.productName || '').trim().toLowerCase();
+      const strippedProductName = (it.productName || '').split(' [')[0].trim();
+      const cleanName = strippedProductName.toLowerCase();
 
       // 1. Precise match: ID and has requested size
-      let matchedItem = catalog.find(
+      let matchedItem = effectiveCatalog.find(
         (m) => m.id === it.itemId && (!it.sizeLabel || m.sizes.some((s) => s.label === it.sizeLabel))
       );
 
       // 2. Fallback: match by ID only
       if (!matchedItem) {
-        matchedItem = catalog.find((m) => m.id === it.itemId);
+        matchedItem = effectiveCatalog.find((m) => m.id === it.itemId);
       }
 
       // 3. Fallback: match by name AND has requested size (handles cup vs bottle sharing the same name!)
       if (!matchedItem || (it.sizeLabel && !matchedItem.sizes.some((s) => s.label === it.sizeLabel))) {
-        const byNameAndSize = catalog.find(
+        const byNameAndSize = effectiveCatalog.find(
           (m) => m.name.toLowerCase() === cleanName && m.sizes.some((s) => s.label === it.sizeLabel)
         );
         if (byNameAndSize) {
@@ -162,7 +219,7 @@ export function normalizePosItems(
 
       // 4. Fallback: match by name only (including Strawberry Matcha & Matcha Kem Béo aliases)
       if (!matchedItem) {
-        matchedItem = catalog.find(
+        matchedItem = effectiveCatalog.find(
           (m) =>
             m.name.toLowerCase() === cleanName ||
             (m.id === 'strawberry-matcha' &&
@@ -183,32 +240,44 @@ export function normalizePosItems(
         (sizeObj?.label || it.sizeLabel) === 'Chai' ||
         matchedItem?.categorySlug === 'cold-brew-chai' ||
         matchedItem?.category === 'Cold Brew Chai';
+      const isStandaloneTopping =
+        matchedItem?.categorySlug === 'topping' ||
+        String(it.itemId || '').startsWith('addon-');
       const sweetness = isBottled
         ? 'Nguyên bản (Chai)'
-        : it.options?.sweetness || '100% đường';
+        : isStandaloneTopping
+          ? 'Mặc định (Topping)'
+          : it.options?.sweetness || '100% đường';
       const ice = isBottled
         ? 'Ướp lạnh (Chai)'
-        : it.options?.ice || '100% đá';
+        : isStandaloneTopping
+          ? 'Không áp dụng'
+          : it.options?.ice || '100% đá';
 
       const isMatcha = isMatchaItem({
         categorySlug: matchedItem?.categorySlug,
         category: matchedItem?.category,
-        name: matchedItem?.name || it.productName,
+        name: matchedItem?.name || strippedProductName,
       });
-      const filteredAddonIds = (it.options?.addons || []).filter((id) =>
+      const extractedNameAddons = extractAddonsFromProductName(it.productName);
+      const mergedAddonIds = Array.from(
+        new Set([...(it.options?.addons || []), ...extractedNameAddons])
+      );
+      const filteredAddonIds = mergedAddonIds.filter((id) =>
         id === '1g-matcha-fuji' ? isMatcha : true
       );
 
-      const { addons, addonTotal } = isBottled
-        ? { addons: [], addonTotal: 0 }
-        : resolveAddons(filteredAddonIds);
+      const { addons, addonTotal } =
+        isBottled || isStandaloneTopping
+          ? { addons: [], addonTotal: 0 }
+          : resolveAddons(filteredAddonIds);
 
       const unitPrice = basePrice + addonTotal;
       const subtotal = unitPrice * qty;
 
       return {
         itemId: matchedItem?.id || it.itemId || 'custom-item',
-        productName: matchedItem?.name || it.productName.trim(),
+        productName: matchedItem?.name || strippedProductName || it.productName.trim(),
         sizeLabel: sizeObj?.label || it.sizeLabel || 'M',
         quantity: qty,
         basePrice,
@@ -322,12 +391,31 @@ export function calculatePosOrderTotals(params: {
   const totalQuantity = normalizedItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = normalizedItems.reduce((sum, item) => sum + item.subtotal, 0);
 
+  let addonSubtotal = 0;
+  let addonCount = 0;
+  for (const item of normalizedItems) {
+    const isStandaloneTopping =
+      item.itemId.startsWith('addon-') || item.productName.toLowerCase().startsWith('topping ');
+    if (isStandaloneTopping) {
+      addonSubtotal += item.subtotal;
+      addonCount += item.quantity;
+    } else if (item.addonPrice > 0) {
+      addonSubtotal += item.addonPrice * item.quantity;
+      const paidAddonsPerUnit = item.options.addons.filter((a) => a.price > 0).length;
+      addonCount += (paidAddonsPerUnit > 0 ? paidAddonsPerUnit : 1) * item.quantity;
+    }
+  }
+  const baseDrinkSubtotal = Math.max(0, subtotal - addonSubtotal);
+
   if (normalizedItems.length === 0 || subtotal <= 0) {
     return {
       validation: { valid: false, error: 'Giỏ hàng trống hoặc chưa có món hợp lệ.' },
       totals: {
         items: [],
         totalQuantity: 0,
+        baseDrinkSubtotal: 0,
+        addonSubtotal: 0,
+        addonCount: 0,
         subtotal: 0,
         discountAmount: 0,
         discountPercent: 0,
@@ -346,6 +434,9 @@ export function calculatePosOrderTotals(params: {
       totals: {
         items: normalizedItems,
         totalQuantity,
+        baseDrinkSubtotal,
+        addonSubtotal,
+        addonCount,
         subtotal,
         discountAmount: 0,
         discountPercent: 0,
@@ -380,6 +471,9 @@ export function calculatePosOrderTotals(params: {
       totals: {
         items: normalizedItems,
         totalQuantity,
+        baseDrinkSubtotal,
+        addonSubtotal,
+        addonCount,
         subtotal,
         discountAmount: discountCheck.discountAmount,
         discountPercent: discountCheck.discountPercent,
@@ -398,6 +492,9 @@ export function calculatePosOrderTotals(params: {
     totals: {
       items: normalizedItems,
       totalQuantity,
+      baseDrinkSubtotal,
+      addonSubtotal,
+      addonCount,
       subtotal,
       discountAmount: discountCheck.discountAmount,
       discountPercent: discountCheck.discountPercent,
@@ -464,12 +561,21 @@ export function formatItemOptionsSummary(options?: {
   addons?: { id: string; name: string; price: number }[];
 }, itemNote?: string): string {
   const parts: string[] = [];
-  if (options?.sweetness && options.sweetness !== '100% đường' && options.sweetness !== 'Nguyên bản (Chai)') {
+  if (
+    options?.sweetness &&
+    options.sweetness !== '100% đường' &&
+    options.sweetness !== 'Nguyên bản (Chai)' &&
+    options.sweetness !== 'Mặc định (Topping)'
+  ) {
     parts.push(options.sweetness);
   } else if (options?.sweetness === '100% đường') {
     parts.push('100% đường');
   }
-  if (options?.ice && options.ice !== 'Ướp lạnh (Chai)') {
+  if (
+    options?.ice &&
+    options.ice !== 'Ướp lạnh (Chai)' &&
+    options.ice !== 'Không áp dụng'
+  ) {
     parts.push(options.ice);
   }
   if (options?.addons && options.addons.length > 0) {

@@ -638,6 +638,13 @@ export default function RevenuePanel() {
                   {(summary?.orderRevenue.discounts || 0) > 0 && (
                     <span> · Giảm: -{formatVND(summary?.orderRevenue.discounts || 0)}</span>
                   )}
+                  {(summary?.orderRevenue.addonRevenue || 0) > 0 && (
+                    <span>
+                      {' '}
+                      · Topping: +{formatVND(summary?.orderRevenue.addonRevenue || 0)} (
+                      {summary?.orderRevenue.addonCount || 0} phần)
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

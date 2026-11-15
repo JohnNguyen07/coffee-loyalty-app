@@ -1,7 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  POS_STANDALONE_TOPPINGS,
   calculatePosOrderTotals,
+  extractAddonsFromProductName,
+  normalizePosItems,
   validateDiscountPermission,
   validatePosOrderCancel,
   generatePosOrderCode,
@@ -630,5 +633,75 @@ describe('M01 V2 Multi-channel POS, Fulfillment, Menu & Print Extensions', () =>
     assert.match(receiptHtml, /Hẹn gặp lại quý khách tại Ủ LAB!/);
     assert.match(receiptHtml, /45 Lê Lợi, Q1/);
     assert.match(receiptHtml, /15\.000/);
+  });
+
+  it('tracks cup toppings and standalone topping items in baseDrinkSubtotal, addonSubtotal and addonCount', () => {
+    assert.equal(POS_STANDALONE_TOPPINGS.length, 2);
+
+    const res = calculatePosOrderTotals({
+      items: [
+        {
+          itemId: 'matcha-latte',
+          productName: 'Matcha Latte',
+          sizeLabel: 'M', // 40,000đ
+          quantity: 1,
+          options: {
+            sweetness: '70% đường',
+            ice: 'Ít đá',
+            addons: ['sua-oat', 'kem-beo', '1g-matcha-fuji'], // +0 + 5,000 + 5,000 = +10,000đ
+          },
+        },
+        {
+          itemId: 'addon-kem-beo',
+          productName: 'Topping Kem Béo',
+          sizeLabel: 'Phần', // 5,000đ standalone
+          quantity: 2,
+        },
+      ],
+      paymentMethod: 'CASH',
+      amountReceived: 100000,
+      staffRole: 'CASHIER',
+    });
+
+    assert.equal(res.validation.valid, true);
+    assert.equal(res.totals.baseDrinkSubtotal, 40000);
+    assert.equal(res.totals.addonSubtotal, 20000);
+    assert.equal(res.totals.addonCount, 4);
+    assert.equal(res.totals.subtotal, 60000);
+    assert.equal(res.totals.totalDue, 60000);
+    assert.equal(res.totals.changeDue, 40000);
+  });
+
+  it('extracts bracket addons from imported order names and enforces Matcha-only rule for 1g-matcha-fuji', () => {
+    const parsedMatcha = extractAddonsFromProductName(
+      'Matcha Latte [Sữa Oat · +Kem Béo, +1g Matcha Fuji]'
+    );
+    assert.ok(parsedMatcha.includes('sua-oat'));
+    assert.ok(parsedMatcha.includes('kem-beo'));
+    assert.ok(parsedMatcha.includes('1g-matcha-fuji'));
+
+    const normalized = normalizePosItems([
+      {
+        itemId: 'matcha-latte',
+        productName: 'Matcha Latte [Sữa Oat · +Kem Béo, +1g Matcha Fuji]',
+        sizeLabel: 'M', // 40,000 + 10,000 addons = 50,000
+        quantity: 1,
+      },
+      {
+        itemId: 'cold-brew-cam-sa',
+        productName: 'Cold Brew Cam Sả [70% đường · +Kem Béo, +1g Matcha Fuji]',
+        sizeLabel: 'L', // 40,000 + 5,000 (kem-beo only; 1g-matcha-fuji ignored on non-matcha) = 45,000
+        quantity: 1,
+      },
+    ]);
+
+    assert.equal(normalized.length, 2);
+    assert.ok(normalized[0].options.addons.some((a) => a.id === 'kem-beo'));
+    assert.ok(normalized[0].options.addons.some((a) => a.id === '1g-matcha-fuji'));
+    assert.equal(normalized[0].unitPrice, 50000);
+
+    assert.ok(normalized[1].options.addons.some((a) => a.id === 'kem-beo'));
+    assert.equal(normalized[1].options.addons.some((a) => a.id === '1g-matcha-fuji'), false);
+    assert.equal(normalized[1].unitPrice, 45000);
   });
 });

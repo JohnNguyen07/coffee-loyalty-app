@@ -49,6 +49,8 @@ export interface OrderRevenueBreakdown {
   pointsDiscount: number;       // Giảm giá qua trừ điểm ví
   netRevenue: number;           // Doanh thu thuần = Doanh thu đơn đã thanh toán
   averageOrderValue: number;    // Giá trị trung bình / đơn (AOV)
+  addonRevenue?: number;        // Doanh thu riêng từ Topping / Lựa chọn thêm
+  addonCount?: number;          // Tổng số phần Topping có phí đã bán
 }
 
 export interface PaymentCollectionBreakdown {
@@ -412,6 +414,9 @@ export function normalizePaymentMethod(method?: string): string {
  */
 export function categorizeProductItem(cleanName: string, size?: string): string {
   const lower = cleanName.toLowerCase();
+  if (lower.startsWith('topping ') || String(size || '').toLowerCase() === 'phần') {
+    return 'Topping & Lựa chọn thêm';
+  }
   if (String(size || '').toLowerCase() === 'chai' || lower.includes('pure black')) {
     return 'Cold Brew Chai';
   }
@@ -453,6 +458,54 @@ function canonicalizeProductName(raw: string): string {
   if (lower === 'matcha kem muối' || lower === 'matcha kem muoi') return 'Matcha Kem Muối';
   if (lower === 'pure black cold brew') return 'Pure Black Cold Brew';
   return cleaned;
+}
+
+/**
+ * Extract topping quantity and revenue from an order item (handles both inline bracket addons and standalone topping lines).
+ */
+export function extractOrderItemToppingMetrics(item: RawOrderItem): {
+  toppingCount: number;
+  toppingRevenue: number;
+  isStandaloneTopping: boolean;
+} {
+  const rawName = String(item.product_name || '');
+  const lower = rawName.toLowerCase();
+  const sizeLower = String(item.size || '').toLowerCase();
+  const qty = Math.max(1, Number(item.quantity) || 1);
+  const itemSubtotal = Math.max(
+    0,
+    Number(item.subtotal) || (Number(item.unit_price) || 0) * qty
+  );
+
+  const isStandaloneTopping = lower.startsWith('topping ') || sizeLower === 'phần';
+  if (isStandaloneTopping) {
+    return {
+      toppingCount: qty,
+      toppingRevenue: itemSubtotal,
+      isStandaloneTopping: true,
+    };
+  }
+
+  const bracketStart = rawName.indexOf('[');
+  const bracketEnd = rawName.lastIndexOf(']');
+  if (bracketStart === -1 || bracketEnd <= bracketStart) {
+    return { toppingCount: 0, toppingRevenue: 0, isStandaloneTopping: false };
+  }
+
+  const optText = rawName.slice(bracketStart + 1, bracketEnd).toLowerCase();
+  let paidAddonPerCup = 0;
+  if (optText.includes('kem béo') || optText.includes('kem beo')) {
+    paidAddonPerCup += 1;
+  }
+  if (optText.includes('1g matcha')) {
+    paidAddonPerCup += 1;
+  }
+
+  return {
+    toppingCount: paidAddonPerCup * qty,
+    toppingRevenue: paidAddonPerCup * 5000 * qty,
+    isStandaloneTopping: false,
+  };
 }
 
 /**
@@ -675,6 +728,8 @@ export function calculateRevenueSummary(
   let totalCollected = 0;
   let totalRefunded = 0;
   let pointsRefunded = 0;
+  let addonRevenue = 0;
+  let addonCount = 0;
 
   for (const ord of orders) {
     const subtotal = Math.max(0, Number(ord.subtotal) || 0);
@@ -689,6 +744,11 @@ export function calculateRevenueSummary(
       pointsDiscount += pointsUsed;
       netRevenue += totalDue;
       totalCollected += totalDue; // Gộp chung 1 tài khoản Tiền
+      for (const it of ord.items || []) {
+        const toppingMetrics = extractOrderItemToppingMetrics(it);
+        addonRevenue += toppingMetrics.toppingRevenue;
+        addonCount += toppingMetrics.toppingCount;
+      }
     } else if (ord.status === 'PENDING') {
       pendingOrdersCount++;
     } else if (ord.status === 'CANCELLED') {
@@ -736,6 +796,8 @@ export function calculateRevenueSummary(
       pointsDiscount,
       netRevenue,
       averageOrderValue,
+      addonRevenue,
+      addonCount,
     },
     collection: {
       cashCollected: totalCollected,

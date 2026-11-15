@@ -1721,3 +1721,165 @@
   gap: 8px;
   margin-top: 8px;
 }
+
+/* ── Official Topping Quick Strip & Card / Cart 1-Tap Topping Pills ── */
+.toppingQuickStrip {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0, 98, 65, 0.06) 0%, rgba(203, 162, 88, 0.09) 100%);
+  border: 1px solid rgba(0, 98, 65, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toppingStripHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toppingStripTitle {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #1e3932;
+  letter-spacing: 0.02em;
+}
+
+.toppingStripSub {
+  font-size: 0.7rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.toppingActionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 6px;
+}
+
+.toppingQuickBtn,
+.toppingStandaloneBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.toppingQuickBtn {
+  background: #ffffff;
+  border: 1px solid rgba(0, 98, 65, 0.35);
+  color: #006241;
+}
+
+.toppingQuickBtn:hover {
+  background: #006241;
+  color: #ffffff;
+}
+
+.toppingStandaloneBtn {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.toppingStandaloneBtn:hover {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.cardQuickOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.cardOptChip {
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.67rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.cardOptChip:hover:not(:disabled) {
+  border-color: #006241;
+  color: #006241;
+}
+
+.cardOptChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cardOptChipActive {
+  background: #006241;
+  border-color: #006241;
+  color: #ffffff;
+}
+
+.cardOptChipActive:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.cardOptChipMilkActive {
+  background: #ecfdf5;
+  border-color: #059669;
+  color: #065f46;
+}
+
+.cartInlineAddons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.cartInlineAddonsLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.cartInlineChip {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cartInlineChip:hover {
+  border-color: #006241;
+  color: #006241;
+}
+
+.cartInlineChipActive {
+  background: #006241;
+  border-color: #006241;
+  color: #ffffff;
+}
+
+.cartInlineChipActive:hover {
+  color: #ffffff;
+}

@@ -775,6 +775,17 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                             {formatVND(val)}
                           </button>
                         ))}
+                        <button
+                          type="button"
+                          className={styles.quickPill}
+                          style={{ borderColor: '#006241', color: '#006241', fontWeight: 700 }}
+                          onClick={() =>
+                            setBillAmountInput((prev) => (Number(prev) || 0) + 5000)
+                          }
+                          title="Cộng thêm 5.000đ tiền topping vào giá trị hóa đơn"
+                        >
+                          +5.000đ (Topping)
+                        </button>
                       </div>
                     </div>
                   ) : (
