@@ -27,6 +27,7 @@ import {
   validateUpdateBusinessProfile,
   getRolePermissionMatrix,
   createRbacAuditEntry,
+  mergeStaffMemberLists,
 } from '../domain';
 
 const BIZ_A = '00000000-0000-0000-0000-000000000001'; // Ủ LAB
@@ -509,5 +510,83 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     assert.strictEqual(entry.targetType, 'LOCATION');
     assert.strictEqual(entry.targetId, 'loc-02');
     assert.ok(!Number.isNaN(Date.parse(entry.createdAt)));
+  });
+
+  // Test 22: Hợp nhất danh sách nhân sự DB + Persisted RBAC không mất tên thật, điểm bán và người mới thêm
+  it('22. Hợp nhất danh sách nhân sự (mergeStaffMemberLists) bảo toàn tên thật, điểm bán, nhân viên mới và loại bỏ tài khoản bị thu hồi', () => {
+    const dbPrimary = [
+      {
+        userId: 'usr-owner',
+        fullName: 'Quản trị viên Ủ LAB',
+        email: 'admin@coffeehouse.vn',
+        phone: '0909000001',
+        role: 'OWNER' as MvpRole,
+        assignedLocations: [{ locationId: LOC_A1, locationCode: 'ULAB-MAIN', locationName: 'Quầy chính' }],
+        isActive: true,
+      },
+      {
+        userId: 'usr-staff-1',
+        fullName: 'Nhân viên', // placeholder when DB users lookup missed full_name
+        email: null,
+        phone: '0911222333',
+        role: 'MANAGER' as MvpRole,
+        assignedLocations: [], // empty from DB
+        isActive: true,
+      },
+      {
+        userId: 'usr-revoked',
+        fullName: 'Nhân viên cũ đã xóa',
+        email: 'revoked@ulab.vn',
+        phone: '0988777666',
+        role: 'CASHIER' as MvpRole,
+        assignedLocations: [],
+        isActive: false,
+      },
+    ];
+
+    const persistedSecondary = [
+      {
+        userId: 'usr-staff-1',
+        fullName: 'Nguyễn Văn An',
+        email: 'an.nguyen@ulab.vn',
+        phone: '0911 222 333',
+        role: 'MANAGER' as MvpRole,
+        assignedLocations: [
+          { locationId: LOC_A1, locationCode: 'ULAB-MAIN', locationName: 'Quầy chính' },
+          { locationId: LOC_A2, locationCode: 'ULAB-Q1', locationName: 'Chi nhánh Q1' },
+        ],
+        isActive: true,
+      },
+      {
+        userId: 'usr-staff-2',
+        fullName: 'Trần Thị Thu Ngân',
+        email: 'thungan@ulab.vn',
+        phone: '0933444555',
+        role: 'CASHIER' as MvpRole,
+        assignedLocations: [
+          { locationId: LOC_A2, locationCode: 'ULAB-Q1', locationName: 'Chi nhánh Q1' },
+        ],
+        isActive: true,
+      },
+    ];
+
+    const merged = mergeStaffMemberLists(dbPrimary, persistedSecondary, ['usr-revoked']);
+
+    assert.strictEqual(merged.length, 3);
+    assert.strictEqual(
+      merged.some((s) => s.userId === 'usr-revoked'),
+      false
+    );
+
+    const mgr = merged.find((s) => s.userId === 'usr-staff-1');
+    assert.ok(mgr);
+    assert.strictEqual(mgr.fullName, 'Nguyễn Văn An');
+    assert.strictEqual(mgr.email, 'an.nguyen@ulab.vn');
+    assert.strictEqual(mgr.assignedLocations.length, 2);
+
+    const newCashier = merged.find((s) => s.userId === 'usr-staff-2');
+    assert.ok(newCashier);
+    assert.strictEqual(newCashier.fullName, 'Trần Thị Thu Ngân');
+    assert.strictEqual(newCashier.role, 'CASHIER');
   });
 });

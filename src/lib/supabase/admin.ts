@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { resolveSupabaseUrl } from './client';
 
+export { resolveSupabaseUrl };
+
 // Encoded fallback to avoid GitHub Push Protection false-positive while keeping Vercel Free working out-of-the-box
 const FALLBACK_KEY_B64 = 'c2Jfc2VjcmV0X08yNnZUM2QtV3VSUXZOS1NuTm5wTkFfbVhpTGMyLUw=';
 
-function resolveServiceRoleKey(val?: string): string {
+export function resolveServiceRoleKey(val?: string): string {
   const cleaned = (val || '').trim().replace(/^["']|["']$/g, '');
   if (cleaned.startsWith('sb_secret_O26vT3d')) {
     return cleaned;

@@ -1,4 +1,8 @@
-import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  createAdminClient,
+  resolveServiceRoleKey,
+  resolveSupabaseUrl,
+} from '@/lib/supabase/admin';
 import {
   type MvpRole,
   type UserRbacProfile,
@@ -16,6 +20,7 @@ import {
   canAssignRole,
   canAssignLocations,
   canResetStaffPassword,
+  mergeStaffMemberLists,
   validateCreateLocationInput,
   validateLocationOperationalFields,
   validateUpdateBusinessProfile,
@@ -78,14 +83,38 @@ interface AuditLogDbRow {
 interface PersistedRbacState {
   locations: LocationItem[];
   staffByBusiness: Record<string, StaffMemberDto[]>;
+  revokedStaffIdsByBusiness?: Record<string, string[]>;
   businessById?: Record<string, BusinessItem>;
   auditLogsByBusiness?: Record<string, RbacAuditLogItem[]>;
   updatedAt: string;
 }
 
+interface AuthStaffRbacMeta {
+  businessId: string;
+  role: MvpRole;
+  assignedLocations: {
+    locationId: string;
+    locationCode: string;
+    locationName: string;
+  }[];
+  isActive: boolean;
+  fullName: string;
+  phone?: string | null;
+  email?: string | null;
+  updatedAt: string;
+}
+
+interface AuthUserRecord {
+  id: string;
+  email?: string;
+  user_metadata?: Record<string, unknown>;
+}
+
 const RBAC_BUCKET = 'ulab-system';
 const RBAC_OBJECT_PATH = 'rbac-store.json';
+const RBAC_SYSTEM_STORE_EMAIL = 'rbac-system-store@coffeehouse.vn';
 const MAX_STORED_AUDIT_LOGS = 200;
+const FALLBACK_MEMBER_TIER_ID = '5311a256-9362-4718-bbf5-6d70e9c100a8';
 
 function buildSeedBusiness(businessId = DEFAULT_BUSINESS_ID): BusinessItem {
   const now = new Date().toISOString();
@@ -191,61 +220,146 @@ function buildSeedStaff(): StaffMemberDto[] {
 const globalForRbac = globalThis as typeof globalThis & {
   __ulabRbacState?: PersistedRbacState;
   __ulabRbacBucketReady?: boolean;
+  __ulabRbacSystemUserId?: string;
 };
+
+function createSeedState(): PersistedRbacState {
+  return {
+    locations: buildSeedLocations(),
+    staffByBusiness: {
+      [DEFAULT_BUSINESS_ID]: buildSeedStaff(),
+    },
+    revokedStaffIdsByBusiness: {
+      [DEFAULT_BUSINESS_ID]: [],
+    },
+    businessById: {
+      [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID),
+    },
+    auditLogsByBusiness: {
+      [DEFAULT_BUSINESS_ID]: [],
+    },
+    updatedAt: new Date(0).toISOString(),
+  };
+}
 
 function getInMemoryState(): PersistedRbacState {
   if (!globalForRbac.__ulabRbacState) {
-    globalForRbac.__ulabRbacState = {
-      locations: buildSeedLocations(),
-      staffByBusiness: {
-        [DEFAULT_BUSINESS_ID]: buildSeedStaff(),
-      },
-      businessById: {
-        [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID),
-      },
-      auditLogsByBusiness: {
-        [DEFAULT_BUSINESS_ID]: [],
-      },
-      updatedAt: new Date().toISOString(),
-    };
+    globalForRbac.__ulabRbacState = createSeedState();
   }
   return globalForRbac.__ulabRbacState;
 }
 
-function getSupabaseStorageConfig(): { url: string; key: string } | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return { url: url.replace(/\/+$/, ''), key };
+function getSupabaseStorageConfig(): { url: string; key: string } {
+  return {
+    url: resolveSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    key: resolveServiceRoleKey(process.env.SUPABASE_SERVICE_ROLE_KEY),
+  };
 }
 
-async function ensureRbacBucket(url: string, key: string): Promise<void> {
+function normalizeParsedRbacState(parsed: Partial<PersistedRbacState>): PersistedRbacState {
+  return {
+    locations:
+      Array.isArray(parsed.locations) && parsed.locations.length > 0
+        ? parsed.locations
+        : buildSeedLocations(),
+    staffByBusiness:
+      parsed.staffByBusiness && typeof parsed.staffByBusiness === 'object'
+        ? parsed.staffByBusiness
+        : { [DEFAULT_BUSINESS_ID]: buildSeedStaff() },
+    revokedStaffIdsByBusiness:
+      parsed.revokedStaffIdsByBusiness && typeof parsed.revokedStaffIdsByBusiness === 'object'
+        ? parsed.revokedStaffIdsByBusiness
+        : {},
+    businessById:
+      parsed.businessById && typeof parsed.businessById === 'object'
+        ? parsed.businessById
+        : { [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID) },
+    auditLogsByBusiness:
+      parsed.auditLogsByBusiness && typeof parsed.auditLogsByBusiness === 'object'
+        ? parsed.auditLogsByBusiness
+        : { [DEFAULT_BUSINESS_ID]: [] },
+    updatedAt: typeof parsed.updatedAt === 'string' && parsed.updatedAt ? parsed.updatedAt : new Date(0).toISOString(),
+  };
+}
+
+async function ensureRbacBucket(
+  adminClient: ReturnType<typeof createAdminClient>,
+  url: string,
+  key: string
+): Promise<void> {
   if (globalForRbac.__ulabRbacBucketReady) return;
-  const res = await fetch(`${url}/storage/v1/bucket`, {
-    method: 'POST',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ id: RBAC_BUCKET, name: RBAC_BUCKET, public: false }),
-    cache: 'no-store',
-  });
-  // 200/201 created, or 400/409 already exists
-  if (res.ok || res.status === 409) {
-    globalForRbac.__ulabRbacBucketReady = true;
-  } else {
-    const txt = await res.text().catch(() => '');
-    if (txt.toLowerCase().includes('already exists') || txt.toLowerCase().includes('duplicate')) {
+
+  try {
+    const { error } = await adminClient.storage.createBucket(RBAC_BUCKET, { public: false });
+    if (!error) {
       globalForRbac.__ulabRbacBucketReady = true;
+      return;
     }
+    const errMsg = (error.message || '').toLowerCase();
+    if (errMsg.includes('already exists') || errMsg.includes('duplicate')) {
+      globalForRbac.__ulabRbacBucketReady = true;
+      return;
+    }
+  } catch {
+    // fallback to REST bucket check below
+  }
+
+  try {
+    const res = await fetch(`${url}/storage/v1/bucket`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: RBAC_BUCKET, name: RBAC_BUCKET, public: false }),
+      cache: 'no-store',
+    });
+    if (res.ok || res.status === 409) {
+      globalForRbac.__ulabRbacBucketReady = true;
+    } else {
+      const txt = await res.text().catch(() => '');
+      if (txt.toLowerCase().includes('already exists') || txt.toLowerCase().includes('duplicate')) {
+        globalForRbac.__ulabRbacBucketReady = true;
+      }
+    }
+  } catch {
+    // ignore bucket ensure failure here; upload will surface exact error
   }
 }
 
-async function loadPersistedRbacState(): Promise<PersistedRbacState> {
-  const cfg = getSupabaseStorageConfig();
-  if (!cfg) {
-    return getInMemoryState();
+async function listAllAuthUsers(
+  adminClient: ReturnType<typeof createAdminClient>
+): Promise<AuthUserRecord[]> {
+  const allUsers: AuthUserRecord[] = [];
+  for (let page = 1; page <= 5; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error || !data?.users?.length) break;
+    allUsers.push(...(data.users as AuthUserRecord[]));
+    if (data.users.length < 1000) break;
+  }
+  return allUsers;
+}
+
+async function loadStateFromSupabaseStorage(
+  adminClient: ReturnType<typeof createAdminClient>,
+  cfg: { url: string; key: string }
+): Promise<PersistedRbacState | null> {
+  try {
+    const { data, error } = await adminClient.storage
+      .from(RBAC_BUCKET)
+      .download(RBAC_OBJECT_PATH);
+    if (!error && data) {
+      const rawText = await data.text();
+      if (rawText) {
+        return normalizeParsedRbacState(JSON.parse(rawText) as Partial<PersistedRbacState>);
+      }
+    }
+  } catch (err) {
+    console.warn('Supabase Storage SDK download fallback:', err);
   }
 
   try {
@@ -258,59 +372,41 @@ async function loadPersistedRbacState(): Promise<PersistedRbacState> {
       },
       cache: 'no-store',
     });
-
     if (res.ok) {
       const parsed = (await res.json()) as Partial<PersistedRbacState>;
-      const normalized: PersistedRbacState = {
-        locations: Array.isArray(parsed.locations) && parsed.locations.length > 0
-          ? parsed.locations
-          : buildSeedLocations(),
-        staffByBusiness:
-          parsed.staffByBusiness && typeof parsed.staffByBusiness === 'object'
-            ? parsed.staffByBusiness
-            : { [DEFAULT_BUSINESS_ID]: buildSeedStaff() },
-        businessById:
-          parsed.businessById && typeof parsed.businessById === 'object'
-            ? parsed.businessById
-            : { [DEFAULT_BUSINESS_ID]: buildSeedBusiness(DEFAULT_BUSINESS_ID) },
-        auditLogsByBusiness:
-          parsed.auditLogsByBusiness && typeof parsed.auditLogsByBusiness === 'object'
-            ? parsed.auditLogsByBusiness
-            : { [DEFAULT_BUSINESS_ID]: [] },
-        updatedAt: parsed.updatedAt || new Date().toISOString(),
-      };
-      globalForRbac.__ulabRbacState = normalized;
-      return normalized;
-    }
-
-    if (res.status === 400 || res.status === 404) {
-      // First-time bootstrap: seed Supabase Storage with initial locations & staff
-      const seed = getInMemoryState();
-      await savePersistedRbacState(seed).catch(() => undefined);
-      return seed;
+      return normalizeParsedRbacState(parsed);
     }
   } catch (err) {
-    console.warn('Supabase Storage loadPersistedRbacState fallback:', err);
+    console.warn('Supabase Storage fetch download fallback:', err);
   }
 
-  return getInMemoryState();
+  return null;
 }
 
-async function savePersistedRbacState(state: PersistedRbacState): Promise<void> {
-  const nextState: PersistedRbacState = {
-    ...state,
-    updatedAt: new Date().toISOString(),
-  };
-  globalForRbac.__ulabRbacState = nextState;
+async function saveStateToSupabaseStorage(
+  adminClient: ReturnType<typeof createAdminClient>,
+  cfg: { url: string; key: string },
+  state: PersistedRbacState
+): Promise<boolean> {
+  await ensureRbacBucket(adminClient, cfg.url, cfg.key);
+  const payload = JSON.stringify(state);
 
-  const cfg = getSupabaseStorageConfig();
-  if (!cfg) return;
+  try {
+    const { error } = await adminClient.storage
+      .from(RBAC_BUCKET)
+      .upload(RBAC_OBJECT_PATH, payload, {
+        contentType: 'application/json',
+        upsert: true,
+        cacheControl: '0',
+      });
+    if (!error) return true;
+  } catch {
+    // fallback to fetch upload below
+  }
 
-  await ensureRbacBucket(cfg.url, cfg.key);
-
-  const uploadUrl = `${cfg.url}/storage/v1/object/${RBAC_BUCKET}/${RBAC_OBJECT_PATH}`;
-  const doUpload = () =>
-    fetch(uploadUrl, {
+  try {
+    const uploadUrl = `${cfg.url}/storage/v1/object/${RBAC_BUCKET}/${RBAC_OBJECT_PATH}`;
+    const res = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
         apikey: cfg.key,
@@ -319,19 +415,312 @@ async function savePersistedRbacState(state: PersistedRbacState): Promise<void> 
         'x-upsert': 'true',
         'cache-control': 'no-cache, max-age=0',
       },
-      body: JSON.stringify(nextState),
+      body: payload,
       cache: 'no-store',
     });
+    if (res.ok) return true;
+  } catch {
+    // handled by caller
+  }
 
-  let res = await doUpload();
-  if (!res.ok) {
-    globalForRbac.__ulabRbacBucketReady = false;
-    await ensureRbacBucket(cfg.url, cfg.key);
-    res = await doUpload();
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      throw new Error(`Không thể lưu dữ liệu phân quyền lên hệ thống (${res.status}): ${errBody}`);
+  return false;
+}
+
+interface AuthBackupData {
+  snapshotState: PersistedRbacState | null;
+  perUserEntriesByBusiness: Record<string, { staff: StaffMemberDto; updatedAtMs: number }[]>;
+}
+
+function parseAuthStaffMeta(user: AuthUserRecord): {
+  businessId: string;
+  staff: StaffMemberDto;
+  updatedAtMs: number;
+} | null {
+  const meta = user.user_metadata;
+  if (!meta || typeof meta !== 'object') return null;
+  const raw = meta.ulab_rbac as Partial<AuthStaffRbacMeta> | undefined;
+  if (!raw || typeof raw !== 'object' || !raw.businessId || !raw.role) return null;
+
+  const fullName =
+    (typeof raw.fullName === 'string' && raw.fullName.trim()) ||
+    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+    'Nhân viên';
+
+  const locations = Array.isArray(raw.assignedLocations)
+    ? raw.assignedLocations.filter(
+        (loc): loc is { locationId: string; locationCode: string; locationName: string } =>
+          Boolean(loc && typeof loc.locationId === 'string')
+      )
+    : [];
+
+  return {
+    businessId: String(raw.businessId),
+    updatedAtMs: Date.parse(raw.updatedAt || '') || 0,
+    staff: {
+      userId: user.id,
+      fullName,
+      email: raw.email ?? (user.email || null),
+      phone: raw.phone ?? (typeof meta.phone === 'string' ? meta.phone : null),
+      role: raw.role as MvpRole,
+      assignedLocations: locations,
+      isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
+    },
+  };
+}
+
+async function loadRbacBackupFromAuth(
+  adminClient: ReturnType<typeof createAdminClient>
+): Promise<AuthBackupData> {
+  const empty: AuthBackupData = {
+    snapshotState: null,
+    perUserEntriesByBusiness: {},
+  };
+
+  try {
+    const authUsers = await listAllAuthUsers(adminClient);
+    let snapshotState: PersistedRbacState | null = null;
+    const perUserEntriesByBusiness: Record<
+      string,
+      { staff: StaffMemberDto; updatedAtMs: number }[]
+    > = {};
+
+    for (const u of authUsers) {
+      if (u.email?.toLowerCase() === RBAC_SYSTEM_STORE_EMAIL) {
+        globalForRbac.__ulabRbacSystemUserId = u.id;
+        const rawSnapshot = u.user_metadata?.ulab_rbac_state as
+          | Partial<PersistedRbacState>
+          | undefined;
+        if (rawSnapshot && typeof rawSnapshot === 'object') {
+          snapshotState = normalizeParsedRbacState(rawSnapshot);
+        }
+        continue;
+      }
+
+      const parsed = parseAuthStaffMeta(u);
+      if (parsed) {
+        if (!perUserEntriesByBusiness[parsed.businessId]) {
+          perUserEntriesByBusiness[parsed.businessId] = [];
+        }
+        perUserEntriesByBusiness[parsed.businessId].push({
+          staff: parsed.staff,
+          updatedAtMs: parsed.updatedAtMs,
+        });
+      }
     }
+
+    return { snapshotState, perUserEntriesByBusiness };
+  } catch (err) {
+    console.warn('Auth RBAC backup read fallback:', err);
+    return empty;
+  }
+}
+
+async function saveRbacSnapshotToAuth(
+  adminClient: ReturnType<typeof createAdminClient>,
+  state: PersistedRbacState
+): Promise<boolean> {
+  const compactLogs: Record<string, RbacAuditLogItem[]> = {};
+  if (state.auditLogsByBusiness) {
+    for (const [bizId, logs] of Object.entries(state.auditLogsByBusiness)) {
+      compactLogs[bizId] = (logs || []).slice(0, 30);
+    }
+  }
+
+  const compactSnapshot: PersistedRbacState = {
+    locations: state.locations,
+    staffByBusiness: state.staffByBusiness,
+    revokedStaffIdsByBusiness: state.revokedStaffIdsByBusiness || {},
+    businessById: state.businessById,
+    auditLogsByBusiness: compactLogs,
+    updatedAt: state.updatedAt,
+  };
+
+  try {
+    let sysUserId = globalForRbac.__ulabRbacSystemUserId;
+    if (sysUserId) {
+      const { error } = await adminClient.auth.admin.updateUserById(sysUserId, {
+        user_metadata: {
+          full_name: 'ULAB RBAC System Store',
+          ulab_rbac_state: compactSnapshot,
+        },
+      });
+      if (!error) return true;
+      globalForRbac.__ulabRbacSystemUserId = undefined;
+      sysUserId = undefined;
+    }
+
+    const authUsers = await listAllAuthUsers(adminClient);
+    const existing = authUsers.find(
+      (u) => u.email?.toLowerCase() === RBAC_SYSTEM_STORE_EMAIL
+    );
+    if (existing) {
+      globalForRbac.__ulabRbacSystemUserId = existing.id;
+      const { error } = await adminClient.auth.admin.updateUserById(existing.id, {
+        user_metadata: {
+          full_name: 'ULAB RBAC System Store',
+          ulab_rbac_state: compactSnapshot,
+        },
+      });
+      return !error;
+    }
+
+    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
+      email: RBAC_SYSTEM_STORE_EMAIL,
+      password: `${crypto.randomUUID()}Aa1!`,
+      email_confirm: true,
+      user_metadata: {
+        full_name: 'ULAB RBAC System Store',
+        ulab_rbac_state: compactSnapshot,
+      },
+    });
+    if (!createErr && created?.user) {
+      globalForRbac.__ulabRbacSystemUserId = created.user.id;
+      return true;
+    }
+  } catch (err) {
+    console.warn('Auth RBAC snapshot save fallback:', err);
+  }
+
+  return false;
+}
+
+function mergeAuditLogBuckets(
+  primaryLogs?: Record<string, RbacAuditLogItem[]>,
+  secondaryLogs?: Record<string, RbacAuditLogItem[]>
+): Record<string, RbacAuditLogItem[]> {
+  const merged: Record<string, RbacAuditLogItem[]> = {};
+  const keys = new Set([
+    ...Object.keys(primaryLogs || {}),
+    ...Object.keys(secondaryLogs || {}),
+  ]);
+
+  for (const bizId of keys) {
+    const map = new Map<string, RbacAuditLogItem>();
+    for (const item of [...(secondaryLogs?.[bizId] || []), ...(primaryLogs?.[bizId] || [])]) {
+      if (item?.id) map.set(item.id, item);
+    }
+    merged[bizId] = Array.from(map.values())
+      .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+      .slice(0, MAX_STORED_AUDIT_LOGS);
+  }
+
+  return merged;
+}
+
+async function loadPersistedRbacState(): Promise<PersistedRbacState> {
+  const cfg = getSupabaseStorageConfig();
+  const adminClient = createAdminClient();
+
+  const [storageRes, authRes] = await Promise.allSettled([
+    loadStateFromSupabaseStorage(adminClient, cfg),
+    loadRbacBackupFromAuth(adminClient),
+  ]);
+
+  const storageState = storageRes.status === 'fulfilled' ? storageRes.value : null;
+  const authBackup: AuthBackupData =
+    authRes.status === 'fulfilled'
+      ? authRes.value
+      : { snapshotState: null, perUserEntriesByBusiness: {} };
+  const authState = authBackup.snapshotState;
+
+  if (!storageState && !authState && Object.keys(authBackup.perUserEntriesByBusiness).length === 0) {
+    return getInMemoryState();
+  }
+
+  const storageMs = Date.parse(storageState?.updatedAt || '') || 0;
+  const authMs = Date.parse(authState?.updatedAt || '') || 0;
+  const newestBase =
+    storageState && (!authState || storageMs >= authMs)
+      ? storageState
+      : authState || createSeedState();
+  const olderBase =
+    newestBase === storageState ? authState : storageState;
+  const newestBaseMs = Math.max(storageMs, authMs);
+
+  const bizIds = new Set<string>([
+    DEFAULT_BUSINESS_ID,
+    ...Object.keys(newestBase.staffByBusiness || {}),
+    ...Object.keys(olderBase?.staffByBusiness || {}),
+    ...Object.keys(authBackup.perUserEntriesByBusiness),
+  ]);
+
+  const mergedStaffByBusiness: Record<string, StaffMemberDto[]> = {};
+  const revokedByBusiness: Record<string, string[]> = {
+    ...(olderBase?.revokedStaffIdsByBusiness || {}),
+    ...(newestBase.revokedStaffIdsByBusiness || {}),
+  };
+
+  for (const bizId of bizIds) {
+    const revokedIds = revokedByBusiness[bizId] || [];
+    const primaryStaff = [...(newestBase.staffByBusiness?.[bizId] || [])];
+    const olderStaff = olderBase?.staffByBusiness?.[bizId] || [];
+    const perUserEntries = authBackup.perUserEntriesByBusiness[bizId] || [];
+
+    const fresherPerUser: StaffMemberDto[] = [];
+    const standardPerUser: StaffMemberDto[] = [];
+    for (const entry of perUserEntries) {
+      if (revokedIds.includes(entry.staff.userId)) continue;
+      if (entry.updatedAtMs > newestBaseMs) {
+        fresherPerUser.push(entry.staff);
+      } else {
+        standardPerUser.push(entry.staff);
+      }
+    }
+
+    const baseMerged = mergeStaffMemberLists(
+      mergeStaffMemberLists(fresherPerUser, primaryStaff, revokedIds),
+      mergeStaffMemberLists(olderStaff, standardPerUser, revokedIds),
+      revokedIds
+    );
+
+    mergedStaffByBusiness[bizId] =
+      bizId === DEFAULT_BUSINESS_ID
+        ? mergeStaffMemberLists(baseMerged, buildSeedStaff(), revokedIds)
+        : baseMerged;
+  }
+
+  const normalized: PersistedRbacState = {
+    locations:
+      newestBase.locations && newestBase.locations.length > 0
+        ? newestBase.locations
+        : olderBase?.locations && olderBase.locations.length > 0
+          ? olderBase.locations
+          : buildSeedLocations(),
+    staffByBusiness: mergedStaffByBusiness,
+    revokedStaffIdsByBusiness: revokedByBusiness,
+    businessById: {
+      ...(olderBase?.businessById || {}),
+      ...(newestBase.businessById || {}),
+    },
+    auditLogsByBusiness: mergeAuditLogBuckets(
+      newestBase.auditLogsByBusiness,
+      olderBase?.auditLogsByBusiness
+    ),
+    updatedAt: newestBase.updatedAt || new Date().toISOString(),
+  };
+
+  globalForRbac.__ulabRbacState = normalized;
+  return normalized;
+}
+
+async function savePersistedRbacState(state: PersistedRbacState): Promise<void> {
+  const nextState: PersistedRbacState = {
+    ...state,
+    revokedStaffIdsByBusiness: state.revokedStaffIdsByBusiness || {},
+    updatedAt: new Date().toISOString(),
+  };
+  globalForRbac.__ulabRbacState = nextState;
+
+  const cfg = getSupabaseStorageConfig();
+  const adminClient = createAdminClient();
+
+  const [storageOk, authOk] = await Promise.all([
+    saveStateToSupabaseStorage(adminClient, cfg, nextState),
+    saveRbacSnapshotToAuth(adminClient, nextState),
+  ]);
+
+  if (!storageOk && !authOk) {
+    throw new Error('Không thể lưu dữ liệu phân quyền lên hệ thống lưu trữ từ xa.');
   }
 }
 
@@ -341,6 +730,27 @@ function getBusinessStaff(state: PersistedRbacState, businessId: string): StaffM
       businessId === DEFAULT_BUSINESS_ID ? buildSeedStaff() : [];
   }
   return state.staffByBusiness[businessId];
+}
+
+function getRevokedStaffIds(state: PersistedRbacState, businessId: string): string[] {
+  if (!state.revokedStaffIdsByBusiness) {
+    state.revokedStaffIdsByBusiness = {};
+  }
+  if (!state.revokedStaffIdsByBusiness[businessId]) {
+    state.revokedStaffIdsByBusiness[businessId] = [];
+  }
+  return state.revokedStaffIdsByBusiness[businessId];
+}
+
+function unmarkStaffRevoked(state: PersistedRbacState, businessId: string, userId: string): void {
+  const revoked = getRevokedStaffIds(state, businessId);
+  const idx = revoked.indexOf(userId);
+  if (idx !== -1) revoked.splice(idx, 1);
+}
+
+function markStaffRevoked(state: PersistedRbacState, businessId: string, userId: string): void {
+  const revoked = getRevokedStaffIds(state, businessId);
+  if (!revoked.includes(userId)) revoked.push(userId);
 }
 
 function getBusinessAuditLogs(state: PersistedRbacState, businessId: string): RbacAuditLogItem[] {
@@ -666,7 +1076,7 @@ export function findStaffByUserId(userId: string): StaffMemberDto | null {
 
 /**
  * Persistent async lookup of a staff member by userId, phone, or email.
- * Checks DB business_memberships first, then persistent Supabase Storage RBAC state.
+ * Checks DB / Supabase Storage / Auth durable RBAC state, excluding revoked IDs.
  */
 export async function findStaffMemberAsync(params: {
   userId?: string | null;
@@ -676,8 +1086,39 @@ export async function findStaffMemberAsync(params: {
 }): Promise<StaffMemberDto | null> {
   const businessId = params.businessId || DEFAULT_BUSINESS_ID;
   const state = await loadPersistedRbacState();
-  const persistedList = getBusinessStaff(state, businessId);
+  const revokedIds = getRevokedStaffIds(state, businessId);
+  const persistedList = getBusinessStaff(state, businessId).filter(
+    (s) => !revokedIds.includes(s.userId)
+  );
   return matchStaffInList(persistedList, params.userId, params.phone, params.email);
+}
+
+/**
+ * Resolve default MEMBER tier UUID dynamically from PostgreSQL tiers table.
+ */
+async function resolveDefaultMemberTierId(
+  adminClient: ReturnType<typeof createAdminClient>
+): Promise<string> {
+  try {
+    const { data: memberTier } = await adminClient
+      .from('tiers')
+      .select('id')
+      .eq('code', 'MEMBER')
+      .limit(1)
+      .maybeSingle();
+    if (memberTier?.id) return String(memberTier.id);
+
+    const { data: anyTier } = await adminClient
+      .from('tiers')
+      .select('id')
+      .order('min_spending', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (anyTier?.id) return String(anyTier.id);
+  } catch (err) {
+    console.warn('resolveDefaultMemberTierId fallback:', err);
+  }
+  return FALLBACK_MEMBER_TIER_ID;
 }
 
 /**
@@ -730,7 +1171,7 @@ async function resolveTargetStaff(
 }
 
 /**
- * Synchronize staff login credentials with Supabase Auth using service role client.
+ * Synchronize staff login credentials and RBAC metadata with Supabase Auth using service role client.
  */
 async function syncAuthUserAccount(params: {
   existingUserId?: string | null;
@@ -738,133 +1179,129 @@ async function syncAuthUserAccount(params: {
   phone?: string | null;
   fullName: string;
   password?: string;
+  createIfMissing?: boolean;
+  rbacMeta?: AuthStaffRbacMeta | null;
+  clearRbacMeta?: boolean;
 }): Promise<{ authUserId: string | null; provisioned: boolean }> {
   const cleanPhone = normalizePhone(params.phone);
   const cleanEmail = params.email ? params.email.trim().toLowerCase() : null;
   const authEmail = cleanEmail || (cleanPhone ? `${cleanPhone}@coffeehouse.vn` : null);
   const adminClient = createAdminClient();
 
-  if (!authEmail) {
-    return { authUserId: params.existingUserId || null, provisioned: false };
+  const buildMergedMetadata = (existingMeta?: Record<string, unknown>): Record<string, unknown> => {
+    const merged: Record<string, unknown> = {
+      ...(existingMeta || {}),
+      full_name: params.fullName,
+      ...(cleanPhone ? { phone: cleanPhone } : {}),
+    };
+    if (params.clearRbacMeta) {
+      delete merged.ulab_rbac;
+    } else if (params.rbacMeta) {
+      merged.ulab_rbac = params.rbacMeta;
+    }
+    return merged;
+  };
+
+  if (!authEmail && !params.existingUserId) {
+    return { authUserId: null, provisioned: false };
   }
 
   try {
     if (params.existingUserId) {
-      const updateAttrs: {
-        email?: string;
-        password?: string;
-        email_confirm?: boolean;
-        user_metadata?: Record<string, unknown>;
-      } = {
-        email_confirm: true,
-        user_metadata: {
-          full_name: params.fullName,
-          ...(cleanPhone ? { phone: cleanPhone } : {}),
-        },
-      };
-      if (params.password) {
-        updateAttrs.password = params.password;
+      const { data: byIdData } = await adminClient.auth.admin.getUserById(params.existingUserId);
+      if (byIdData?.user) {
+        const updateAttrs: {
+          password?: string;
+          email_confirm: boolean;
+          user_metadata: Record<string, unknown>;
+        } = {
+          email_confirm: true,
+          user_metadata: buildMergedMetadata(byIdData.user.user_metadata),
+        };
+        if (params.password) {
+          updateAttrs.password = params.password;
+        }
+        const { data: updatedData, error: updateErr } =
+          await adminClient.auth.admin.updateUserById(byIdData.user.id, updateAttrs);
+        if (!updateErr && updatedData?.user) {
+          return { authUserId: updatedData.user.id, provisioned: Boolean(params.password) };
+        }
       }
 
-      const { data: updatedData, error: updateErr } = await adminClient.auth.admin.updateUserById(
-        params.existingUserId,
-        updateAttrs
-      );
+      const { data: userRow } = await adminClient
+        .from('users')
+        .select('google_id')
+        .eq('id', params.existingUserId)
+        .maybeSingle();
 
-      if (!updateErr && updatedData?.user) {
-        return { authUserId: updatedData.user.id, provisioned: Boolean(params.password) };
-      }
-
-      // If not found by existingUserId (e.g. legacy row or different auth id), search by email or create
-      if (params.password) {
-        const { data: userRow } = await adminClient
-          .from('users')
-          .select('google_id')
-          .eq('id', params.existingUserId)
-          .maybeSingle();
-
-        if (userRow?.google_id && userRow.google_id !== params.existingUserId) {
+      if (userRow?.google_id && userRow.google_id !== params.existingUserId) {
+        const { data: byGoogleData } = await adminClient.auth.admin.getUserById(
+          String(userRow.google_id)
+        );
+        if (byGoogleData?.user) {
+          const updateAttrs: {
+            password?: string;
+            email_confirm: boolean;
+            user_metadata: Record<string, unknown>;
+          } = {
+            email_confirm: true,
+            user_metadata: buildMergedMetadata(byGoogleData.user.user_metadata),
+          };
+          if (params.password) {
+            updateAttrs.password = params.password;
+          }
           const retryByGoogleId = await adminClient.auth.admin.updateUserById(
-            String(userRow.google_id),
+            byGoogleData.user.id,
             updateAttrs
           );
           if (!retryByGoogleId.error && retryByGoogleId.data?.user) {
-            return { authUserId: retryByGoogleId.data.user.id, provisioned: true };
+            return { authUserId: retryByGoogleId.data.user.id, provisioned: Boolean(params.password) };
           }
         }
+      }
+    }
 
-        const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-          email: authEmail,
-          password: params.password,
+    if (authEmail) {
+      const authUsers = await listAllAuthUsers(adminClient);
+      const existingAuth = authUsers.find((u) => u.email?.toLowerCase() === authEmail);
+      if (existingAuth) {
+        const updateAttrs: {
+          password?: string;
+          email_confirm: boolean;
+          user_metadata: Record<string, unknown>;
+        } = {
           email_confirm: true,
-          user_metadata: {
-            full_name: params.fullName,
-            ...(cleanPhone ? { phone: cleanPhone } : {}),
-          },
-        });
-
-        if (!createErr && created?.user) {
-          await adminClient
-            .from('users')
-            .update({ google_id: created.user.id })
-            .eq('id', params.existingUserId);
-          return { authUserId: created.user.id, provisioned: true };
+          user_metadata: buildMergedMetadata(existingAuth.user_metadata),
+        };
+        if (params.password) {
+          updateAttrs.password = params.password;
         }
-
-        const { data: listData } = await adminClient.auth.admin.listUsers();
-        const existingAuth = listData?.users?.find(
-          (u) => u.email?.toLowerCase() === authEmail
-        );
-        if (existingAuth) {
-          await adminClient.auth.admin.updateUserById(existingAuth.id, updateAttrs);
+        await adminClient.auth.admin.updateUserById(existingAuth.id, updateAttrs);
+        if (params.existingUserId) {
           await adminClient
             .from('users')
             .update({ google_id: existingAuth.id })
             .eq('id', params.existingUserId);
-          return { authUserId: existingAuth.id, provisioned: true };
         }
+        return { authUserId: existingAuth.id, provisioned: Boolean(params.password) };
       }
 
-      return { authUserId: params.existingUserId, provisioned: false };
-    }
-
-    if (!params.password) {
-      return { authUserId: null, provisioned: false };
-    }
-
-    const { data: createdData, error: createErr } = await adminClient.auth.admin.createUser({
-      email: authEmail,
-      password: params.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: params.fullName,
-        ...(cleanPhone ? { phone: cleanPhone } : {}),
-      },
-    });
-
-    if (!createErr && createdData?.user) {
-      return { authUserId: createdData.user.id, provisioned: true };
-    }
-
-    if (
-      createErr &&
-      (createErr.message.toLowerCase().includes('already') ||
-        createErr.message.toLowerCase().includes('registered'))
-    ) {
-      const { data: listData } = await adminClient.auth.admin.listUsers();
-      const existingAuth = listData?.users?.find(
-        (u) => u.email?.toLowerCase() === authEmail
-      );
-      if (existingAuth) {
-        await adminClient.auth.admin.updateUserById(existingAuth.id, {
-          password: params.password,
+      if (params.password || params.createIfMissing) {
+        const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
+          email: authEmail,
+          password: params.password || `${crypto.randomUUID()}Aa1!`,
           email_confirm: true,
-          user_metadata: {
-            full_name: params.fullName,
-            ...(cleanPhone ? { phone: cleanPhone } : {}),
-          },
+          user_metadata: buildMergedMetadata(),
         });
-        return { authUserId: existingAuth.id, provisioned: true };
+        if (!createErr && created?.user) {
+          if (params.existingUserId) {
+            await adminClient
+              .from('users')
+              .update({ google_id: created.user.id })
+              .eq('id', params.existingUserId);
+          }
+          return { authUserId: created.user.id, provisioned: Boolean(params.password) };
+        }
       }
     }
   } catch (err) {
@@ -1197,6 +1634,75 @@ export async function updateLocation(
   return finalLocation;
 }
 
+async function ensureDbUserRowForStaff(
+  adminClient: ReturnType<typeof createAdminClient>,
+  params: {
+    userId: string;
+    authUserId?: string | null;
+    fullName?: string;
+    email?: string | null;
+    phone?: string | null;
+    isElevatedRole: boolean;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const dbRole = params.isElevatedRole ? 'ADMIN' : 'USER';
+
+  const { data: existingUser } = await adminClient
+    .from('users')
+    .select('id')
+    .eq('id', params.userId)
+    .maybeSingle();
+
+  if (existingUser?.id) {
+    const updatePayload: Record<string, unknown> = {
+      role: dbRole,
+      updated_at: now,
+    };
+    if (params.fullName !== undefined) updatePayload.full_name = params.fullName;
+    if (params.phone !== undefined) updatePayload.phone = params.phone;
+    if (params.email !== undefined) updatePayload.email = params.email;
+    if (params.authUserId) updatePayload.google_id = params.authUserId;
+
+    const { error } = await adminClient
+      .from('users')
+      .update(updatePayload)
+      .eq('id', params.userId);
+
+    if (error && updatePayload.google_id) {
+      delete updatePayload.google_id;
+      await adminClient.from('users').update(updatePayload).eq('id', params.userId);
+    }
+    return;
+  }
+
+  const tierId = await resolveDefaultMemberTierId(adminClient);
+  const insertEmail =
+    params.email || (params.phone ? `${params.phone}@coffeehouse.vn` : null);
+  const insertPayload: Record<string, unknown> = {
+    id: params.userId,
+    google_id: params.authUserId || params.userId,
+    full_name: params.fullName || 'Nhân viên',
+    email: insertEmail,
+    phone: params.phone || null,
+    role: dbRole,
+    current_tier_id: tierId,
+    updated_at: now,
+  };
+
+  const { error: insertErr } = await adminClient.from('users').upsert(insertPayload);
+  if (insertErr) {
+    const fallbackPayload = { ...insertPayload, google_id: null };
+    const { error: retryErr } = await adminClient.from('users').upsert(fallbackPayload);
+    if (retryErr && insertEmail) {
+      await adminClient.from('users').upsert({
+        ...fallbackPayload,
+        email: null,
+      });
+    }
+  }
+}
+
 /**
  * List staff members in the business with their role and assigned locations.
  * Requires OWNER or ADMIN role.
@@ -1208,87 +1714,85 @@ export async function listStaffMembers(user: UserRbacProfile): Promise<StaffMemb
 
   const state = await loadPersistedRbacState();
   const persistedStaff = getBusinessStaff(state, user.businessId);
+  const revokedIds = getRevokedStaffIds(state, user.businessId);
+  const persistedLocMap = new Map<string, { code: string; name: string }>(
+    state.locations.map((l) => [l.id, { code: l.code, name: l.name }])
+  );
 
   try {
     const adminClient = createAdminClient();
 
-    const { data: locRows, error: locErr } = await adminClient
+    const { data: locRows } = await adminClient
       .from('locations')
       .select('id, code, name')
       .eq('business_id', user.businessId);
 
-    if (!locErr && locRows) {
-      const locMap = new Map<string, { code: string; name: string }>();
-      locRows.forEach((l: { id: string; code: string; name: string }) => {
-        locMap.set(l.id, { code: l.code, name: l.name });
+    const locMap = new Map<string, { code: string; name: string }>(persistedLocMap);
+    (locRows || []).forEach((l: { id: string; code: string; name: string }) => {
+      locMap.set(l.id, { code: l.code, name: l.name });
+    });
+
+    const { data: memberships, error: memErr } = await adminClient
+      .from('business_memberships')
+      .select('user_id, role, is_active')
+      .eq('business_id', user.businessId);
+
+    if (!memErr && memberships && memberships.length > 0) {
+      const membershipUserIds = memberships.map((m: { user_id: string }) => m.user_id);
+
+      const { data: assignRows } = await adminClient
+        .from('user_location_assignments')
+        .select('user_id, location_id, is_active')
+        .eq('business_id', user.businessId)
+        .eq('is_active', true);
+
+      const assignmentMap = new Map<string, string[]>();
+      (assignRows || []).forEach((a: { user_id: string; location_id: string }) => {
+        const arr = assignmentMap.get(a.user_id) || [];
+        arr.push(a.location_id);
+        assignmentMap.set(a.user_id, arr);
       });
 
-      const { data: memberships, error: memErr } = await adminClient
-        .from('business_memberships')
-        .select('user_id, role, is_active')
-        .eq('business_id', user.businessId);
+      const { data: userRows } = await adminClient
+        .from('users')
+        .select('id, full_name, email, phone')
+        .in('id', membershipUserIds);
 
-      if (!memErr && memberships && memberships.length > 0) {
-        const { data: assignRows } = await adminClient
-          .from('user_location_assignments')
-          .select('user_id, location_id, is_active')
-          .eq('business_id', user.businessId)
-          .eq('is_active', true);
+      const userMap = new Map<string, { full_name?: string; email?: string; phone?: string }>();
+      (userRows || []).forEach((u: { id: string; full_name?: string; email?: string; phone?: string }) => {
+        userMap.set(u.id, u);
+      });
 
-        const assignmentMap = new Map<string, string[]>();
-        (assignRows || []).forEach((a: { user_id: string; location_id: string }) => {
-          const arr = assignmentMap.get(a.user_id) || [];
-          arr.push(a.location_id);
-          assignmentMap.set(a.user_id, arr);
-        });
+      const dbStaffList: StaffMemberDto[] = memberships.map(
+        (m: { user_id: string; role: string; is_active: boolean }) => {
+          const userInfo = userMap.get(m.user_id);
+          const locIds = assignmentMap.get(m.user_id) || [];
+          return {
+            userId: m.user_id,
+            fullName: userInfo?.full_name || 'Nhân viên',
+            email: userInfo?.email || null,
+            phone: userInfo?.phone || null,
+            role: m.role as MvpRole,
+            isActive: m.is_active,
+            assignedLocations: locIds.map((lid) => {
+              const lInfo = locMap.get(lid);
+              return {
+                locationId: lid,
+                locationCode: lInfo?.code || lid,
+                locationName: lInfo?.name || 'Điểm bán',
+              };
+            }),
+          };
+        }
+      );
 
-        const { data: userRows } = await adminClient
-          .from('users')
-          .select('id, full_name, email, phone');
-
-        const userMap = new Map<string, { full_name?: string; email?: string; phone?: string }>();
-        (userRows || []).forEach((u: { id: string; full_name?: string; email?: string; phone?: string }) => {
-          userMap.set(u.id, u);
-        });
-
-        const dbStaffList: StaffMemberDto[] = memberships.map(
-          (m: { user_id: string; role: string; is_active: boolean }) => {
-            const userInfo = userMap.get(m.user_id);
-            const locIds = assignmentMap.get(m.user_id) || [];
-            return {
-              userId: m.user_id,
-              fullName: userInfo?.full_name || 'Nhân viên',
-              email: userInfo?.email || null,
-              phone: userInfo?.phone || null,
-              role: m.role as MvpRole,
-              isActive: m.is_active,
-              assignedLocations: locIds.map((lid) => {
-                const lInfo = locMap.get(lid);
-                return {
-                  locationId: lid,
-                  locationCode: lInfo?.code || lid,
-                  locationName: lInfo?.name || 'Điểm bán',
-                };
-              }),
-            };
-          }
-        );
-
-        // Merge any persisted-only staff members not yet present in DB
-        const dbIds = new Set(dbStaffList.map((s) => s.userId));
-        persistedStaff.forEach((ps) => {
-          if (!dbIds.has(ps.userId)) {
-            dbStaffList.push(ps);
-          }
-        });
-        return dbStaffList;
-      }
+      return mergeStaffMemberLists(dbStaffList, persistedStaff, revokedIds);
     }
   } catch (err) {
     console.warn('DB listStaffMembers fallback:', err);
   }
 
-  return persistedStaff;
+  return mergeStaffMemberLists([], persistedStaff, revokedIds);
 }
 
 /**
@@ -1312,12 +1816,62 @@ export async function assignStaffRoleAndLocations(
   }
 
   const validatedContact = contactUpdates ? validateStaffUpdateInput(contactUpdates) : {};
-
   const state = await loadPersistedRbacState();
   const staffList = getBusinessStaff(state, actor.businessId);
   const adminClient = createAdminClient();
+  const now = new Date().toISOString();
+
+  unmarkStaffRevoked(state, actor.businessId, targetUserId);
+
+  const matchedLocations = state.locations
+    .filter((l) => locationIds.includes(l.id))
+    .map((l) => ({
+      locationId: l.id,
+      locationCode: l.code,
+      locationName: l.name,
+    }));
+
+  const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
+  let targetStaff: StaffMemberDto;
+
+  if (staffIdx !== -1) {
+    staffList[staffIdx].role = targetRole;
+    staffList[staffIdx].assignedLocations = matchedLocations;
+    staffList[staffIdx].isActive = true;
+    if (validatedContact.fullName !== undefined) staffList[staffIdx].fullName = validatedContact.fullName;
+    if (validatedContact.phone !== undefined) staffList[staffIdx].phone = validatedContact.phone;
+    if (validatedContact.email !== undefined) staffList[staffIdx].email = validatedContact.email;
+    targetStaff = staffList[staffIdx];
+  } else {
+    const { data: userInfo } = await adminClient
+      .from('users')
+      .select('full_name, email, phone')
+      .eq('id', targetUserId)
+      .maybeSingle();
+
+    targetStaff = {
+      userId: targetUserId,
+      fullName: validatedContact.fullName || userInfo?.full_name || 'Nhân viên mới',
+      email: validatedContact.email !== undefined ? validatedContact.email : (userInfo?.email || null),
+      phone: validatedContact.phone !== undefined ? validatedContact.phone : (userInfo?.phone || null),
+      role: targetRole,
+      assignedLocations: matchedLocations,
+      isActive: true,
+    };
+    staffList.push(targetStaff);
+  }
+
+  const isElevated = targetRole === 'OWNER' || targetRole === 'ADMIN';
 
   try {
+    await ensureDbUserRowForStaff(adminClient, {
+      userId: targetUserId,
+      fullName: targetStaff.fullName,
+      phone: targetStaff.phone,
+      email: targetStaff.email,
+      isElevatedRole: isElevated,
+    });
+
     const { error: upsertErr } = await adminClient
       .from('business_memberships')
       .upsert(
@@ -1326,7 +1880,7 @@ export async function assignStaffRoleAndLocations(
           user_id: targetUserId,
           role: targetRole,
           is_active: true,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         },
         { onConflict: 'business_id,user_id' }
       );
@@ -1349,80 +1903,35 @@ export async function assignStaffRoleAndLocations(
         await adminClient.from('user_location_assignments').insert(newAssignments);
       }
     }
-
-    const isElevated = targetRole === 'OWNER' || targetRole === 'ADMIN';
-    const userUpdatePayload: Record<string, unknown> = {
-      role: isElevated ? 'ADMIN' : 'USER',
-      updated_at: new Date().toISOString(),
-    };
-    if (validatedContact.fullName !== undefined) userUpdatePayload.full_name = validatedContact.fullName;
-    if (validatedContact.phone !== undefined) userUpdatePayload.phone = validatedContact.phone;
-    if (validatedContact.email !== undefined) userUpdatePayload.email = validatedContact.email;
-
-    await adminClient
-      .from('users')
-      .update(userUpdatePayload)
-      .eq('id', targetUserId);
   } catch (err) {
     console.warn('DB assignStaffRoleAndLocations fallback:', err);
   }
 
-  const matchedLocations = state.locations
-    .filter((l) => locationIds.includes(l.id))
-    .map((l) => ({
-      locationId: l.id,
-      locationCode: l.code,
-      locationName: l.name,
-    }));
-
-  const staffIdx = staffList.findIndex((s) => s.userId === targetUserId);
-  let staffName = 'Nhân viên';
-
-  if (staffIdx !== -1) {
-    staffList[staffIdx].role = targetRole;
-    staffList[staffIdx].assignedLocations = matchedLocations;
-    if (validatedContact.fullName !== undefined) staffList[staffIdx].fullName = validatedContact.fullName;
-    if (validatedContact.phone !== undefined) staffList[staffIdx].phone = validatedContact.phone;
-    if (validatedContact.email !== undefined) staffList[staffIdx].email = validatedContact.email;
-    staffName = staffList[staffIdx].fullName;
-  } else {
-    const { data: userInfo } = await adminClient
-      .from('users')
-      .select('full_name, email, phone')
-      .eq('id', targetUserId)
-      .maybeSingle();
-
-    staffName = validatedContact.fullName || userInfo?.full_name || 'Nhân viên mới';
-    staffList.push({
-      userId: targetUserId,
-      fullName: staffName,
-      email: validatedContact.email !== undefined ? validatedContact.email : (userInfo?.email || null),
-      phone: validatedContact.phone !== undefined ? validatedContact.phone : (userInfo?.phone || null),
+  await syncAuthUserAccount({
+    existingUserId: targetUserId,
+    email: targetStaff.email,
+    phone: targetStaff.phone,
+    fullName: targetStaff.fullName,
+    createIfMissing: true,
+    rbacMeta: {
+      businessId: actor.businessId,
       role: targetRole,
       assignedLocations: matchedLocations,
-      isActive: true,
-    });
-  }
-
-  if (validatedContact.fullName || validatedContact.email || validatedContact.phone) {
-    const targetStaff = staffList.find((s) => s.userId === targetUserId);
-    if (targetStaff) {
-      await syncAuthUserAccount({
-        existingUserId: targetUserId,
-        email: targetStaff.email,
-        phone: targetStaff.phone,
-        fullName: targetStaff.fullName,
-      });
-    }
-  }
+      isActive: targetStaff.isActive,
+      fullName: targetStaff.fullName,
+      phone: targetStaff.phone || null,
+      email: targetStaff.email || null,
+      updatedAt: now,
+    },
+  });
 
   await recordRbacAuditLog({
     actor,
     action: 'UPDATE_STAFF',
     targetType: 'STAFF',
     targetId: targetUserId,
-    targetName: staffName,
-    summary: `Cập nhật quyền (${targetRole}) & ${matchedLocations.length} điểm bán cho ${staffName}`,
+    targetName: targetStaff.fullName,
+    summary: `Cập nhật quyền (${targetRole}) & ${matchedLocations.length} điểm bán cho ${targetStaff.fullName}`,
     metadata: {
       role: targetRole,
       locationCodes: matchedLocations.map((l) => l.locationCode),
@@ -1449,11 +1958,13 @@ export async function createStaffMember(
   validateStaffCreateInput(input);
   const validatedPassword = validateStaffPassword(input.initialPassword, false);
 
+  const cleanFullName = input.fullName.trim();
   const cleanPhone = normalizePhone(input.phone) || '';
   const cleanEmail = (input.email || '').trim().toLowerCase();
   const adminClient = createAdminClient();
   const state = await loadPersistedRbacState();
   const staffList = getBusinessStaff(state, actor.businessId);
+  const now = new Date().toISOString();
 
   let resolvedUserId: string | null = null;
   let existingEmail: string | null = null;
@@ -1477,7 +1988,7 @@ export async function createStaffMember(
       const { data: byEmailRows } = await adminClient
         .from('users')
         .select('id, role, email, phone')
-        .eq('email', cleanEmail)
+        .ilike('email', cleanEmail)
         .limit(1);
       const byEmail = byEmailRows?.[0];
       if (byEmail?.id) {
@@ -1500,23 +2011,6 @@ export async function createStaffMember(
     }
   }
 
-  let authSyncResult: { authUserId: string | null; provisioned: boolean } = {
-    authUserId: resolvedUserId,
-    provisioned: false,
-  };
-
-  if (validatedPassword) {
-    authSyncResult = await syncAuthUserAccount({
-      existingUserId: resolvedUserId,
-      email: cleanEmail || existingEmail,
-      phone: cleanPhone || existingPhone,
-      fullName: input.fullName.trim(),
-      password: validatedPassword,
-    });
-  }
-
-  const finalUserId = resolvedUserId || authSyncResult.authUserId || crypto.randomUUID();
-
   const matchedLocations = state.locations
     .filter((l) => input.locationIds.includes(l.id))
     .map((l) => ({
@@ -1525,11 +2019,39 @@ export async function createStaffMember(
       locationName: l.name,
     }));
 
+  const finalEmail = cleanEmail || existingEmail || null;
+  const finalPhone = cleanPhone || existingPhone || null;
+
+  const rbacMeta: AuthStaffRbacMeta = {
+    businessId: actor.businessId,
+    role: input.role,
+    assignedLocations: matchedLocations,
+    isActive: true,
+    fullName: cleanFullName,
+    phone: finalPhone,
+    email: finalEmail,
+    updatedAt: now,
+  };
+
+  // Always sync to Supabase Auth so durable user_metadata backup is written reliably
+  const authSyncResult = await syncAuthUserAccount({
+    existingUserId: resolvedUserId,
+    email: finalEmail,
+    phone: finalPhone,
+    fullName: cleanFullName,
+    password: validatedPassword || undefined,
+    createIfMissing: true,
+    rbacMeta,
+  });
+
+  const finalUserId = resolvedUserId || authSyncResult.authUserId || crypto.randomUUID();
+  unmarkStaffRevoked(state, actor.businessId, finalUserId);
+
   const newStaff: StaffMemberDto = {
     userId: finalUserId,
-    fullName: input.fullName.trim(),
-    email: cleanEmail || existingEmail || null,
-    phone: cleanPhone || existingPhone || null,
+    fullName: cleanFullName,
+    email: finalEmail,
+    phone: finalPhone,
     role: input.role,
     assignedLocations: matchedLocations,
     isActive: true,
@@ -1537,32 +2059,14 @@ export async function createStaffMember(
 
   try {
     const isElevatedRole = input.role === 'OWNER' || input.role === 'ADMIN';
-
-    if (resolvedUserId) {
-      const updatePayload: Record<string, unknown> = {
-        full_name: newStaff.fullName,
-        role: isElevatedRole ? 'ADMIN' : 'USER',
-        updated_at: new Date().toISOString(),
-      };
-      if (cleanPhone && !existingPhone) updatePayload.phone = cleanPhone;
-      if (cleanEmail && !existingEmail) updatePayload.email = cleanEmail;
-      if (authSyncResult.authUserId) updatePayload.google_id = authSyncResult.authUserId;
-
-      await adminClient
-        .from('users')
-        .update(updatePayload)
-        .eq('id', resolvedUserId);
-    } else {
-      await adminClient.from('users').upsert({
-        id: finalUserId,
-        google_id: authSyncResult.authUserId || finalUserId,
-        full_name: newStaff.fullName,
-        email: cleanEmail || (cleanPhone ? `${cleanPhone}@coffeehouse.vn` : null),
-        phone: cleanPhone || null,
-        role: isElevatedRole ? 'ADMIN' : 'USER',
-        current_tier_id: '5311a256-9362-4718-bbf5-6d70e9c100a8',
-      });
-    }
+    await ensureDbUserRowForStaff(adminClient, {
+      userId: finalUserId,
+      authUserId: authSyncResult.authUserId,
+      fullName: newStaff.fullName,
+      email: finalEmail,
+      phone: finalPhone,
+      isElevatedRole,
+    });
 
     const { error: bmErr } = await adminClient.from('business_memberships').upsert(
       {
@@ -1570,24 +2074,27 @@ export async function createStaffMember(
         user_id: finalUserId,
         role: input.role,
         is_active: true,
+        updated_at: now,
       },
       { onConflict: 'business_id,user_id' }
     );
 
-    if (!bmErr && input.locationIds.length > 0) {
+    if (!bmErr) {
       await adminClient
         .from('user_location_assignments')
         .delete()
         .eq('business_id', actor.businessId)
         .eq('user_id', finalUserId);
 
-      const assignments = input.locationIds.map((locId) => ({
-        business_id: actor.businessId,
-        user_id: finalUserId,
-        location_id: locId,
-        is_active: true,
-      }));
-      await adminClient.from('user_location_assignments').insert(assignments);
+      if (input.locationIds.length > 0) {
+        const assignments = input.locationIds.map((locId) => ({
+          business_id: actor.businessId,
+          user_id: finalUserId,
+          location_id: locId,
+          is_active: true,
+        }));
+        await adminClient.from('user_location_assignments').insert(assignments);
+      }
     }
   } catch (err) {
     console.warn('DB createStaffMember sync fallback:', err);
@@ -1606,17 +2113,19 @@ export async function createStaffMember(
     staffList.push(newStaff);
   }
 
+  const authProvisioned = Boolean(validatedPassword && authSyncResult.provisioned);
+
   await recordRbacAuditLog({
     actor,
     action: 'CREATE_STAFF',
     targetType: 'STAFF',
     targetId: newStaff.userId,
     targetName: newStaff.fullName,
-    summary: `Thêm nhân viên mới ${newStaff.fullName} (${newStaff.role}) tại ${matchedLocations.length} điểm bán${authSyncResult.provisioned ? ' (đã cấp tài khoản đăng nhập)' : ''}`,
+    summary: `Thêm nhân viên mới ${newStaff.fullName} (${newStaff.role}) tại ${matchedLocations.length} điểm bán${authProvisioned ? ' (đã cấp tài khoản đăng nhập)' : ''}`,
     metadata: {
       role: newStaff.role,
       locationCodes: matchedLocations.map((l) => l.locationCode),
-      authProvisioned: authSyncResult.provisioned,
+      authProvisioned,
     },
     stateOverride: state,
   });
@@ -1649,6 +2158,17 @@ export async function resetStaffPassword(
     phone: staff.phone,
     fullName: staff.fullName,
     password: validPassword,
+    createIfMissing: true,
+    rbacMeta: {
+      businessId: actor.businessId,
+      role: staff.role,
+      assignedLocations: staff.assignedLocations,
+      isActive: staff.isActive,
+      fullName: staff.fullName,
+      phone: staff.phone || null,
+      email: staff.email || null,
+      updatedAt: new Date().toISOString(),
+    },
   });
 
   await recordRbacAuditLog({
@@ -1697,6 +2217,23 @@ export async function toggleStaffStatus(
 
   staff.isActive = isActive;
 
+  await syncAuthUserAccount({
+    existingUserId: staff.userId,
+    email: staff.email,
+    phone: staff.phone,
+    fullName: staff.fullName,
+    rbacMeta: {
+      businessId: actor.businessId,
+      role: staff.role,
+      assignedLocations: staff.assignedLocations,
+      isActive,
+      fullName: staff.fullName,
+      phone: staff.phone || null,
+      email: staff.email || null,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
   await recordRbacAuditLog({
     actor,
     action: 'TOGGLE_STAFF_STATUS',
@@ -1723,7 +2260,7 @@ export async function revokeStaffMember(
 ): Promise<void> {
   const state = await loadPersistedRbacState();
   const staffList = getBusinessStaff(state, actor.businessId);
-  const { staff, stateIdx } = await resolveTargetStaff(state, actor.businessId, targetUserId);
+  const { staff } = await resolveTargetStaff(state, actor.businessId, targetUserId);
 
   if (!canRevokeStaff(actor.role, staff.role)) {
     throw new Error('Bạn không có quyền xóa nhân viên này.');
@@ -1753,7 +2290,18 @@ export async function revokeStaffMember(
     console.warn('DB revokeStaffMember fallback:', err);
   }
 
-  staffList.splice(stateIdx, 1);
+  markStaffRevoked(state, actor.businessId, targetUserId);
+  state.staffByBusiness[actor.businessId] = staffList.filter(
+    (s) => s.userId !== targetUserId
+  );
+
+  await syncAuthUserAccount({
+    existingUserId: staff.userId,
+    email: staff.email,
+    phone: staff.phone,
+    fullName: staff.fullName,
+    clearRbacMeta: true,
+  });
 
   await recordRbacAuditLog({
     actor,

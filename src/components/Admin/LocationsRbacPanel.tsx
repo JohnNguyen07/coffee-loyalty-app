@@ -458,6 +458,9 @@ export default function LocationsRbacPanel() {
         throw new Error(data.error || 'Lỗi tạo nhân viên mới');
       }
 
+      if (Array.isArray(data.staffList)) {
+        setStaffList(data.staffList);
+      }
       setStatusMessage({ type: 'success', text: data.message });
       setAddStaffModal(false);
       setNewStaffName('');
@@ -519,6 +522,9 @@ export default function LocationsRbacPanel() {
         throw new Error(data.error || 'Lỗi cập nhật phân quyền nhân viên');
       }
 
+      if (Array.isArray(data.staffList)) {
+        setStaffList(data.staffList);
+      }
       setStatusMessage({ type: 'success', text: data.message });
       setStaffModal(false);
       setSelectedStaff(null);
@@ -585,6 +591,9 @@ export default function LocationsRbacPanel() {
         throw new Error(data.error || 'Lỗi cập nhật trạng thái');
       }
 
+      if (Array.isArray(data.staffList)) {
+        setStaffList(data.staffList);
+      }
       setStatusMessage({ type: 'success', text: data.message });
       await loadData();
     } catch (err: unknown) {
@@ -613,6 +622,9 @@ export default function LocationsRbacPanel() {
         throw new Error(data.error || 'Lỗi xóa nhân viên');
       }
 
+      if (Array.isArray(data.staffList)) {
+        setStaffList(data.staffList);
+      }
       setStatusMessage({ type: 'success', text: data.message });
       await loadData();
     } catch (err: unknown) {

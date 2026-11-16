@@ -782,3 +782,89 @@ export function buildUserRbacProfile(params: {
   };
 }
 
+function normalizeStaffPhone(phone?: string | null): string | null {
+  if (!phone) return null;
+  const clean = phone.trim().replace(/[\s\-()]/g, '');
+  return clean || null;
+}
+
+function normalizeStaffEmail(email?: string | null): string | null {
+  if (!email) return null;
+  const clean = email.trim().toLowerCase();
+  return clean || null;
+}
+
+function isPlaceholderStaffName(name?: string | null): boolean {
+  if (!name) return true;
+  const normalized = name.trim().toLowerCase();
+  return !normalized || normalized === 'nhân viên' || normalized === 'nhân viên mới';
+}
+
+/**
+ * Merge primary (e.g. database) and secondary (e.g. persisted Storage / Auth metadata) staff lists
+ * without losing newly added staff, real display names, contact details, or location assignments,
+ * while excluding revoked user IDs.
+ */
+export function mergeStaffMemberLists(
+  primaryList: StaffMemberDto[],
+  secondaryList: StaffMemberDto[],
+  revokedUserIds: string[] = []
+): StaffMemberDto[] {
+  const revokedSet = new Set(revokedUserIds.filter(Boolean));
+  const merged: StaffMemberDto[] = [];
+
+  const findMatchIdx = (candidate: StaffMemberDto): number => {
+    const cPhone = normalizeStaffPhone(candidate.phone);
+    const cEmail = normalizeStaffEmail(candidate.email);
+    return merged.findIndex((item) => {
+      if (candidate.userId && item.userId === candidate.userId) return true;
+      const iPhone = normalizeStaffPhone(item.phone);
+      const iEmail = normalizeStaffEmail(item.email);
+      return Boolean((cPhone && iPhone === cPhone) || (cEmail && iEmail === cEmail));
+    });
+  };
+
+  for (const primary of primaryList) {
+    if (!primary.userId || revokedSet.has(primary.userId)) continue;
+    const existingIdx = findMatchIdx(primary);
+    if (existingIdx === -1) {
+      merged.push({
+        ...primary,
+        assignedLocations: [...(primary.assignedLocations || [])],
+      });
+    }
+  }
+
+  for (const secondary of secondaryList) {
+    if (!secondary.userId || revokedSet.has(secondary.userId)) continue;
+    const existingIdx = findMatchIdx(secondary);
+    if (existingIdx === -1) {
+      merged.push({
+        ...secondary,
+        assignedLocations: [...(secondary.assignedLocations || [])],
+      });
+      continue;
+    }
+
+    const current = merged[existingIdx];
+    const resolvedFullName = !isPlaceholderStaffName(current.fullName)
+      ? current.fullName
+      : !isPlaceholderStaffName(secondary.fullName)
+        ? secondary.fullName
+        : current.fullName || secondary.fullName;
+
+    merged[existingIdx] = {
+      ...current,
+      fullName: resolvedFullName,
+      email: current.email || secondary.email || null,
+      phone: current.phone || secondary.phone || null,
+      assignedLocations:
+        current.assignedLocations && current.assignedLocations.length > 0
+          ? current.assignedLocations
+          : [...(secondary.assignedLocations || [])],
+    };
+  }
+
+  return merged.filter((item) => !revokedSet.has(item.userId));
+}
+

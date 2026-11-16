@@ -44,10 +44,12 @@ export async function POST(request: NextRequest) {
         locationIds: Array.isArray(body.locationIds) ? body.locationIds : [],
         initialPassword: body.initialPassword,
       });
+      const staffList = await listStaffMembers(user);
 
       return NextResponse.json({
         success: true,
         staff: created,
+        staffList,
         message: `Đã thêm nhân viên mới thành công: ${created.fullName} (${created.role})`,
       });
     }
@@ -71,8 +73,10 @@ export async function POST(request: NextRequest) {
     if (action === 'toggle') {
       const { targetUserId, isActive } = body;
       await toggleStaffStatus(user, targetUserId, Boolean(isActive));
+      const staffList = await listStaffMembers(user);
       return NextResponse.json({
         success: true,
+        staffList,
         message: `Đã ${isActive ? 'kích hoạt' : 'tạm khóa'} tài khoản nhân viên.`,
       });
     }
@@ -80,8 +84,10 @@ export async function POST(request: NextRequest) {
     if (action === 'revoke') {
       const { targetUserId } = body;
       await revokeStaffMember(user, targetUserId);
+      const staffList = await listStaffMembers(user);
       return NextResponse.json({
         success: true,
+        staffList,
         message: 'Đã hủy quyền và xóa nhân viên khỏi hệ thống.',
       });
     }
@@ -104,9 +110,11 @@ export async function POST(request: NextRequest) {
         ? { fullName, email, phone }
         : undefined
     );
+    const staffList = await listStaffMembers(user);
 
     return NextResponse.json({
       success: true,
+      staffList,
       message: `Đã cập nhật thông tin & phân quyền (${targetRole}) cho nhân viên.`,
     });
   } catch (error: unknown) {
