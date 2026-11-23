@@ -38,6 +38,7 @@ export default function AdminPage() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userRole, setUserRole] = useState<MvpRole>('OWNER');
+  const [roleLoaded, setRoleLoaded] = useState(false);
 
   // Fetch RBAC profile to know role for menu visibility
   useEffect(() => {
@@ -58,6 +59,9 @@ export default function AdminPage() {
       })
       .catch((err) => {
         console.warn('AdminPage rbac profile fetch fallback:', err);
+      })
+      .finally(() => {
+        if (active) setRoleLoaded(true);
       });
 
     return () => {
@@ -141,6 +145,8 @@ export default function AdminPage() {
             <CustomersPanel
               key={`cust-${activeSubTab}`}
               initialSubTab={(activeSubTab as CustomerSubTab) || 'detail'}
+              userRole={userRole}
+              roleLoaded={roleLoaded}
             />
           )}
           {activeTab === 'inventory' && <InventoryPanel />}

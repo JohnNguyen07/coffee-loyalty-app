@@ -8,6 +8,8 @@ import {
   canAssignRole,
   canAssignLocations,
   canOperatePos,
+  canManageCounterLoyalty,
+  canAdjustMemberPoints,
   canManageInventory,
   canViewFinancialRevenue,
   canAccessLocation,
@@ -588,5 +590,19 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     assert.ok(newCashier);
     assert.strictEqual(newCashier.fullName, 'Trần Thị Thu Ngân');
     assert.strictEqual(newCashier.role, 'CASHIER');
+  });
+
+  // Test 23: Chỉ OWNER và ADMIN mới có quyền thêm/trừ điểm thành viên thủ công
+  it('23. Chỉ OWNER và ADMIN được phép cộng/trừ điểm thành viên thủ công; POS loyalty của Cashier/Manager vẫn giữ nguyên', () => {
+    assert.strictEqual(canAdjustMemberPoints('OWNER'), true);
+    assert.strictEqual(canAdjustMemberPoints('ADMIN'), true);
+    assert.strictEqual(canAdjustMemberPoints('MANAGER'), false);
+    assert.strictEqual(canAdjustMemberPoints('CASHIER'), false);
+    assert.strictEqual(canAdjustMemberPoints('INVENTORY_STAFF'), false);
+
+    // Thu ngân và Quản lý vẫn giữ quyền tích/trừ điểm tại quầy POS trong luồng bán hàng
+    assert.strictEqual(canManageCounterLoyalty('CASHIER'), true);
+    assert.strictEqual(canManageCounterLoyalty('MANAGER'), true);
+    assert.strictEqual(canManageCounterLoyalty('INVENTORY_STAFF'), false);
   });
 });

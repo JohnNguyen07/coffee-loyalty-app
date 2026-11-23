@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import styles from './CustomersPanel.module.css';
 import { formatVND } from '@/data/menu';
+import { type MvpRole, canAdjustMemberPoints } from '@/lib/rbac/domain';
 
 export type CustomerSubTab = 'list' | 'detail' | 'all' | 'members';
 
@@ -45,15 +46,47 @@ const tierIcons: Record<string, string> = {
 
 interface CustomersPanelProps {
   initialSubTab?: CustomerSubTab;
+  userRole?: MvpRole;
+  roleLoaded?: boolean;
 }
 
-export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPanelProps) {
+export default function CustomersPanel({
+  initialSubTab = 'detail',
+  userRole,
+  roleLoaded,
+}: CustomersPanelProps) {
   const normalizedInit = initialSubTab === 'all' || initialSubTab === 'members' ? 'list' : initialSubTab;
   const [subTab, setSubTab] = useState<'list' | 'detail'>(normalizedInit);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState('ALL');
+
+  const [fallbackRole, setFallbackRole] = useState<MvpRole | null>(null);
+  const [fallbackRoleLoaded, setFallbackRoleLoaded] = useState(false);
+
+  useEffect(() => {
+    if (userRole !== undefined && roleLoaded !== undefined) return;
+    let active = true;
+    fetch('/api/rbac/profile')
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && data.success && data.profile?.role) {
+          setFallbackRole(data.profile.role as MvpRole);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setFallbackRoleLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [userRole, roleLoaded]);
+
+  const effectiveRole = roleLoaded !== undefined ? (roleLoaded ? userRole : null) : fallbackRole;
+  const effectiveRoleLoaded = roleLoaded !== undefined ? roleLoaded : fallbackRoleLoaded;
+  const canAdjustPoints = Boolean(effectiveRoleLoaded && effectiveRole && canAdjustMemberPoints(effectiveRole));
 
   // Customer Detail & Point Deduction State
   const [detailCustomer, setDetailCustomer] = useState<Customer | null>(null);
@@ -63,7 +96,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Quick point adjustment modal/form state
-  const [adjustMode, setAdjustMode] = useState<'EARN_BY_BILL' | 'DEDUCT'>('EARN_BY_BILL');
+  const [adjustMode, setAdjustMode] = useState<'EARN_BY_BILL' | 'ADD' | 'DEDUCT'>('EARN_BY_BILL');
   const [billAmountInput, setBillAmountInput] = useState<number | ''>('');
   const [adjustAmount, setAdjustAmount] = useState<number | ''>('');
   const [orderCode, setOrderCode] = useState('');
@@ -77,8 +110,11 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formEmail, setFormEmail] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [formInitialPoints, setFormInitialPoints] = useState('0');
   const [formSubmitting, setFormSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Fetch list of customers
   const fetchCustomers = useCallback(async () => {
@@ -160,6 +196,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSubmitting(true);
+    setModalError(null);
     setActionMessage(null);
     try {
       if (editingCustomer) {
@@ -178,14 +215,22 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
           setActionMessage({ text: data.message || 'Đã cập nhật thông tin khách hàng!' });
           setEditingCustomer(null);
           setShowCreateModal(false);
+          setModalError(null);
           await fetchCustomers();
           if (detailCustomer?.id === editingCustomer.id) {
             await loadCustomerDetail({ id: editingCustomer.id });
           }
         } else {
-          setActionMessage({ text: data.error || 'Lỗi cập nhật khách hàng', isError: true });
+          setModalError(data.error || 'Lỗi cập nhật khách hàng');
         }
       } else {
+        const cleanPassword = formPassword.trim();
+        if (cleanPassword.length < 6) {
+          setModalError('Mật khẩu đăng nhập phải có ít nhất 6 ký tự.');
+          setFormSubmitting(false);
+          return;
+        }
+
         const res = await fetch('/api/admin/customers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -193,16 +238,21 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
             full_name: formName,
             phone: formPhone,
             email: formEmail,
-            initial_points: Number(formInitialPoints) || 0,
+            password: cleanPassword,
+            require_password: true,
+            initial_points: canAdjustPoints ? Number(formInitialPoints) || 0 : 0,
           }),
         });
         const data = await res.json();
         if (res.ok && data.success) {
           setActionMessage({ text: data.message || 'Đã tạo thành viên mới thành công!' });
           setShowCreateModal(false);
+          setModalError(null);
           setFormName('');
           setFormPhone('');
           setFormEmail('');
+          setFormPassword('');
+          setShowPassword(false);
           setFormInitialPoints('0');
           await fetchCustomers();
           if (data.customer?.id) {
@@ -210,19 +260,26 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
             await loadCustomerDetail({ id: data.customer.id });
           }
         } else {
-          setActionMessage({ text: data.error || 'Lỗi tạo khách hàng mới', isError: true });
+          setModalError(data.error || 'Lỗi tạo khách hàng mới');
         }
       }
     } catch {
-      setActionMessage({ text: 'Lỗi kết nối máy chủ', isError: true });
+      setModalError('Lỗi kết nối máy chủ');
     } finally {
       setFormSubmitting(false);
     }
   };
 
-  // Handle Point Adjustment (Cộng điểm theo % hạng thẻ hoặc Trừ điểm tại quầy)
+  // Handle Point Adjustment (Owner/Admin only: Cộng theo % hóa đơn, Cộng trực tiếp, hoặc Trừ điểm)
   const handleAdjustPoints = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAdjustPoints) {
+      setActionMessage({
+        text: 'Chỉ tài khoản Owner hoặc Admin mới có quyền thêm hoặc trừ điểm thành viên.',
+        isError: true,
+      });
+      return;
+    }
     if (!detailCustomer) {
       setActionMessage({ text: 'Vui lòng chọn khách hàng trước', isError: true });
       return;
@@ -241,7 +298,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
     }
 
     if (!amountNum || amountNum <= 0) {
-      setActionMessage({ text: 'Vui lòng nhập số tiền hợp lệ lớn hơn 0', isError: true });
+      setActionMessage({ text: 'Vui lòng nhập số điểm hợp lệ lớn hơn 0', isError: true });
       return;
     }
 
@@ -273,7 +330,10 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
           phone: detailCustomer.phone,
           action: adjustMode,
           amount: amountNum,
-          billAmount: billNum > 0 ? billNum : undefined,
+          billAmount:
+            adjustMode === 'EARN_BY_BILL' || (adjustMode === 'DEDUCT' && billNum > 0)
+              ? billNum
+              : undefined,
           orderCode: orderCode.trim(),
           reason: adjustReason.trim(),
         }),
@@ -283,6 +343,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
       if (res.ok && data.success) {
         setActionMessage({ text: data.message });
         await loadCustomerDetail({ id: detailCustomer.id });
+        await fetchCustomers();
         setBillAmountInput('');
         setAdjustAmount('');
         setOrderCode('');
@@ -306,18 +367,24 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
 
   const openNewCustomerModal = (prefillPhone = '') => {
     setEditingCustomer(null);
+    setModalError(null);
     setFormName('');
     setFormPhone(prefillPhone.replace(/\D/g, ''));
     setFormEmail('');
+    setFormPassword('');
+    setShowPassword(false);
     setFormInitialPoints('0');
     setShowCreateModal(true);
   };
 
   const openEditCustomerModal = (cust: Customer) => {
     setEditingCustomer(cust);
+    setModalError(null);
     setFormName(cust.full_name || '');
     setFormPhone(cust.phone || '');
     setFormEmail(cust.email || '');
+    setFormPassword('');
+    setShowPassword(false);
     setShowCreateModal(true);
   };
 
@@ -339,9 +406,49 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
           style={{ padding: '9px 16px', fontWeight: 700 }}
           onClick={() => openNewCustomerModal(phoneLookup)}
         >
-          + Thêm khách hàng thành viên
+          + Thêm khách hàng mới
         </button>
       </div>
+
+      {/* Unified feedback banner visible across both sub-tabs */}
+      {actionMessage && (
+        <div
+          style={{
+            marginBottom: '12px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            backgroundColor: actionMessage.isError ? '#fde8e8' : '#def7ec',
+            color: actionMessage.isError ? '#9b1c1c' : '#03543f',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>{actionMessage.text}</span>
+          {subTab === 'detail' && actionMessage.isError && phoneLookup.replace(/\D/g, '').length >= 9 && (
+            <button
+              type="button"
+              onClick={() => openNewCustomerModal(phoneLookup)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 6,
+                background: '#006241',
+                color: '#fff',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              + Tạo ngay khách mới ({phoneLookup.replace(/\D/g, '')})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Sub Tabs */}
       <div className={styles.subTabs}>
@@ -349,7 +456,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
           className={`${styles.subTabBtn} ${subTab === 'detail' ? styles.activeSubTab : ''}`}
           onClick={() => setSubTab('detail')}
         >
-          <span>🔍</span> Tra cứu &amp; Cộng/Trừ điểm (POS)
+          <span>🔍</span> {canAdjustPoints ? 'Tra cứu & Cộng/Trừ điểm' : 'Tra cứu khách hàng'}
         </button>
         <button
           className={`${styles.subTabBtn} ${subTab === 'list' ? styles.activeSubTab : ''}`}
@@ -466,7 +573,7 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                             className={`${styles.actionBtn} ${styles.primaryActionBtn}`}
                             onClick={() => handleSelectCustomerForDetail(c)}
                           >
-                            Trừ điểm / Chi tiết
+                            {canAdjustPoints ? 'Cộng/Trừ điểm · Chi tiết' : 'Xem chi tiết'}
                           </button>
                         </td>
                       </tr>
@@ -540,44 +647,6 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                 </div>
               )}
             </div>
-
-            {actionMessage && (
-              <div
-                style={{
-                  marginTop: '12px',
-                  padding: '10px 14px',
-                  borderRadius: '6px',
-                  backgroundColor: actionMessage.isError ? '#fde8e8' : '#def7ec',
-                  color: actionMessage.isError ? '#9b1c1c' : '#03543f',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 10,
-                }}
-              >
-                <span>{actionMessage.text}</span>
-                {actionMessage.isError && phoneLookup.replace(/\D/g, '').length >= 9 && (
-                  <button
-                    type="button"
-                    onClick={() => openNewCustomerModal(phoneLookup)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 6,
-                      background: '#006241',
-                      color: '#fff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    + Tạo ngay khách mới ({phoneLookup.replace(/\D/g, '')})
-                  </button>
-                )}
-              </div>
-            )}
           </div>
 
           {detailLoading ? (
@@ -684,246 +753,345 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                 </div>
               </div>
 
-              {/* Right Column: Counter Phone Loyalty (Cộng theo % hạng thẻ / Trừ tại quầy) */}
+              {/* Right Column: Member Point Adjustment (OWNER & ADMIN only) */}
               <div className={styles.card}>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                  <button
-                    type="button"
-                    className={`${styles.subTabBtn} ${adjustMode === 'EARN_BY_BILL' ? styles.activeSubTab : ''}`}
-                    onClick={() => setAdjustMode('EARN_BY_BILL')}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    ➕ Tích điểm (% Hạng thẻ)
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.subTabBtn} ${adjustMode === 'DEDUCT' ? styles.activeSubTab : ''}`}
-                    onClick={() => setAdjustMode('DEDUCT')}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    🔻 Trừ tiền tại quầy
-                  </button>
-                </div>
-
-                {adjustMode === 'EARN_BY_BILL' ? (
+                {!canAdjustPoints ? (
                   <div
                     style={{
-                      marginBottom: 14,
-                      padding: '10px 12px',
-                      borderRadius: 8,
-                      background: '#ecfdf5',
-                      border: '1px solid #a7f3d0',
-                      color: '#065f46',
-                      fontSize: '0.8rem',
-                      lineHeight: 1.45,
+                      padding: '28px 20px',
+                      borderRadius: 12,
+                      background: '#f8fafc',
+                      border: '1px dashed #cbd5e1',
+                      textAlign: 'center',
+                      color: '#334155',
                     }}
                   >
-                    <strong>🎁 Hạng hiện tại: {detailCustomer.tier?.name || 'Member'} (Hoàn {detailCustomer.tier?.cashback_rate || 3}%)</strong>
-                    <div>
-                      Nhập tổng tiền hóa đơn để tự động cộng <strong>{detailCustomer.tier?.cashback_rate || 3}%</strong> vào ví khách.{' '}
-                      <span style={{ color: '#92400e', fontWeight: 700 }}>
-                        (Lưu ý: Đơn nào có trừ tiền tích lũy thì đơn đó không tích điểm)
-                      </span>
-                    </div>
+                    <div style={{ fontSize: '2rem', marginBottom: 8 }}>🔒</div>
+                    <h4 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: '1rem' }}>
+                      Không có quyền cộng / trừ điểm thủ công
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.55, color: '#475569' }}>
+                      Chỉ tài khoản <strong>Owner</strong> hoặc <strong>Admin</strong> mới có quyền cộng hoặc trừ điểm thủ công cho thành viên. Nhân viên thu ngân vẫn tích/trừ điểm tự động theo đơn hàng tại màn hình POS.
+                    </p>
                   </div>
                 ) : (
-                  <div
-                    style={{
-                      marginBottom: 14,
-                      padding: '10px 12px',
-                      borderRadius: 8,
-                      background: '#fffbeb',
-                      border: '1px solid #fde68a',
-                      color: '#92400e',
-                      fontSize: '0.8rem',
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    <strong>⚠️ Quy tắc trừ tiền tại quầy:</strong>
-                    <div>
-                      Trừ trực tiếp số dư ví điểm của khách vào đơn nước tại quầy.{' '}
-                      <strong>Đơn có áp dụng trừ tiền sẽ không được tích điểm mới (0đ).</strong>
+                  <>
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className={`${styles.subTabBtn} ${adjustMode === 'EARN_BY_BILL' ? styles.activeSubTab : ''}`}
+                        onClick={() => setAdjustMode('EARN_BY_BILL')}
+                        style={{ flex: 1, justifyContent: 'center', minWidth: 120 }}
+                      >
+                        ➕ Tích theo hóa đơn
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.subTabBtn} ${adjustMode === 'ADD' ? styles.activeSubTab : ''}`}
+                        onClick={() => setAdjustMode('ADD')}
+                        style={{ flex: 1, justifyContent: 'center', minWidth: 120 }}
+                      >
+                        🎁 Cộng điểm trực tiếp
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.subTabBtn} ${adjustMode === 'DEDUCT' ? styles.activeSubTab : ''}`}
+                        onClick={() => setAdjustMode('DEDUCT')}
+                        style={{ flex: 1, justifyContent: 'center', minWidth: 110 }}
+                      >
+                        🔻 Trừ điểm
+                      </button>
                     </div>
-                  </div>
-                )}
 
-                <form onSubmit={handleAdjustPoints}>
-                  {adjustMode === 'EARN_BY_BILL' ? (
-                    <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Giá trị đơn hàng / hóa đơn thanh toán (VNĐ) *
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="Nhập tiền đơn nước (VD: 35000, 40000, 75000)..."
-                        value={billAmountInput}
-                        onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
-                        className={styles.formInput}
-                        min="1000"
-                        step="1000"
-                        required
-                      />
-
-                      <div className={styles.quickPillRow}>
-                        {[30000, 35000, 40000, 45000, 70000, 75000, 100000].map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            className={styles.quickPill}
-                            onClick={() => setBillAmountInput(val)}
-                          >
-                            {formatVND(val)}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className={styles.quickPill}
-                          style={{ borderColor: '#006241', color: '#006241', fontWeight: 700 }}
-                          onClick={() =>
-                            setBillAmountInput((prev) => (Number(prev) || 0) + 5000)
-                          }
-                          title="Cộng thêm 5.000đ tiền topping vào giá trị hóa đơn"
-                        >
-                          +5.000đ (Topping)
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>
-                          Số tiền muốn trừ tại quầy (VNĐ) *
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="VD: 15000"
-                          value={adjustAmount}
-                          onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
-                          className={styles.formInput}
-                          min="1000"
-                          step="1000"
-                          required
-                        />
-
-                        <div className={styles.quickPillRow}>
-                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(10000)}>10.000đ</button>
-                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(20000)}>20.000đ</button>
-                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(30000)}>30.000đ</button>
-                          <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(50000)}>50.000đ</button>
-                          <button
-                            type="button"
-                            className={styles.quickPill}
-                            onClick={() => setAdjustAmount(detailCustomer.point_balance || 0)}
-                            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                          >
-                            Trừ tối đa ({formatVND(detailCustomer.point_balance || 0)})
-                          </button>
+                    {adjustMode === 'EARN_BY_BILL' ? (
+                      <div
+                        style={{
+                          marginBottom: 14,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          color: '#065f46',
+                          fontSize: '0.8rem',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        <strong>🎁 Hạng hiện tại: {detailCustomer.tier?.name || 'Member'} (Hoàn {detailCustomer.tier?.cashback_rate || 3}%)</strong>
+                        <div>
+                          Nhập tổng tiền hóa đơn để tự động cộng <strong>{detailCustomer.tier?.cashback_rate || 3}%</strong> vào ví khách.{' '}
+                          <span style={{ color: '#92400e', fontWeight: 700 }}>
+                            (Lưu ý: Đơn nào có trừ tiền tích lũy thì đơn đó không tích điểm)
+                          </span>
                         </div>
                       </div>
-
-                      <div className={styles.formGroup}>
-                        <label className={styles.formLabel}>
-                          Tổng tiền đơn nước (Tùy chọn · Để tính tiền khách cần trả thêm)
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="VD: 40000"
-                          value={billAmountInput}
-                          onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
-                          className={styles.formInput}
-                          min="0"
-                          step="1000"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Mã đơn hàng / Bàn số (Tùy chọn)</label>
-                    <input
-                      type="text"
-                      placeholder="VD: POS-..., CF-0012..."
-                      value={orderCode}
-                      onChange={(e) => setOrderCode(e.target.value)}
-                      className={styles.formInput}
-                    />
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Ghi chú / Lý do</label>
-                    <input
-                      type="text"
-                      placeholder={
-                        adjustMode === 'DEDUCT'
-                          ? 'VD: Trừ tiền tích lũy tại quầy'
-                          : 'VD: Khách đọc SĐT tích điểm tại quầy'
-                      }
-                      value={adjustReason}
-                      onChange={(e) => setAdjustReason(e.target.value)}
-                      className={styles.formInput}
-                    />
-                  </div>
-
-                  {adjustMode === 'EARN_BY_BILL' && typeof billAmountInput === 'number' && billAmountInput > 0 && (
-                    <div className={styles.previewBox}>
-                      <div>
-                        <div className={styles.previewLabel}>
-                          Điểm cộng ({detailCustomer.tier?.cashback_rate || 3}% hạng {detailCustomer.tier?.name || 'Member'}):
-                        </div>
-                        <div className={styles.previewValue} style={{ color: '#1b8a5a' }}>
-                          +{formatVND(Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100))}
+                    ) : adjustMode === 'ADD' ? (
+                      <div
+                        style={{
+                          marginBottom: 14,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: '#eff6ff',
+                          border: '1px solid #bfdbfe',
+                          color: '#1e40af',
+                          fontSize: '0.8rem',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        <strong>🎁 Cộng điểm trực tiếp (Owner / Admin):</strong>
+                        <div>
+                          Cộng thẳng số điểm mong muốn vào ví thành viên (thưởng sự kiện, bù điểm hoặc điều chỉnh thủ công).
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                        <div>Số dư ví mới:</div>
-                        <strong style={{ color: '#1b8a5a', fontSize: '0.95rem' }}>
-                          {formatVND(
-                            (detailCustomer.point_balance || 0) +
-                              Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100)
-                          )}
-                        </strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {adjustMode === 'DEDUCT' && typeof adjustAmount === 'number' && adjustAmount > 0 && (
-                    <div className={styles.previewBox}>
-                      <div>
-                        <div className={styles.previewLabel}>Số dư ví sau khi trừ tại quầy:</div>
-                        <div
-                          className={styles.previewValue}
-                          style={{
-                            color: detailCustomer.point_balance - adjustAmount < 0 ? '#d9381e' : '#1b8a5a',
-                          }}
-                        >
-                          {formatVND(detailCustomer.point_balance - adjustAmount)}
+                    ) : (
+                      <div
+                        style={{
+                          marginBottom: 14,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          color: '#92400e',
+                          fontSize: '0.8rem',
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        <strong>⚠️ Trừ điểm thành viên (Owner / Admin):</strong>
+                        <div>
+                          Trừ trực tiếp số dư ví điểm của khách hàng.{' '}
+                          <strong>Đơn có áp dụng trừ tiền sẽ không được tích điểm mới (0đ).</strong>
                         </div>
-                        {typeof billAmountInput === 'number' && billAmountInput > 0 && (
-                          <div style={{ fontSize: '0.8rem', color: '#0f172a', marginTop: 4 }}>
-                            Khách trả thêm tại quầy: <strong>{formatVND(Math.max(0, billAmountInput - adjustAmount))}</strong>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleAdjustPoints}>
+                      {adjustMode === 'EARN_BY_BILL' ? (
+                        <div className={styles.formGroup}>
+                          <label className={styles.formLabel}>
+                            Giá trị đơn hàng / hóa đơn thanh toán (VNĐ) *
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Nhập tiền đơn nước (VD: 35000, 40000, 75000)..."
+                            value={billAmountInput}
+                            onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
+                            className={styles.formInput}
+                            min="1000"
+                            step="1000"
+                            required
+                          />
+
+                          <div className={styles.quickPillRow}>
+                            {[30000, 35000, 40000, 45000, 70000, 75000, 100000].map((val) => (
+                              <button
+                                key={val}
+                                type="button"
+                                className={styles.quickPill}
+                                onClick={() => setBillAmountInput(val)}
+                              >
+                                {formatVND(val)}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className={styles.quickPill}
+                              style={{ borderColor: '#006241', color: '#006241', fontWeight: 700 }}
+                              onClick={() =>
+                                setBillAmountInput((prev) => (Number(prev) || 0) + 5000)
+                              }
+                              title="Cộng thêm 5.000đ tiền topping vào giá trị hóa đơn"
+                            >
+                              +5.000đ (Topping)
+                            </button>
                           </div>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: 700, textAlign: 'right' }}>
-                        Trừ ví: −{formatVND(adjustAmount)}
-                        <br />
-                        Điểm cộng đơn này: 0đ
-                      </div>
-                    </div>
-                  )}
+                        </div>
+                      ) : adjustMode === 'ADD' ? (
+                        <div className={styles.formGroup}>
+                          <label className={styles.formLabel}>
+                            Số điểm muốn cộng trực tiếp (VNĐ) *
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="VD: 10000"
+                            value={adjustAmount}
+                            onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
+                            className={styles.formInput}
+                            min="1000"
+                            step="1000"
+                            required
+                          />
 
-                  <button
-                    type="submit"
-                    className={`${styles.submitBtn} ${adjustMode === 'EARN_BY_BILL' ? styles.addPointsBtn : ''}`}
-                    disabled={adjustSubmitting}
-                  >
-                    {adjustSubmitting
-                      ? 'Đang xử lý...'
-                      : adjustMode === 'DEDUCT'
-                        ? '✓ Xác nhận Trừ Tiền Tại Quầy (Không Tích Điểm)'
-                        : `✓ Cộng +${detailCustomer.tier?.cashback_rate || 3}% Điểm Theo Hạng Thẻ`}
-                  </button>
-                </form>
+                          <div className={styles.quickPillRow}>
+                            {[5000, 10000, 20000, 50000, 100000].map((val) => (
+                              <button
+                                key={val}
+                                type="button"
+                                className={styles.quickPill}
+                                onClick={() => setAdjustAmount(val)}
+                              >
+                                +{formatVND(val)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>
+                              Số điểm muốn trừ (VNĐ) *
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="VD: 15000"
+                              value={adjustAmount}
+                              onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
+                              className={styles.formInput}
+                              min="1000"
+                              step="1000"
+                              required
+                            />
+
+                            <div className={styles.quickPillRow}>
+                              <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(10000)}>10.000đ</button>
+                              <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(20000)}>20.000đ</button>
+                              <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(30000)}>30.000đ</button>
+                              <button type="button" className={styles.quickPill} onClick={() => setAdjustAmount(50000)}>50.000đ</button>
+                              <button
+                                type="button"
+                                className={styles.quickPill}
+                                onClick={() => setAdjustAmount(detailCustomer.point_balance || 0)}
+                                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                              >
+                                Trừ tối đa ({formatVND(detailCustomer.point_balance || 0)})
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className={styles.formGroup}>
+                            <label className={styles.formLabel}>
+                              Tổng tiền đơn nước (Tùy chọn · Để tính tiền khách cần trả thêm)
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="VD: 40000"
+                              value={billAmountInput}
+                              onChange={(e) => setBillAmountInput(e.target.value ? Number(e.target.value) : '')}
+                              className={styles.formInput}
+                              min="0"
+                              step="1000"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Mã đơn hàng / Bàn số (Tùy chọn)</label>
+                        <input
+                          type="text"
+                          placeholder="VD: POS-..., CF-0012..."
+                          value={orderCode}
+                          onChange={(e) => setOrderCode(e.target.value)}
+                          className={styles.formInput}
+                        />
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Ghi chú / Lý do</label>
+                        <input
+                          type="text"
+                          placeholder={
+                            adjustMode === 'DEDUCT'
+                              ? 'VD: Điều chỉnh trừ điểm thành viên'
+                              : adjustMode === 'ADD'
+                                ? 'VD: Thưởng / cộng bù điểm thành viên'
+                                : 'VD: Khách đọc SĐT tích điểm tại quầy'
+                          }
+                          value={adjustReason}
+                          onChange={(e) => setAdjustReason(e.target.value)}
+                          className={styles.formInput}
+                        />
+                      </div>
+
+                      {adjustMode === 'EARN_BY_BILL' && typeof billAmountInput === 'number' && billAmountInput > 0 && (
+                        <div className={styles.previewBox}>
+                          <div>
+                            <div className={styles.previewLabel}>
+                              Điểm cộng ({detailCustomer.tier?.cashback_rate || 3}% hạng {detailCustomer.tier?.name || 'Member'}):
+                            </div>
+                            <div className={styles.previewValue} style={{ color: '#1b8a5a' }}>
+                              +{formatVND(Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100))}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                            <div>Số dư ví mới:</div>
+                            <strong style={{ color: '#1b8a5a', fontSize: '0.95rem' }}>
+                              {formatVND(
+                                (detailCustomer.point_balance || 0) +
+                                  Math.floor((billAmountInput * (Number(detailCustomer.tier?.cashback_rate) || 3)) / 100)
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+                      )}
+
+                      {adjustMode === 'ADD' && typeof adjustAmount === 'number' && adjustAmount > 0 && (
+                        <div className={styles.previewBox}>
+                          <div>
+                            <div className={styles.previewLabel}>Số điểm cộng trực tiếp:</div>
+                            <div className={styles.previewValue} style={{ color: '#1b8a5a' }}>
+                              +{formatVND(adjustAmount)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                            <div>Số dư ví mới:</div>
+                            <strong style={{ color: '#1b8a5a', fontSize: '0.95rem' }}>
+                              {formatVND((detailCustomer.point_balance || 0) + adjustAmount)}
+                            </strong>
+                          </div>
+                        </div>
+                      )}
+
+                      {adjustMode === 'DEDUCT' && typeof adjustAmount === 'number' && adjustAmount > 0 && (
+                        <div className={styles.previewBox}>
+                          <div>
+                            <div className={styles.previewLabel}>Số dư ví sau khi trừ:</div>
+                            <div
+                              className={styles.previewValue}
+                              style={{
+                                color: detailCustomer.point_balance - adjustAmount < 0 ? '#d9381e' : '#1b8a5a',
+                              }}
+                            >
+                              {formatVND(detailCustomer.point_balance - adjustAmount)}
+                            </div>
+                            {typeof billAmountInput === 'number' && billAmountInput > 0 && (
+                              <div style={{ fontSize: '0.8rem', color: '#0f172a', marginTop: 4 }}>
+                                Khách trả thêm tại quầy: <strong>{formatVND(Math.max(0, billAmountInput - adjustAmount))}</strong>
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: 700, textAlign: 'right' }}>
+                            Trừ ví: −{formatVND(adjustAmount)}
+                            <br />
+                            Điểm cộng đơn này: 0đ
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        className={`${styles.submitBtn} ${adjustMode !== 'DEDUCT' ? styles.addPointsBtn : ''}`}
+                        disabled={adjustSubmitting}
+                      >
+                        {adjustSubmitting
+                          ? 'Đang xử lý...'
+                          : adjustMode === 'DEDUCT'
+                            ? '✓ Xác nhận Trừ Điểm Thành Viên'
+                            : adjustMode === 'ADD'
+                              ? '✓ Xác nhận Cộng Điểm Trực Tiếp'
+                              : `✓ Cộng +${detailCustomer.tier?.cashback_rate || 3}% Điểm Theo Hạng Thẻ`}
+                      </button>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -1016,6 +1184,53 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
 
               {!editingCustomer && (
                 <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                    <label className={styles.formLabel} style={{ marginBottom: 0 }}>
+                      Mật khẩu đăng nhập *
+                    </label>
+                    <button
+                      type="button"
+                      disabled={formPhone.replace(/\D/g, '').length < 6}
+                      onClick={() => setFormPassword(formPhone.replace(/\D/g, ''))}
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: formPhone.replace(/\D/g, '').length >= 6 ? '#006241' : '#94a3b8',
+                        background: 'none',
+                        border: 'none',
+                        cursor: formPhone.replace(/\D/g, '').length >= 6 ? 'pointer' : 'not-allowed',
+                        padding: 0,
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Dùng SĐT làm mật khẩu
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      placeholder="Nhập mật khẩu cho khách (tối thiểu 6 ký tự)"
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      className={styles.formInput}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      {showPassword ? 'Ẩn' : 'Hiện'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!editingCustomer && canAdjustPoints && (
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
                   <label className={styles.formLabel}>Điểm thưởng mở thẻ ban đầu (VNĐ)</label>
                   <input
                     type="number"
@@ -1028,11 +1243,29 @@ export default function CustomersPanel({ initialSubTab = 'detail' }: CustomersPa
                 </div>
               )}
 
+              {modalError && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    background: '#fde8e8',
+                    color: '#9b1c1c',
+                    fontSize: '0.825rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  {modalError}
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
                 <button
                   type="button"
                   className={styles.actionBtn}
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setModalError(null);
+                  }}
                 >
                   Hủy
                 </button>

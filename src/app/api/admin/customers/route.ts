@@ -1,5 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyAdmin, verifyPosStaff, escapeFilterInput } from '@/lib/auth-utils';
+import { canAdjustMemberPoints } from '@/lib/rbac/domain';
+import {
+  createMemberAuthUser,
+  syncMemberAuthProfile,
+  validateMemberPassword,
+} from '@/lib/customers/auth-provision';
 import { NextRequest, NextResponse } from 'next/server';
 
 // GET /api/admin/customers — Get all customers with search, tier filter & pagination
@@ -72,36 +78,79 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
-    const admin = staff || (await verifyAdmin());
-    if (!admin || (staff && staff.staffRole === 'INVENTORY_STAFF')) {
+    if (!staff || staff.staffRole === 'INVENTORY_STAFF') {
       return NextResponse.json({ error: 'Không có quyền tạo khách hàng' }, { status: 403 });
     }
 
     const body = await request.json();
     const fullName = String(body.full_name || body.fullName || '').trim();
     const cleanPhone = String(body.phone || '').replace(/\D/g, '');
-    const email = String(body.email || '').trim();
+    const rawEmail = String(body.email || '').trim().toLowerCase();
     const initialPoints = Math.max(0, Math.floor(Number(body.initial_points || 0)));
+    const rawPassword = body.password;
+    const requirePassword = Boolean(body.require_password);
 
-    if (!fullName || cleanPhone.length < 9) {
+    if (!fullName || fullName.length < 2 || cleanPhone.length < 9 || cleanPhone.length > 15) {
       return NextResponse.json(
-        { error: 'Vui lòng nhập Họ tên và Số điện thoại hợp lệ (tối thiểu 9 chữ số).' },
+        { error: 'Vui lòng nhập Họ tên (tối thiểu 2 ký tự) và Số điện thoại hợp lệ (9-15 chữ số).' },
         { status: 400 }
+      );
+    }
+
+    if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+      return NextResponse.json({ error: 'Email không đúng định dạng.' }, { status: 400 });
+    }
+
+    let resolvedPassword = cleanPhone;
+    if (requirePassword || rawPassword !== undefined) {
+      try {
+        resolvedPassword = validateMemberPassword(rawPassword);
+      } catch (pwErr: unknown) {
+        return NextResponse.json(
+          { error: pwErr instanceof Error ? pwErr.message : 'Mật khẩu đăng nhập không hợp lệ.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (initialPoints > 0 && !canAdjustMemberPoints(staff.staffRole)) {
+      return NextResponse.json(
+        { error: 'Chỉ tài khoản Owner hoặc Admin mới có quyền tặng điểm mở thẻ ban đầu.' },
+        { status: 403 }
       );
     }
 
     const adminClient = createAdminClient();
 
     // Check duplicate phone
-    const { data: existing } = await adminClient
+    const { data: existingPhone } = await adminClient
       .from('users')
       .select('*, tier:tiers(*)')
       .eq('phone', cleanPhone)
       .maybeSingle();
 
-    if (existing) {
+    if (existingPhone) {
       return NextResponse.json(
-        { error: `Số điện thoại ${cleanPhone} đã được đăng ký cho khách hàng "${existing.full_name}".`, customer: existing },
+        {
+          error: `Số điện thoại ${cleanPhone} đã được đăng ký cho khách hàng "${existingPhone.full_name}".`,
+          customer: existingPhone,
+        },
+        { status: 409 }
+      );
+    }
+
+    const targetEmail = rawEmail || `member.${cleanPhone}@ulab.vn`;
+
+    // Check duplicate email in public.users
+    const { data: existingEmail } = await adminClient
+      .from('users')
+      .select('id, full_name')
+      .ilike('email', targetEmail)
+      .maybeSingle();
+
+    if (existingEmail) {
+      return NextResponse.json(
+        { error: `Email ${targetEmail} đã được đăng ký cho tài khoản khác.` },
         { status: 409 }
       );
     }
@@ -113,24 +162,38 @@ export async function POST(request: NextRequest) {
       .eq('code', 'MEMBER')
       .maybeSingle();
 
-    const syntheticEmail = email || `member.${cleanPhone}@ulab.vn`;
+    // Provision Supabase Auth user so member can log in immediately
+    const authRes = await createMemberAuthUser(adminClient, {
+      email: targetEmail,
+      password: resolvedPassword,
+      fullName,
+      phone: cleanPhone,
+    });
+
+    if (!authRes.ok) {
+      return NextResponse.json({ error: authRes.error }, { status: authRes.status });
+    }
 
     const { data: created, error: createErr } = await adminClient
       .from('users')
       .insert({
+        id: authRes.authUserId,
+        google_id: authRes.authUserId,
         full_name: fullName,
         phone: cleanPhone,
-        email: syntheticEmail,
+        email: targetEmail,
         role: 'USER',
         current_tier_id: memberTier?.id || null,
         point_balance: initialPoints,
         total_spending: 0,
+        locked_points: 0,
       })
       .select('*, tier:tiers(*)')
       .single();
 
     if (createErr || !created) {
       console.error('Create customer error:', createErr);
+      await adminClient.auth.admin.deleteUser(authRes.authUserId).catch(() => {});
       return NextResponse.json(
         { error: createErr?.message || 'Không thể tạo hồ sơ khách hàng mới.' },
         { status: 500 }
@@ -143,14 +206,15 @@ export async function POST(request: NextRequest) {
         type: 'WELCOME_BONUS',
         amount: initialPoints,
         balance_after: initialPoints,
-        description: 'Tặng điểm khởi tạo thành viên mới tại quầy',
+        description: `Tặng điểm khởi tạo thành viên mới (bởi ${staff.fullName})`,
       });
     }
 
     return NextResponse.json({
       success: true,
       customer: created,
-      message: `Đã tạo thành viên mới "${fullName}" (${cleanPhone}) thành công!`,
+      authProvisioned: true,
+      message: `Đã tạo thành viên mới "${fullName}" (${cleanPhone}) thành công! Khách có thể đăng nhập bằng SĐT và mật khẩu vừa tạo.`,
     });
   } catch (err: unknown) {
     console.error('Create customer exception:', err);
@@ -162,8 +226,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
-    const admin = staff || (await verifyAdmin());
-    if (!admin) {
+    if (!staff || staff.staffRole === 'INVENTORY_STAFF') {
       return NextResponse.json({ error: 'Không có quyền cập nhật khách hàng' }, { status: 403 });
     }
 
@@ -171,13 +234,57 @@ export async function PATCH(request: NextRequest) {
     const id = String(body.id || '').trim();
     const fullName = String(body.full_name || body.fullName || '').trim();
     const cleanPhone = String(body.phone || '').replace(/\D/g, '');
-    const email = String(body.email || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
 
-    if (!id || !fullName) {
-      return NextResponse.json({ error: 'Thiếu ID hoặc Họ tên khách hàng.' }, { status: 400 });
+    if (!id || !fullName || fullName.length < 2) {
+      return NextResponse.json({ error: 'Thiếu ID hoặc Họ tên hợp lệ.' }, { status: 400 });
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: 'Email không đúng định dạng.' }, { status: 400 });
     }
 
     const adminClient = createAdminClient();
+    const { data: existingUser } = await adminClient
+      .from('users')
+      .select('id, google_id, full_name, phone, email')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!existingUser) {
+      return NextResponse.json({ error: 'Không tìm thấy khách hàng cần cập nhật.' }, { status: 404 });
+    }
+
+    if (cleanPhone.length >= 9 && cleanPhone !== existingUser.phone) {
+      const { data: dupPhone } = await adminClient
+        .from('users')
+        .select('id')
+        .eq('phone', cleanPhone)
+        .neq('id', id)
+        .maybeSingle();
+      if (dupPhone) {
+        return NextResponse.json(
+          { error: `Số điện thoại ${cleanPhone} đã được sử dụng bởi thành viên khác.` },
+          { status: 409 }
+        );
+      }
+    }
+
+    if (email && email !== (existingUser.email || '').toLowerCase()) {
+      const { data: dupEmail } = await adminClient
+        .from('users')
+        .select('id')
+        .ilike('email', email)
+        .neq('id', id)
+        .maybeSingle();
+      if (dupEmail) {
+        return NextResponse.json(
+          { error: `Email ${email} đã được sử dụng bởi tài khoản khác.` },
+          { status: 409 }
+        );
+      }
+    }
+
     const updates: Record<string, unknown> = {
       full_name: fullName,
       updated_at: new Date().toISOString(),
@@ -195,6 +302,15 @@ export async function PATCH(request: NextRequest) {
     if (error || !updated) {
       return NextResponse.json({ error: error?.message || 'Không thể cập nhật thông tin.' }, { status: 500 });
     }
+
+    await syncMemberAuthProfile(adminClient, {
+      publicUserId: updated.id,
+      googleId: existingUser.google_id,
+      oldEmail: existingUser.email,
+      fullName: updated.full_name,
+      phone: updated.phone,
+      email: updated.email,
+    });
 
     return NextResponse.json({
       success: true,

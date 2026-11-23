@@ -1,20 +1,23 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { verifyAdmin, verifyPosStaff } from '@/lib/auth-utils';
+import { verifyPosStaff } from '@/lib/auth-utils';
+import { canAdjustMemberPoints } from '@/lib/rbac/domain';
 import { resolveTierCashbackRate } from '@/lib/pos/domain';
 import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/admin/customers/adjust-points
-// Counter Phone Loyalty:
-// - Authorized for CASHIER (POS), MANAGER, ADMIN, OWNER (blocks INVENTORY_STAFF & unauthenticated users).
-// - DEDUCT: Deduct points directly at counter (`pointsUsed > 0` -> 0 cashback earned).
-// - EARN_BY_BILL / ADD: Credit cashback automatically by member's tier % (`3%`, `5%`, `7%`, `10%`) from billAmount,
+// Manual Member Points Adjustment (Customers module):
+// - Restricted strictly to OWNER and ADMIN roles (blocks MANAGER, CASHIER, INVENTORY_STAFF & unauthenticated users).
+// - DEDUCT: Deduct points manually (`pointsUsed > 0` -> 0 cashback earned).
+// - EARN_BY_BILL / ADD: Credit cashback by bill % or direct amount,
 //   strictly enforcing that any order/bill with points deducted (`pointsUsed > 0` or existing ORDER_DEDUCT) cannot earn points.
 export async function POST(request: NextRequest) {
   try {
     const staff = await verifyPosStaff();
-    const admin = staff || (await verifyAdmin());
-    if (!admin || (staff && staff.staffRole === 'INVENTORY_STAFF')) {
-      return NextResponse.json({ error: 'Không có quyền thực hiện tích/trừ điểm tại quầy' }, { status: 403 });
+    if (!staff || !canAdjustMemberPoints(staff.staffRole)) {
+      return NextResponse.json(
+        { error: 'Chỉ tài khoản Owner hoặc Admin mới có quyền thêm hoặc trừ điểm thành viên.' },
+        { status: 403 }
+      );
     }
 
     const adminClient = createAdminClient();
@@ -109,7 +112,7 @@ export async function POST(request: NextRequest) {
       const refId = cleanOrderCode || `POS-DEDUCT-${Date.now().toString(36).toUpperCase()}`;
       const txDescription =
         reason ||
-        `Trừ điểm tại quầy POS${cleanOrderCode ? ` cho đơn #${cleanOrderCode}` : ''}${
+        `Trừ điểm thành viên bởi ${staff.fullName}${cleanOrderCode ? ` cho đơn #${cleanOrderCode}` : ''}${
           parsedBill > 0
             ? ` (Đơn ${parsedBill.toLocaleString('vi-VN')}đ - Trừ ví ${deductAmount.toLocaleString('vi-VN')}đ - Không tích điểm mới)`
             : ' (Đơn trừ tiền không tích điểm mới)'
@@ -216,7 +219,7 @@ export async function POST(request: NextRequest) {
     }
 
     const parsedBillAmount = Math.floor(Number(billAmount) || 0);
-    const isBillBased = action === 'EARN_BY_BILL' || parsedBillAmount > 0;
+    const isBillBased = action === 'EARN_BY_BILL';
     const pointsToCredit = isBillBased
       ? Math.floor((parsedBillAmount * tierRate) / 100)
       : Math.floor(Number(amount) || 0);
@@ -273,8 +276,8 @@ export async function POST(request: NextRequest) {
     const txDescription =
       reason ||
       (isBillBased
-        ? `Tích điểm tại quầy (${tierRate}% hạng ${tierName}) cho đơn ${parsedBillAmount.toLocaleString('vi-VN')}đ${cleanOrderCode ? ` (#${cleanOrderCode})` : ''}`
-        : `Cộng điểm tại quầy POS${cleanOrderCode ? ` (#${cleanOrderCode})` : ''}`);
+        ? `Tích điểm thành viên (${tierRate}% hạng ${tierName}) cho đơn ${parsedBillAmount.toLocaleString('vi-VN')}đ${cleanOrderCode ? ` (#${cleanOrderCode})` : ''} — bởi ${staff.fullName}`
+        : `Cộng điểm thành viên trực tiếp${cleanOrderCode ? ` (#${cleanOrderCode})` : ''} — bởi ${staff.fullName}`);
 
     const { data: tx } = await adminClient
       .from('point_transactions')

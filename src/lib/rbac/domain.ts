@@ -235,6 +235,15 @@ export function canManageCounterLoyalty(role: MvpRole): boolean {
 }
 
 /**
+ * Check if a role can manually add or deduct member points in the Customers module
+ * (or grant initial welcome points when creating a member from admin).
+ * Only OWNER and ADMIN are permitted.
+ */
+export function canAdjustMemberPoints(role: MvpRole): boolean {
+  return role === 'OWNER' || role === 'ADMIN';
+}
+
+/**
  * Check if a role can manage inventory (goods receipts, production batches, audits).
  * INVENTORY_STAFF, MANAGER, ADMIN, OWNER can manage inventory. CASHIER cannot.
  */

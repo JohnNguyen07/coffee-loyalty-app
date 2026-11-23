@@ -24,6 +24,15 @@ export async function GET() {
     .eq('id', targetId)
     .maybeSingle();
 
+  if (!profile && targetId) {
+    const { data } = await adminClient
+      .from('users')
+      .select('*, tier:tiers(*)')
+      .eq('google_id', targetId)
+      .maybeSingle();
+    profile = data;
+  }
+
   if (!profile && user?.email) {
     const { data } = await adminClient
       .from('users')

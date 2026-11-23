@@ -5,6 +5,7 @@ import { escapeFilterInput, type PosStaffContext } from '@/lib/auth-utils';
 import { menuData, allMenuItems, type MenuCategory, type MenuItem } from '@/data/menu';
 import { processPosOrderInventory, reversePosOrderInventory } from '@/lib/inventory/pos-integration';
 import { buildUserRbacProfile } from '@/lib/rbac/domain';
+import { createMemberAuthUser } from '@/lib/customers/auth-provision';
 import { getBusinessProfile, listLocationsForUser } from '@/lib/rbac/repository';
 import { getActiveShiftSession } from '@/lib/revenue/repository';
 import {
@@ -1226,12 +1227,28 @@ export async function createPosOrder(
 
       if (memberTier) {
         const autoName = payload.customerName?.trim() || `Thành viên ${cleanPhone.slice(-4)}`;
+        const autoEmail = `member.${cleanPhone}@ulab.vn`;
+        let authIdPatch: { id?: string; google_id?: string } = {};
+        try {
+          const authRes = await createMemberAuthUser(adminClient, {
+            email: autoEmail,
+            password: cleanPhone,
+            fullName: autoName,
+            phone: cleanPhone,
+          });
+          if (authRes.ok) {
+            authIdPatch = { id: authRes.authUserId, google_id: authRes.authUserId };
+          }
+        } catch {
+          // Non-blocking fallback for POS checkout continuity
+        }
         const { data: createdMember } = await adminClient
           .from('users')
           .insert({
+            ...authIdPatch,
             full_name: autoName,
             phone: cleanPhone,
-            email: `member.${cleanPhone}@ulab.vn`,
+            email: autoEmail,
             role: 'USER',
             current_tier_id: memberTier.id,
             point_balance: 0,
@@ -2316,12 +2333,28 @@ export async function applyPhoneLoyaltyForConfirmedOrder(orderId: string): Promi
         .maybeSingle();
       if (memberTier) {
         const autoName = extractedName || `Thành viên ${extractedPhone.slice(-4)}`;
+        const autoEmail = `member.${extractedPhone}@ulab.vn`;
+        let authIdPatch: { id?: string; google_id?: string } = {};
+        try {
+          const authRes = await createMemberAuthUser(adminClient, {
+            email: autoEmail,
+            password: extractedPhone,
+            fullName: autoName,
+            phone: extractedPhone,
+          });
+          if (authRes.ok) {
+            authIdPatch = { id: authRes.authUserId, google_id: authRes.authUserId };
+          }
+        } catch {
+          // Non-blocking fallback for QR credit continuity
+        }
         const { data: created } = await adminClient
           .from('users')
           .insert({
+            ...authIdPatch,
             full_name: autoName,
             phone: extractedPhone,
-            email: `member.${extractedPhone}@ulab.vn`,
+            email: autoEmail,
             role: 'USER',
             current_tier_id: memberTier.id,
             point_balance: 0,

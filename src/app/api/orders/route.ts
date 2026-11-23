@@ -16,6 +16,7 @@ import {
   matchesOrderLocation,
 } from '@/lib/pos/repository';
 import { cookies } from 'next/headers';
+import { createMemberAuthUser } from '@/lib/customers/auth-provision';
 
 async function resolveProfile(
   user: { id: string; email?: string | null } | null,
@@ -87,12 +88,28 @@ async function resolveProfile(
 
         if (memberTier) {
           const autoName = customerName?.trim() || `Thành viên ${cleanPhone.slice(-4)}`;
+          const autoEmail = `member.${cleanPhone}@ulab.vn`;
+          let authIdPatch: { id?: string; google_id?: string } = {};
+          try {
+            const authRes = await createMemberAuthUser(adminClient, {
+              email: autoEmail,
+              password: cleanPhone,
+              fullName: autoName,
+              phone: cleanPhone,
+            });
+            if (authRes.ok) {
+              authIdPatch = { id: authRes.authUserId, google_id: authRes.authUserId };
+            }
+          } catch {
+            // Non-blocking fallback for checkout continuity
+          }
           const { data: created } = await adminClient
             .from('users')
             .insert({
+              ...authIdPatch,
               full_name: autoName,
               phone: cleanPhone,
-              email: `member.${cleanPhone}@ulab.vn`,
+              email: autoEmail,
               role: 'USER',
               current_tier_id: memberTier.id,
               point_balance: 0,

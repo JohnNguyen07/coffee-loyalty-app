@@ -80,6 +80,15 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (!profile) {
+      const { data: profileByGoogle } = await adminClient
+        .from('users')
+        .select('*, tier:tiers(*)')
+        .eq('google_id', authData.user.id)
+        .maybeSingle();
+      profile = profileByGoogle;
+    }
+
+    if (!profile) {
       const { data: profileByEmail } = await adminClient
         .from('users')
         .select('*, tier:tiers(*)')
