@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import styles from './CustomersPanel.module.css';
 import { formatVND } from '@/data/menu';
-import { type MvpRole, canAdjustMemberPoints } from '@/lib/rbac/domain';
+import { type MvpRole, canAdjustMemberPoints, canDeleteMember } from '@/lib/rbac/domain';
 
 export type CustomerSubTab = 'list' | 'detail' | 'all' | 'members';
 
@@ -87,6 +87,9 @@ export default function CustomersPanel({
   const effectiveRole = roleLoaded !== undefined ? (roleLoaded ? userRole : null) : fallbackRole;
   const effectiveRoleLoaded = roleLoaded !== undefined ? roleLoaded : fallbackRoleLoaded;
   const canAdjustPoints = Boolean(effectiveRoleLoaded && effectiveRole && canAdjustMemberPoints(effectiveRole));
+  const canDelete = Boolean(effectiveRoleLoaded && effectiveRole && canDeleteMember(effectiveRole));
+  const isDeletableCustomer = (c: Customer) =>
+    canDelete && c.role !== 'ADMIN' && (c.email || '').toLowerCase() !== 'admin@coffeehouse.vn';
 
   // Customer Detail & Point Deduction State
   const [detailCustomer, setDetailCustomer] = useState<Customer | null>(null);
@@ -115,6 +118,11 @@ export default function CustomersPanel({
   const [formInitialPoints, setFormInitialPoints] = useState('0');
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+
+  // Delete Customer Modal State (OWNER only)
+  const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Fetch list of customers
   const fetchCustomers = useCallback(async () => {
@@ -388,6 +396,42 @@ export default function CustomersPanel({
     setShowCreateModal(true);
   };
 
+  const openDeleteCustomerModal = (cust: Customer) => {
+    setDeleteError(null);
+    setDeletingCustomer(cust);
+  };
+
+  const handleConfirmDeleteCustomer = async () => {
+    if (!deletingCustomer) return;
+    setDeleteSubmitting(true);
+    setDeleteError(null);
+    setActionMessage(null);
+    try {
+      const res = await fetch('/api/admin/customers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deletingCustomer.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const deletedId = deletingCustomer.id;
+        setDeletingCustomer(null);
+        setActionMessage({ text: data.message || 'Đã xóa thành viên thành công!' });
+        if (detailCustomer?.id === deletedId) {
+          setDetailCustomer(null);
+          setPhoneLookup('');
+        }
+        await fetchCustomers();
+      } else {
+        setDeleteError(data.error || 'Không thể xóa thành viên.');
+      }
+    } catch {
+      setDeleteError('Lỗi kết nối máy chủ khi xóa thành viên.');
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
   // Metrics
   const totalSpending = customers.reduce((sum, c) => sum + (Number(c.total_spending) || 0), 0);
   const totalPoints = customers.reduce((sum, c) => sum + (Number(c.point_balance) || 0), 0);
@@ -575,6 +619,21 @@ export default function CustomersPanel({
                           >
                             {canAdjustPoints ? 'Cộng/Trừ điểm · Chi tiết' : 'Xem chi tiết'}
                           </button>
+                          {isDeletableCustomer(c) && (
+                            <button
+                              type="button"
+                              className={styles.actionBtn}
+                              style={{
+                                color: '#b91c1c',
+                                borderColor: '#fecaca',
+                                background: '#fef2f2',
+                              }}
+                              onClick={() => openDeleteCustomerModal(c)}
+                              title="Xóa thành viên (Chỉ Owner)"
+                            >
+                              🗑️ Xóa
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -677,6 +736,25 @@ export default function CustomersPanel({
                       >
                         ✏️ Sửa
                       </button>
+                      {isDeletableCustomer(detailCustomer) && (
+                        <button
+                          type="button"
+                          onClick={() => openDeleteCustomerModal(detailCustomer)}
+                          style={{
+                            padding: '2px 8px',
+                            fontSize: '0.75rem',
+                            borderRadius: 6,
+                            border: '1px solid #fecaca',
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                          }}
+                          title="Xóa thành viên (Chỉ Owner)"
+                        >
+                          🗑️ Xóa
+                        </button>
+                      )}
                     </div>
                     <div style={{ color: 'var(--ink-muted)', fontSize: '0.875rem', marginTop: '4px' }}>
                       SĐT: <strong style={{ color: 'var(--ink)' }}>{detailCustomer.phone || 'Chưa cập nhật'}</strong>
@@ -915,8 +993,8 @@ export default function CustomersPanel({
                             value={adjustAmount}
                             onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
                             className={styles.formInput}
-                            min="1000"
-                            step="1000"
+                            min="1"
+                            step="1"
                             required
                           />
 
@@ -945,8 +1023,8 @@ export default function CustomersPanel({
                               value={adjustAmount}
                               onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
                               className={styles.formInput}
-                              min="1000"
-                              step="1000"
+                              min="1"
+                              step="1"
                               required
                             />
 
@@ -1235,7 +1313,7 @@ export default function CustomersPanel({
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="1"
                     value={formInitialPoints}
                     onChange={(e) => setFormInitialPoints(e.target.value)}
                     className={styles.formInput}
@@ -1278,6 +1356,106 @@ export default function CustomersPanel({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Customer Confirmation Modal (OWNER only) */}
+      {deletingCustomer && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1050,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 16,
+              padding: 24,
+              width: '100%',
+              maxWidth: 440,
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem', color: '#991b1b' }}>
+              🗑️ Xác nhận xóa thành viên
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: '0.875rem', color: '#334155', lineHeight: 1.55 }}>
+              Bạn chắc chắn muốn xóa tài khoản thành viên{' '}
+              <strong>{deletingCustomer.full_name || 'Khách hàng'}</strong>
+              {deletingCustomer.phone ? ` (${deletingCustomer.phone})` : ''}?
+            </p>
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#7f1d1d',
+                fontSize: '0.8rem',
+                lineHeight: 1.5,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                Số dư ví hiện tại: <strong>{formatVND(deletingCustomer.point_balance || 0)}</strong>
+              </div>
+              <div>
+                Tài khoản đăng nhập và sổ điểm của thành viên sẽ bị xóa vĩnh viễn.{' '}
+                <strong>Lịch sử đơn hàng và doanh thu cũ vẫn được giữ nguyên.</strong>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: '#fde8e8',
+                  color: '#9b1c1c',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                }}
+              >
+                {deleteError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                className={styles.actionBtn}
+                disabled={deleteSubmitting}
+                onClick={() => {
+                  setDeletingCustomer(null);
+                  setDeleteError(null);
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={deleteSubmitting}
+                onClick={handleConfirmDeleteCustomer}
+                className={styles.actionBtn}
+                style={{
+                  background: '#dc2626',
+                  borderColor: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                }}
+              >
+                {deleteSubmitting ? 'Đang xóa...' : '🗑️ Xác nhận xóa'}
+              </button>
+            </div>
           </div>
         </div>
       )}

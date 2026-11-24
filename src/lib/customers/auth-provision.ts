@@ -145,3 +145,57 @@ export async function syncMemberAuthProfile(
     console.warn('syncMemberAuthProfile non-fatal error:', err);
   }
 }
+
+/**
+ * Delete any linked Supabase Auth user(s) when permanently deleting a customer member.
+ */
+export async function deleteMemberAuthUser(
+  adminClient: AdminSupabaseClient,
+  params: {
+    publicUserId: string;
+    googleId?: string | null;
+    email?: string | null;
+  }
+): Promise<{ deletedAuthIds: string[] }> {
+  const matchedIds = new Set<string>();
+
+  try {
+    if (params.googleId) {
+      const { data } = await adminClient.auth.admin.getUserById(params.googleId);
+      if (data?.user?.id) matchedIds.add(data.user.id);
+    }
+
+    if (params.publicUserId && params.publicUserId !== params.googleId) {
+      const { data } = await adminClient.auth.admin.getUserById(params.publicUserId);
+      if (data?.user?.id) matchedIds.add(data.user.id);
+    }
+
+    if (params.email) {
+      const targetEmail = params.email.trim().toLowerCase();
+      const allUsers = await listAllAuthUsers(adminClient);
+      for (const u of allUsers) {
+        if ((u.email || '').toLowerCase() === targetEmail) {
+          matchedIds.add(u.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('deleteMemberAuthUser lookup warning:', err);
+  }
+
+  const deletedAuthIds: string[] = [];
+  for (const uid of matchedIds) {
+    try {
+      const { error } = await adminClient.auth.admin.deleteUser(uid);
+      if (!error) {
+        deletedAuthIds.push(uid);
+      } else {
+        console.warn(`deleteMemberAuthUser delete warning for ${uid}:`, error.message);
+      }
+    } catch (err) {
+      console.warn(`deleteMemberAuthUser delete exception for ${uid}:`, err);
+    }
+  }
+
+  return { deletedAuthIds };
+}

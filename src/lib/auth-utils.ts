@@ -151,7 +151,10 @@ export async function verifyPosStaff(): Promise<PosStaffContext | null> {
       .maybeSingle();
 
     const staffRow = dbUser as StaffDbRow | null;
-    const rawStaffRole = String(staffRow?.staff_role || 'ADMIN').toUpperCase();
+    const rawStaffRole = String(
+      staffRow?.staff_role ||
+        (admin.email?.toLowerCase() === 'admin@coffeehouse.vn' ? 'OWNER' : 'ADMIN')
+    ).toUpperCase();
     const staffRole: StaffRole =
       rawStaffRole === 'OWNER'
         ? 'OWNER'

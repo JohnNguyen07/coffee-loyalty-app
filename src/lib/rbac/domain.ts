@@ -244,6 +244,14 @@ export function canAdjustMemberPoints(role: MvpRole): boolean {
 }
 
 /**
+ * Check if a role can permanently delete a customer member account.
+ * Strictly limited to OWNER.
+ */
+export function canDeleteMember(role: MvpRole): boolean {
+  return role === 'OWNER';
+}
+
+/**
  * Check if a role can manage inventory (goods receipts, production batches, audits).
  * INVENTORY_STAFF, MANAGER, ADMIN, OWNER can manage inventory. CASHIER cannot.
  */

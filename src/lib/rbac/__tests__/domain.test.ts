@@ -10,6 +10,7 @@ import {
   canOperatePos,
   canManageCounterLoyalty,
   canAdjustMemberPoints,
+  canDeleteMember,
   canManageInventory,
   canViewFinancialRevenue,
   canAccessLocation,
@@ -604,5 +605,14 @@ describe('Module M04: Business, Locations & Role-Based Access Control (RBAC)', (
     assert.strictEqual(canManageCounterLoyalty('CASHIER'), true);
     assert.strictEqual(canManageCounterLoyalty('MANAGER'), true);
     assert.strictEqual(canManageCounterLoyalty('INVENTORY_STAFF'), false);
+  });
+
+  // Test 24: Chỉ duy nhất OWNER có quyền xóa thành viên
+  it('24. Chỉ duy nhất OWNER được phép xóa thành viên khách hàng (ADMIN/MANAGER/CASHIER/INVENTORY bị chặn)', () => {
+    assert.strictEqual(canDeleteMember('OWNER'), true);
+    assert.strictEqual(canDeleteMember('ADMIN'), false);
+    assert.strictEqual(canDeleteMember('MANAGER'), false);
+    assert.strictEqual(canDeleteMember('CASHIER'), false);
+    assert.strictEqual(canDeleteMember('INVENTORY_STAFF'), false);
   });
 });

@@ -1,8 +1,10 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyAdmin, verifyPosStaff, escapeFilterInput } from '@/lib/auth-utils';
-import { canAdjustMemberPoints } from '@/lib/rbac/domain';
+import { canAdjustMemberPoints, canDeleteMember } from '@/lib/rbac/domain';
+import { findStaffMemberAsync } from '@/lib/rbac/repository';
 import {
   createMemberAuthUser,
+  deleteMemberAuthUser,
   syncMemberAuthProfile,
   validateMemberPassword,
 } from '@/lib/customers/auth-provision';
@@ -319,5 +321,164 @@ export async function PATCH(request: NextRequest) {
     });
   } catch {
     return NextResponse.json({ error: 'Lỗi máy chủ khi cập nhật khách hàng.' }, { status: 500 });
+  }
+}
+
+// DELETE /api/admin/customers — Permanently delete a customer member (OWNER only)
+export async function DELETE(request: NextRequest) {
+  try {
+    const staff = await verifyPosStaff();
+    if (!staff || !canDeleteMember(staff.staffRole)) {
+      return NextResponse.json(
+        { error: 'Chỉ tài khoản Owner mới có quyền xóa thành viên.' },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const body = await request.json().catch(() => ({}));
+    const id = String(searchParams.get('id') || body.id || '').trim();
+
+    if (!id) {
+      return NextResponse.json({ error: 'Thiếu ID thành viên cần xóa.' }, { status: 400 });
+    }
+
+    if (id === staff.id || id === staff.dbUserId) {
+      return NextResponse.json(
+        { error: 'Không thể tự xóa tài khoản đang đăng nhập.' },
+        { status: 400 }
+      );
+    }
+
+    const adminClient = createAdminClient();
+    const { data: target, error: fetchErr } = await adminClient
+      .from('users')
+      .select('id, google_id, full_name, phone, email, role, point_balance, total_spending')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !target) {
+      return NextResponse.json(
+        { error: 'Không tìm thấy thành viên cần xóa.' },
+        { status: 404 }
+      );
+    }
+
+    const activeStaff = await findStaffMemberAsync({
+      userId: target.id,
+      email: target.email,
+      phone: target.phone,
+    });
+
+    if (
+      target.role === 'ADMIN' ||
+      (target.email || '').toLowerCase() === 'admin@coffeehouse.vn' ||
+      (activeStaff && activeStaff.isActive)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Không thể xóa tài khoản quản trị hoặc nhân viên đang hoạt động tại đây. Hãy thu hồi quyền nhân sự trong Cài đặt hệ thống trước.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Preserve historical orders & revenue before removing the user row
+    const { count: existingOrdersCount } = await adminClient
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', target.id);
+
+    if ((existingOrdersCount || 0) > 0) {
+      const { error: nullOrderErr } = await adminClient
+        .from('orders')
+        .update({ user_id: null })
+        .eq('user_id', target.id);
+
+      if (nullOrderErr) {
+        let fallbackUserId: string | null =
+          staff.dbUserId && staff.dbUserId !== target.id ? staff.dbUserId : null;
+
+        if (!fallbackUserId) {
+          const { data: ownerRow } = await adminClient
+            .from('users')
+            .select('id')
+            .eq('email', 'admin@coffeehouse.vn')
+            .neq('id', target.id)
+            .maybeSingle();
+          fallbackUserId = ownerRow?.id || null;
+        }
+
+        if (!fallbackUserId) {
+          const { data: adminRow } = await adminClient
+            .from('users')
+            .select('id')
+            .eq('role', 'ADMIN')
+            .neq('id', target.id)
+            .limit(1)
+            .maybeSingle();
+          fallbackUserId = adminRow?.id || null;
+        }
+
+        if (!fallbackUserId) {
+          return NextResponse.json(
+            { error: 'Không thể tách lịch sử đơn hàng của thành viên trước khi xóa.' },
+            { status: 500 }
+          );
+        }
+
+        const { error: reassignErr } = await adminClient
+          .from('orders')
+          .update({ user_id: fallbackUserId })
+          .eq('user_id', target.id);
+
+        if (reassignErr) {
+          return NextResponse.json(
+            { error: 'Không thể tách lịch sử đơn hàng của thành viên trước khi xóa.' },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
+    await adminClient.from('qr_tokens').update({ scanned_by: null }).eq('scanned_by', target.id);
+    await adminClient.from('qr_tokens').update({ created_by: null }).eq('created_by', target.id);
+
+    const { error: txDelErr } = await adminClient
+      .from('point_transactions')
+      .delete()
+      .eq('user_id', target.id);
+
+    if (txDelErr) {
+      return NextResponse.json(
+        { error: 'Không thể xóa sổ cái điểm của thành viên.' },
+        { status: 500 }
+      );
+    }
+
+    const { error: userDelErr } = await adminClient.from('users').delete().eq('id', target.id);
+    if (userDelErr) {
+      return NextResponse.json(
+        { error: userDelErr.message || 'Không thể xóa tài khoản thành viên.' },
+        { status: 500 }
+      );
+    }
+
+    await deleteMemberAuthUser(adminClient, {
+      publicUserId: target.id,
+      googleId: target.google_id,
+      email: target.email,
+    });
+
+    return NextResponse.json({
+      success: true,
+      deletedId: target.id,
+      detachedOrdersCount: existingOrdersCount || 0,
+      message: `Đã xóa thành viên "${target.full_name || target.phone || target.id}" thành công! Lịch sử đơn hàng và doanh thu cũ vẫn được bảo toàn.`,
+    });
+  } catch (err: unknown) {
+    console.error('Delete customer exception:', err);
+    return NextResponse.json({ error: 'Lỗi máy chủ khi xóa thành viên.' }, { status: 500 });
   }
 }

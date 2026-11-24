@@ -145,7 +145,10 @@ export async function resolveUserRbac(): Promise<UserRbacProfile | null> {
   } else if (staffMember?.role) {
     role = staffMember.role;
   } else if (fallbackIsAdmin) {
-    role = 'ADMIN';
+    role =
+      resolvedEmail?.toLowerCase() === 'admin@coffeehouse.vn' || cookieRole === 'OWNER'
+        ? 'OWNER'
+        : 'ADMIN';
   } else if (dbStaffRole === 'MANAGER') {
     role = 'MANAGER';
   } else if (dbStaffRole === 'INVENTORY_STAFF') {
